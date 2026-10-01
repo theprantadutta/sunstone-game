@@ -29,6 +29,8 @@ var _ranks: Control
 var _ranks_board := "dusk"
 var _ranks_body: Control
 var _account: Control
+var _legal: Control
+var _legal_doc := "privacy"
 var _top := 28.0 ## below the status bar / camera cutout
 
 var _title: Control
@@ -112,7 +114,7 @@ func _back() -> void:
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
+	for page in [_legal, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -415,7 +417,7 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(690 + (64 if _ads.privacy_options_required() else 0))
+	var m := _modal(770 + (64 if _ads.privacy_options_required() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")
@@ -446,6 +448,12 @@ func _open_settings() -> void:
 	done.size = Vector2(488, 112)
 	done.pressed.connect(func(): _settings.visible = false)
 	page.add_child(done)
+	var legal := UiKit.GlyphButton.new("Privacy & terms", UiKit.GlyphButton.Kind.SECONDARY)
+	legal.font_size = 22
+	legal.position = Vector2(56, y + 238)
+	legal.size = Vector2(488, 62)
+	legal.pressed.connect(_open_legal)
+	page.add_child(legal)
 	page.open()
 
 # ---------------------------------------------------------------- daily ---
@@ -876,6 +884,75 @@ func _open_account() -> void:
 		else:
 			status.text = "Can't reach the temple right now. Try again later.")
 	page.open()
+
+# ----------------------------------------------------------------- legal ---
+
+## The privacy policy and terms, read from legal/*.md (shipped with the game).
+func _open_legal() -> void:
+	if _legal:
+		_legal.queue_free()
+	var m := _modal(1060)
+	_legal = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 113
+	var docs := [["privacy", "Privacy"], ["terms", "Terms"]]
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(48, 150)
+	scroll.size = Vector2(504, 800)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+	var text := RichTextLabel.new()
+	text.bbcode_enabled = true
+	text.fit_content = true
+	text.custom_minimum_size = Vector2(488, 0)
+	text.mouse_filter = Control.MOUSE_FILTER_PASS
+	text.add_theme_font_override("normal_font", UiKit.text_font(800))
+	text.add_theme_font_override("bold_font", UiKit.text_font(900))
+	text.add_theme_font_size_override("normal_font_size", 22)
+	text.add_theme_font_size_override("bold_font_size", 22)
+	text.add_theme_color_override("default_color", UiKit.INK)
+	scroll.add_child(text)
+	var show := func(doc: String) -> void:
+		_legal_doc = doc
+		text.text = _markdown_to_bbcode(FileAccess.get_file_as_string("res://legal/%s.md" % doc))
+		scroll.scroll_vertical = 0
+	for i in docs.size():
+		var d: Array = docs[i]
+		var tab := UiKit.GlyphButton.new(d[1], UiKit.GlyphButton.Kind.SECONDARY)
+		tab.font_size = 22
+		tab.position = Vector2(56 + i * 132, 52)
+		tab.size = Vector2(124, 70)
+		tab.pressed.connect(func(): show.call(d[0]))
+		page.add_child(tab)
+	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.PRIMARY)
+	close.font_size = 24
+	close.position = Vector2(384, 52)
+	close.size = Vector2(160, 70)
+	close.pressed.connect(func(): _legal.visible = false)
+	page.add_child(close)
+	_rule(page, 136, 117)
+	show.call(_legal_doc)
+	page.open()
+
+## Just enough Markdown for our legal pages: headings, bold, paragraphs.
+static func _markdown_to_bbcode(md: String) -> String:
+	var out := PackedStringArray()
+	for line in md.split("
+"):
+		var l := line.strip_edges()
+		if l.begins_with("# "):
+			out.append("[font_size=34][b]%s[/b][/font_size]" % l.substr(2))
+		elif l.begins_with("## "):
+			out.append("
+[font_size=26][b][color=#B8322A]%s[/color][/b][/font_size]" % l.substr(3))
+		else:
+			var parts := l.split("**")
+			var b := ""
+			for i in parts.size():
+				b += ("[b]%s[/b]" % parts[i]) if i % 2 == 1 else parts[i]
+			out.append(b)
+	return "
+".join(out)
 
 # ---------------------------------------------------------------- market ---
 
