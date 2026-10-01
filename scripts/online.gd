@@ -14,6 +14,7 @@ extends Node
 
 signal signed_in(player: Dictionary)
 signal save_merged ## the local save took in progress from the cloud
+signal config_loaded(config: Dictionary)
 
 ## Debug builds talk to the API on the dev PC over the LAN; release builds to
 ## the hosted server. `files/api_base` on a device overrides both.
@@ -31,6 +32,7 @@ signal _google_result(ok: bool, value: String, email: String)
 var base_url := DEV_BASE if OS.is_debug_build() else PROD_BASE
 var player := {} ## {id, name, isAnonymous} once signed in
 var reachable := false ## the last call to our server got an answer
+var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, storeOpen…
 
 var _api_key := ""
 var _state := {} ## refresh_token, jwt, jwt_exp, player, save_revision
@@ -59,6 +61,10 @@ func _ready() -> void:
 func start(save: SaveData) -> void:
 	_save = save
 	if await ensure_session():
+		var c := await api(HTTPClient.METHOD_GET, "/config")
+		if c.code == 200 and c.body is Dictionary:
+			config = c.body
+			config_loaded.emit(config)
 		await sync_save()
 		await _flush_outbox()
 
@@ -189,6 +195,18 @@ func delete_account() -> bool:
 	_write_state()
 	_write_json(OUTBOX_PATH, _outbox)
 	return true
+
+# --------------------------------------------------------------- purchases
+
+## {code, body}: 200 with {granted, drops, consume, entitlements}; 202 pending;
+## 400/409 refused; 503/0 try later.
+func verify_purchase(product_id: String, token: String) -> Dictionary:
+	return await api(HTTPClient.METHOD_POST, "/purchases/verify", {"productId": product_id, "purchaseToken": token})
+
+## What this player owns on the server, or null when it can't be reached.
+func entitlements() -> Variant:
+	var r := await api(HTTPClient.METHOD_GET, "/purchases/entitlements")
+	return r.body.get("entitlements", []) if r.code == 200 and r.body is Dictionary else null
 
 # ------------------------------------------------------------ google link
 

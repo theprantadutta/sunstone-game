@@ -33,6 +33,8 @@ const HUES := [
 	{"id": "jade", "title": "Jade fire", "cost": 500, "light": Color("#8CFFB8"), "gem": Color("#4FD18B")},
 	{"id": "moon", "title": "Moon pearl", "cost": 700, "light": Color("#D4E6FF"), "gem": Color("#BFD8FF")},
 	{"id": "blood", "title": "Blood moon", "cost": 1500, "light": Color("#FF7A5A"), "gem": Color("#E2442A")},
+	# Not sold for sun-drops: the patron's own hue.
+	{"id": "obsidian", "title": "Obsidian", "cost": -1, "light": Color("#C9A6FF"), "gem": Color("#2B2238")},
 ]
 
 static func find(list: Array, id: String) -> Dictionary:

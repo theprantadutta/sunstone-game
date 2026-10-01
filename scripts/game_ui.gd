@@ -19,9 +19,12 @@ signal account_deleted
 signal looks_changed
 signal second_wind_accepted
 signal second_wind_declined
+signal second_wind_by_ad
 
 var _save: SaveData
 var _online: Online
+var _ads: Ads
+var _store: Store
 var _ranks: Control
 var _ranks_board := "dusk"
 var _ranks_body: Control
@@ -49,6 +52,7 @@ var _menu_icons := {} ## page name → GlyphIcon, for badges
 var _market: Control
 var _market_body: Control
 var _market_tab := 0
+var _market_note: Label
 var _offer: Control
 var _day_tag: Label
 var _dark: TextureRect
@@ -114,9 +118,17 @@ func close_modal() -> bool:
 			return true
 	return false
 
-func setup(save: SaveData, online: Online) -> void:
+func setup(save: SaveData, online: Online, ads: Ads, store: Store) -> void:
 	_save = save
 	_online = online
+	_ads = ads
+	_store = store
+	_store.purchase_finished.connect(func(_id: String, message: String):
+		if _market and is_instance_valid(_market) and _market.visible:
+			_fill_market()
+			if message != "" and _market_note:
+				_market_note.text = message
+		_refresh_title())
 	_build_title()
 	_build_hud()
 	_danger = UiKit.DangerFlash.new()
@@ -403,7 +415,7 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(690)
+	var m := _modal(690 + (64 if _ads.privacy_options_required() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")
@@ -421,6 +433,14 @@ func _open_settings() -> void:
 	account.size = Vector2(160, 72)
 	account.pressed.connect(_open_account)
 	page.add_child(account)
+	if _ads.privacy_options_required():
+		var privacy := UiKit.GlyphButton.new("Ad privacy", UiKit.GlyphButton.Kind.SECONDARY)
+		privacy.font_size = 22
+		privacy.position = Vector2(384, y + 88)
+		privacy.size = Vector2(160, 60)
+		privacy.pressed.connect(func(): _ads.show_privacy_options())
+		page.add_child(privacy)
+		y += 64
 	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
 	done.position = Vector2(56, y + 116)
 	done.size = Vector2(488, 112)
@@ -601,7 +621,7 @@ func _open_offerings() -> void:
 		_offerings.queue_free()
 	var today := MayaCalendar.today_local()
 	var ready := _save.offering_ready(today)
-	var m := _modal(760)
+	var m := _modal(820)
 	_offerings = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 61
@@ -647,7 +667,22 @@ func _open_offerings() -> void:
 				d.queue_redraw()
 		take.get_child(0).text = "+%d sun-drops" % got
 		_refresh_title()
-		get_tree().create_timer(0.9).timeout.connect(func(): _offerings.visible = false))
+		if _ads.rewarded_ready():
+			var twice := UiKit.GlyphButton.new("Watch to double it", UiKit.GlyphButton.Kind.SECONDARY)
+			twice.font_size = 24
+			twice.position = Vector2(56, 716)
+			twice.size = Vector2(488, 70)
+			twice.pressed.connect(func():
+				twice.visible = false
+				if await _ads.show_rewarded("double_offering"):
+					_save.bank += got
+					_save.save_to_disk()
+					_online.queue_sync()
+					take.get_child(0).text = "+%d sun-drops" % (got * 2)
+					_refresh_title())
+			page.add_child(twice)
+		else:
+			get_tree().create_timer(0.9).timeout.connect(func(): _offerings.visible = false))
 	page.open()
 
 # ----------------------------------------------------------------- ranks ---
@@ -844,7 +879,7 @@ func _open_account() -> void:
 
 # ---------------------------------------------------------------- market ---
 
-const MARKET_TABS := ["Charms", "Garbs", "Hues"]
+const MARKET_TABS := ["Charms", "Garbs", "Hues", "Treasury"]
 
 ## The market: charms (permanent upgrades), garbs and stone hues, paid for
 ## in sun-drops. Tabs switch the register; the body rebuilds in place.
@@ -884,9 +919,9 @@ func _fill_market() -> void:
 	for i in MARKET_TABS.size():
 		var tab := UiKit.GlyphButton.new(MARKET_TABS[i],
 			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
-		tab.font_size = 24
-		tab.position = Vector2(56 + i * 166, 138)
-		tab.size = Vector2(156, 78)
+		tab.font_size = 21
+		tab.position = Vector2(56 + i * 124, 138)
+		tab.size = Vector2(116, 74)
 		tab.pressed.connect(func():
 			_market_tab = i
 			_fill_market())
@@ -895,6 +930,46 @@ func _fill_market() -> void:
 		0: _fill_charms(body)
 		1: _fill_looks(body, "garb", Market.GARBS)
 		2: _fill_looks(body, "hue", Market.HUES)
+		3: _fill_treasury(body)
+
+## Real-money items through Google Play, priced by Play in local currency.
+func _fill_treasury(body: Control) -> void:
+	_market_note = UiKit.label("", UiKit.text_font(900), 22, UiKit.CINNABAR)
+	_market_note.position = Vector2(58, 228)
+	body.add_child(_market_note)
+	if not _store.ready_to_sell():
+		body.add_child(UiKit.wrapped("The treasury opens soon. Everything here will also be yours on any phone you sign in on.",
+			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 262), 486, 120))
+		return
+	var y := 258.0
+	for p in Store.PRODUCTS:
+		var owned: bool = (p.id == "sunstone_remove_ads" and _save.has_entitlement("no_ads")) \
+			or (p.id == "sunstone_patron" and _save.has_entitlement("patron"))
+		var t := UiKit.label(p.title, UiKit.display_font(), 24, UiKit.INK)
+		t.position = Vector2(58, y)
+		body.add_child(t)
+		body.add_child(UiKit.wrapped(p.text, UiKit.text_font(800), 21, UiKit.INK, Vector2(58, y + 34), 300, 56))
+		var btn := UiKit.GlyphButton.new("Yours" if owned else str(_store.prices.get(p.id, "…")),
+			UiKit.GlyphButton.Kind.SECONDARY if owned else UiKit.GlyphButton.Kind.PRIMARY)
+		btn.font_size = 22
+		btn.position = Vector2(384, y + 6)
+		btn.size = Vector2(160, 66)
+		var id: String = p.id
+		if not owned:
+			btn.pressed.connect(func():
+				_market_note.text = "Opening Google Play…"
+				_store.buy(id))
+		body.add_child(btn)
+		y += 108.0
+	var restore := UiKit.GlyphButton.new("Restore purchases", UiKit.GlyphButton.Kind.SECONDARY)
+	restore.font_size = 22
+	restore.position = Vector2(56, 806)
+	restore.size = Vector2(488, 62)
+	restore.pressed.connect(func():
+		_market_note.text = "Asking Google Play…"
+		await _store.restore()
+		_market_note.text = "Up to date.")
+	body.add_child(restore)
 
 func _fill_charms(body: Control) -> void:
 	var y := 238.0
@@ -948,6 +1023,8 @@ func _fill_looks(body: Control, kind: String, list: Array) -> void:
 			label.text = "Wearing" if kind == "garb" else "In the stone"
 		elif _save.owns(id):
 			label.text = "Wear" if kind == "garb" else "Use this hue"
+		elif cost < 0:
+			label.text = "Patrons only"
 		elif _save.bank >= cost:
 			label.text = "Buy for %s" % UiKit.thousands(cost)
 		else:
@@ -958,8 +1035,9 @@ func _fill_looks(body: Control, kind: String, list: Array) -> void:
 		sw.item = list[i]
 		sw.owned = _save.owns(list[i].id)
 		sw.worn = list[i].id == worn
-		sw.position = Vector2(76 + (i % 2) * 254, 238 + (i / 2) * 312)
-		sw.size = Vector2(196, 240)
+		var three := list.size() > 4
+		sw.position = Vector2(56 + (i % 3) * 168, 236 + (i / 3) * 236) if three else Vector2(76 + (i % 2) * 254, 238 + (i / 2) * 312)
+		sw.size = Vector2(150, 190) if three else Vector2(196, 240)
 		sw.chosen.connect(func(): choose.call(sw))
 		body.add_child(sw)
 		swatches.append(sw)
@@ -972,7 +1050,7 @@ func _fill_looks(body: Control, kind: String, list: Array) -> void:
 			if not sw.selected:
 				continue
 			var id: String = sw.item.id
-			if not _save.owns(id) and not _save.buy_item(id, sw.item.cost):
+			if not _save.owns(id) and (sw.item.cost < 0 or not _save.buy_item(id, sw.item.cost)):
 				return
 			if kind == "garb":
 				_save.garb = id
@@ -1011,11 +1089,19 @@ func show_second_wind(cost: int, held: int) -> void:
 	var held_l := UiKit.label("You hold %s" % UiKit.thousands(held), UiKit.text_font(900), 24, UiKit.CINNABAR)
 	held_l.position = Vector2(58, 296)
 	page.add_child(held_l)
+	var can_pay := held >= cost
 	var rise := UiKit.GlyphButton.new("Rise for %d" % cost, UiKit.GlyphButton.Kind.PRIMARY)
-	rise.font_size = 32
+	rise.font_size = 22 if _ads.rewarded_ready() else 30
 	rise.position = Vector2(56, 342)
-	rise.size = Vector2(488, 108)
+	rise.size = Vector2(238 if _ads.rewarded_ready() else 488, 108)
+	rise.visible = can_pay
 	page.add_child(rise)
+	var watch := UiKit.GlyphButton.new("Watch to rise", UiKit.GlyphButton.Kind.PRIMARY)
+	watch.font_size = 22 if can_pay else 30
+	watch.position = Vector2(306 if can_pay else 56, 342)
+	watch.size = Vector2(238 if can_pay else 488, 108)
+	watch.visible = _ads.rewarded_ready()
+	page.add_child(watch)
 	var no := UiKit.GlyphButton.new("Let it end", UiKit.GlyphButton.Kind.SECONDARY)
 	no.font_size = 26
 	no.position = Vector2(56, 460)
@@ -1032,6 +1118,19 @@ func show_second_wind(cost: int, held: int) -> void:
 		else:
 			second_wind_declined.emit()
 	rise.pressed.connect(func(): finish.call(true))
+	watch.pressed.connect(func():
+		if done[0]:
+			return
+		ring.set_process(false) # the ad is the player's choice; don't let the clock run out under it
+		var earned := await _ads.show_rewarded("second_wind")
+		if done[0]:
+			return
+		done[0] = true
+		_offer.visible = false
+		if earned:
+			second_wind_by_ad.emit()
+		else:
+			second_wind_declined.emit())
 	no.pressed.connect(func(): finish.call(false))
 	ring.expired.connect(func(): finish.call(false))
 	page.open()
@@ -1137,6 +1236,19 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var drops := UiKit.label("+%d sun-drops" % drop_count, UiKit.text_font(900), 32, UiKit.INK)
 	drops.position = Vector2(106, 298)
 	page.add_child(drops)
+	if drop_count > 0 and _ads.rewarded_ready():
+		var twice := UiKit.GlyphButton.new("Watch: double", UiKit.GlyphButton.Kind.PRIMARY)
+		twice.font_size = 20
+		twice.position = Vector2(384, 290)
+		twice.size = Vector2(170, 60)
+		twice.pressed.connect(func():
+			twice.visible = false
+			if await _ads.show_rewarded("double_drops"):
+				_save.bank += drop_count
+				_save.save_to_disk()
+				_online.queue_sync()
+				drops.text = "+%d sun-drops" % (drop_count * 2))
+		page.add_child(twice)
 
 	var best_text := "New best" if is_best else "Best %s m" % UiKit.thousands(best)
 	var highlight := is_best

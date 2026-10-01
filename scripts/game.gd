@@ -40,6 +40,8 @@ var jaguars: Array[JaguarModel] = []
 var camera: Camera3D
 var ui: GameUI
 var online: Online
+var ads: Ads
+var store: Store
 var sfx: Sfx
 var save := SaveData.new()
 
@@ -119,6 +121,13 @@ func _ready() -> void:
 	save.load_from_disk()
 	online = Online.new()
 	add_child(online)
+	ads = Ads.new()
+	add_child(ads)
+	store = Store.new()
+	add_child(store)
+	online.config_loaded.connect(func(c: Dictionary):
+		ads.configure(c.get("adsEnabled", false), int(c.get("interstitialEveryRuns", 4)), save.has_entitlement("no_ads"))
+		store.open = c.get("storeOpen", false))
 	_make_environment()
 	world = World.new()
 	add_child(world)
@@ -146,6 +155,7 @@ func _ready() -> void:
 			ui.show_title(save)
 		online.start(save))
 	ui.second_wind_accepted.connect(_second_wind)
+	ui.second_wind_by_ad.connect(func(): _second_wind(true))
 	ui.second_wind_declined.connect(func():
 		if state == State.OFFER:
 			_finish_run())
@@ -155,7 +165,10 @@ func _ready() -> void:
 	ui.again_pressed.connect(_restart)
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.back_requested.connect(_on_back)
-	ui.setup(save, online)
+	ui.setup(save, online, ads, store)
+	store.setup(online, save)
+	store.products_changed.connect(func():
+		ads.no_ads = save.has_entitlement("no_ads"))
 	# Progress from another phone arrived: show it.
 	online.save_merged.connect(func():
 		if state == State.TITLE:
@@ -223,6 +236,8 @@ func _reset_run() -> void:
 
 func _go_title() -> void:
 	get_tree().paused = false
+	if state == State.RESULTS:
+		ads.after_run(save.runs)
 	daily_key = ""
 	_reset_run()
 	state = State.TITLE
@@ -256,6 +271,8 @@ func _start_daily() -> void:
 
 func _restart() -> void:
 	get_tree().paused = false
+	if state == State.RESULTS:
+		ads.after_run(save.runs)
 	_reset_run()
 	state = State.TITLE # _start_run needs TITLE
 	_start_run()
@@ -295,11 +312,15 @@ func _die(cause: String, fell := false, caught := false) -> void:
 
 ## Second wind: pay sun-drops and rise again just past what ended the run —
 ## the jaguars driven off, the stone relit, a moment of safety.
-func _second_wind() -> void:
-	if state != State.OFFER or save.bank < Market.SECOND_WIND_COST:
+## [paid_by_ad]: the player watched an ad instead of paying sun-drops.
+func _second_wind(paid_by_ad := false) -> void:
+	if state != State.OFFER:
 		return
-	save.bank -= Market.SECOND_WIND_COST
-	save.save_to_disk()
+	if not paid_by_ad:
+		if save.bank < Market.SECOND_WIND_COST:
+			return
+		save.bank -= Market.SECOND_WIND_COST
+		save.save_to_disk()
 	_second_wind_used = true
 	online.track("second_wind", {"distance": int(distance)})
 	var seg := world.get_segment(seg_index)
@@ -643,7 +664,7 @@ func _step_death(delta: float) -> void:
 		chaser_gap = move_toward(chaser_gap, 0.9 if _caught else 3.0, 10.0 * delta)
 		_place_jaguars(delta)
 	if _death_t > 1.35:
-		if not _second_wind_used and save.bank >= Market.SECOND_WIND_COST:
+		if not _second_wind_used and (save.bank >= Market.SECOND_WIND_COST or ads.rewarded_ready()):
 			state = State.OFFER
 			ui.show_second_wind(Market.SECOND_WIND_COST, save.bank)
 		else:

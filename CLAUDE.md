@@ -141,6 +141,12 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   without rebuilding it); the editor plugin there adds it and its Maven deps to
   the Gradle export.
 - Exports use the Gradle build (`android/build`, regenerated, gitignored).
+- `addons/admob` (Poing Studios v5.1.0, only the core `ads` lib under
+  `android/bin`) and `addons/GodotGooglePlayBilling` (3.3.0). Debug builds use
+  Google's TEST ad units and test app id — never use live ad ids in development.
+  `scripts/ads.gd` (consent → init → rewarded/interstitial, paced),
+  `scripts/store.gd` (Play Billing; every purchase verified by the server).
+  The server's `/config` switches ads and the store on/off.
 
 ## Assets
 

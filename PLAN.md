@@ -59,9 +59,9 @@ analytics go through our own server.
 - [ ] Link Google to keep progress across reinstalls (needs phase 2's native sign-in)
 
 ### 5. Monetization
-- [ ] Rewarded: second wind, double sun-drops on results, bigger offering
-- [ ] Interstitial between runs, paced (never in the first runs, never twice close together)
-- [ ] Purchases: remove ads, supporter pack, sun-drop packs; restore purchases
+- [x] Rewarded: second wind, double sun-drops on results, double offering (test ads)
+- [x] Interstitial between runs, paced (never in the first runs, never twice close together)
+- [x] Purchases: remove ads, patron pack, sun-drop packs; restore — code + server verification (needs Play Console products)
 
 ### 6. Release
 - [ ] Privacy policy + terms (hosted), Data safety form answers, content rating answers

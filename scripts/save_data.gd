@@ -51,6 +51,7 @@ var charms := {} ## charm id → tier bought (1..3)
 var owned: Array = ["explorer", "sun"] ## garbs and hues you own
 var garb := "explorer"
 var hue := "sun"
+var entitlements: Array = [] ## bought for good: "no_ads", "patron"
 
 # --- settings ---
 var music := true
@@ -105,6 +106,8 @@ func _apply(d: Dictionary) -> void:
 	charms = ch if ch is Dictionary else {}
 	var ow: Variant = d.get("owned", ["explorer", "sun"])
 	owned = ow if ow is Array else ["explorer", "sun"]
+	var en: Variant = d.get("entitlements", [])
+	entitlements = en if en is Array else []
 	garb = str(d.get("garb", "explorer"))
 	hue = str(d.get("hue", "sun"))
 	music = bool(d.get("music", true))
@@ -120,7 +123,7 @@ func to_dict() -> Dictionary:
 		"deaths": deaths,
 		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
 		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
-		"charms": charms, "owned": owned, "garb": garb, "hue": hue,
+		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "entitlements": entitlements,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
 
@@ -167,6 +170,9 @@ func merge_from(other: Variant) -> bool:
 	if oc is Dictionary:
 		for k in oc:
 			charms[k] = maxi(charm_tier(k), clampi(int(oc[k]), 0, 3))
+	var oe: Variant = o.get("entitlements", [])
+	if oe is Array:
+		set_entitlements(entitlements + oe)
 	var ow: Variant = o.get("owned", [])
 	if ow is Array:
 		for id in ow:
@@ -260,6 +266,22 @@ func take_offering(today: String) -> int:
 	offering_last = today
 	offering_day = (offering_day + 1) % OFFERINGS.size()
 	return reward
+
+func has_entitlement(key: String) -> bool:
+	return entitlements.has(key)
+
+## Adds what the server says this player owns (never removes); a patron also
+## gets the Obsidian hue. Returns true when anything changed.
+func set_entitlements(keys: Array) -> bool:
+	var changed := false
+	for k in keys:
+		if not entitlements.has(str(k)):
+			entitlements.append(str(k))
+			changed = true
+	if entitlements.has("patron") and not owned.has("obsidian"):
+		owned.append("obsidian")
+		changed = true
+	return changed
 
 func charm_tier(id: String) -> int:
 	return clampi(int(charms.get(id, 0)), 0, 3)
