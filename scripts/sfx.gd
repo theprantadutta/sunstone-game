@@ -14,10 +14,13 @@ const FALL := "fall"
 const ROAR := "roar"
 const RESULTS := "results"
 const TAP := "tap"
+const FLARE := "flare"
+const FIZZLE := "fizzle"
 
 const VOLUMES := {
 	"jump": -6.0, "slide": -8.0, "lane": -14.0, "turn": -8.0, "coin": -10.0,
 	"stumble": -4.0, "crash": -2.0, "fall": -4.0, "roar": -3.0, "results": -6.0, "tap": -10.0,
+	"flare": -4.0, "fizzle": -10.0,
 }
 
 var _streams := {}

@@ -20,6 +20,16 @@ const START_S := 8.0
 const STUMBLE_MEMORY := 8.0 ## a second stumble inside this window = caught
 const SWIPE_DISTANCE := 42.0
 
+# --- the dusk run: the sun sets as you go; the Sunstone is your only light ---
+const DUSK_DISTANCE := 1100.0 ## metres from sunset to full night
+const LIGHT_DRAIN_DAY := 0.010 ## per second, while the sun is still up
+const LIGHT_DRAIN_NIGHT := 0.034
+const DROP_LIGHT := 0.035 ## each sun-drop feeds the stone this much
+const FLARE_COST := 0.22
+const FLARE_FREEZE := 1.6 ## seconds the jaguars stand frozen as stone
+const FLARE_PUSH := 7.0 ## metres a flare drives them back
+const DARK_LIGHT := 0.35 ## below this the jaguars wake and close in
+
 const LW := Models.LANE_WIDTH
 
 var state := State.TITLE
@@ -49,6 +59,20 @@ var distance := 0.0
 var coins := 0
 var stumble_t := 0.0
 var chaser_gap := 3.0
+var light := 1.0 ## the Sunstone's charge, 0..1
+var dusk := 0.0 ## 0 = sunset begins, 1 = full night
+var _freeze_t := 0.0
+var _push_back := 0.0
+var _flare_boost := 0.0
+var _growl_cd := 0.0
+var _touch_time := 0
+var _stone_light: OmniLight3D
+var _sun: DirectionalLight3D
+var _env: Environment
+var _sky_mat: ProceduralSkyMaterial
+var _applied_dusk := -1.0
+## Dev: `files/dev_dusk` holding e.g. 1.0 starts every run at that much dusk.
+var _dev_dusk := FileAccess.get_file_as_string("user://dev_dusk").to_float() if FileAccess.file_exists("user://dev_dusk") else 0.0
 var death_cause := ""
 var _death_t := 0.0
 var _fell := false
@@ -91,6 +115,13 @@ func _ready() -> void:
 	add_child(world)
 	runner = RunnerModel.new()
 	add_child(runner)
+	# The Sunstone's own light, held out in his right hand.
+	_stone_light = OmniLight3D.new()
+	_stone_light.light_color = Color("#FFC46A")
+	_stone_light.omni_attenuation = 1.3
+	_stone_light.shadow_enabled = false
+	_stone_light.position = Vector3(0.4, 1.2, -0.5)
+	runner.add_child(_stone_light)
 	for i in 2:
 		var j := JaguarModel.new()
 		add_child(j)
@@ -143,6 +174,13 @@ func _reset_run() -> void:
 	coins = 0
 	stumble_t = 0.0
 	chaser_gap = 2.6
+	light = FileAccess.get_file_as_string("user://dev_light").to_float() if FileAccess.file_exists("user://dev_light") else 1.0
+	dusk = _dev_dusk
+	_freeze_t = 0.0
+	_push_back = 0.0
+	_flare_boost = 0.0
+	_growl_cd = 0.0
+	_apply_dusk(true)
 	death_cause = ""
 	_fell = false
 	_caught = false
@@ -271,6 +309,7 @@ func _process(delta: float) -> void:
 		State.TITLE:
 			_title_t += delta
 			runner.animate(delta, 0.0)
+			_apply_dusk()
 			_update_title_camera(delta)
 		State.RUNNING:
 			_step_run(delta)
@@ -333,7 +372,8 @@ func _step_run(delta: float) -> void:
 	_maybe_hint(seg)
 
 	stumble_t = maxf(stumble_t - delta, 0.0)
-	chaser_gap = move_toward(chaser_gap, 24.0, 2.6 * delta)
+	if _step_dark(delta):
+		return
 
 	runner.pose = RunnerModel.Pose.SLIDE if slide_t > 0.0 else (RunnerModel.Pose.JUMP if y > 0.05 else RunnerModel.Pose.RUN)
 	runner.animate(delta, speed)
@@ -343,6 +383,7 @@ func _step_run(delta: float) -> void:
 	camera.fov = lerpf(66.0, 74.0, (speed - START_SPEED) / (MAX_SPEED - START_SPEED))
 	_update_chase_camera(delta)
 	ui.set_run_numbers(int(distance), coins)
+	ui.set_light(light, dusk, chaser_gap)
 
 ## Lane changes ride a critically damped spring: quick off the mark, eased
 ## into the lane, never overshooting. Substepped so a slow frame stays stable.
@@ -356,6 +397,110 @@ func _step_lane(delta: float) -> void:
 	if absf(goal - x) < 0.003 and absf(x_vel) < 0.05:
 		x = goal
 		x_vel = 0.0
+
+## The dusk: light drains (faster as night falls), the sky darkens, and in the
+## dark the stone jaguars wake and close in. Returns true when they catch him.
+func _step_dark(delta: float) -> bool:
+	dusk = maxf(clampf(distance / DUSK_DISTANCE, 0.0, 1.0), _dev_dusk)
+	light = clampf(light - lerpf(LIGHT_DRAIN_DAY, LIGHT_DRAIN_NIGHT, dusk) * delta, 0.0, 1.0)
+	_apply_dusk()
+	_flare_boost = maxf(_flare_boost - delta * 1.8, 0.0)
+	_growl_cd = maxf(_growl_cd - delta, 0.0)
+	if _push_back > 0.0:
+		var d := minf(_push_back, 22.0 * delta)
+		chaser_gap = minf(chaser_gap + d, 24.0)
+		_push_back -= d
+	if _freeze_t > 0.0:
+		_freeze_t -= delta # frozen as stone: they hold their ground
+	elif light >= DARK_LIGHT:
+		chaser_gap = move_toward(chaser_gap, 24.0, 2.6 * delta)
+	else:
+		var hunger := (DARK_LIGHT - light) / DARK_LIGHT
+		var was := chaser_gap
+		chaser_gap = move_toward(chaser_gap, 0.0, (0.8 + 3.6 * hunger) * delta)
+		if was >= 9.0 and chaser_gap < 9.0 and _growl_cd <= 0.0:
+			sfx.play(Sfx.ROAR) # you hear them before you see them
+			_growl_cd = 6.0
+		if chaser_gap < 1.0:
+			_die("Caught in the dark", false, true)
+			return true
+	for j in jaguars:
+		j.frozen = _freeze_t > 0.0
+	return false
+
+## Tap: the Sunstone flares. Frozen-to-stone jaguars, driven back.
+func _flare() -> void:
+	if state != State.RUNNING:
+		return
+	if light < FLARE_COST:
+		sfx.play(Sfx.FIZZLE)
+		return
+	light -= FLARE_COST
+	_freeze_t = FLARE_FREEZE
+	_push_back = FLARE_PUSH
+	_flare_boost = 1.0
+	sfx.play(Sfx.FLARE)
+	sfx.vibrate(save, 30)
+	ui.flash_flare()
+	_spawn_flare_ring()
+
+func _spawn_flare_ring() -> void:
+	var ring := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.0
+	sphere.height = 2.0
+	sphere.radial_segments = 16
+	sphere.rings = 8
+	ring.mesh = sphere
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.albedo_color = Color(1.0, 0.78, 0.4, 0.55)
+	ring.material_override = mat
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(ring)
+	ring.global_position = _stone_light.global_position
+	ring.scale = Vector3.ONE * 0.3
+	var tw := ring.create_tween().set_parallel()
+	tw.tween_property(ring, "scale", Vector3.ONE * 9.0, 0.55).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.55)
+	tw.chain().tween_callback(ring.queue_free)
+
+## Sunset → twilight → moonlit night, driven by [dusk]. The sky only updates
+## in small steps (it re-bakes); the stone's light every frame.
+func _apply_dusk(force := false) -> void:
+	var lit := smoothstep(0.2, 0.75, dusk)
+	_stone_light.light_energy = lerpf(0.35, 2.6, lit) * lerpf(0.3, 1.0, light) + _flare_boost * 6.0
+	_stone_light.omni_range = lerpf(4.0, 12.0, light) + _flare_boost * 14.0
+	if not force and absf(dusk - _applied_dusk) < 0.005:
+		return
+	_applied_dusk = dusk
+	var sunset := smoothstep(0.0, 0.55, dusk) # the sun going down
+	var night := smoothstep(0.55, 1.0, dusk)
+	var top := Color("#46285C").lerp(Color("#2A1846"), sunset).lerp(Color("#090B1F"), night)
+	var horizon := Color("#F09A5E").lerp(Color("#E0603A"), sunset).lerp(Color("#22264A"), night)
+	_sky_mat.sky_top_color = top
+	_sky_mat.sky_horizon_color = horizon
+	_sky_mat.ground_horizon_color = horizon.darkened(0.35)
+	_env.fog_light_color = horizon
+	_env.fog_light_energy = lerpf(0.95, 0.7, night)
+	_env.ambient_light_color = Color("#A08CB4").lerp(Color("#8A5E8C"), sunset).lerp(Color("#2E3566"), night)
+	_env.ambient_light_energy = lerpf(0.7, 0.32, night)
+	_env.tonemap_exposure = lerpf(0.92, 1.0, night)
+	if dusk < 0.6:
+		# The sun sinks and reddens, then is gone.
+		_sun.rotation_degrees = Vector3(lerpf(-32.0, -7.0, sunset), 140.0, 0.0)
+		_sun.light_color = Color("#FFC890").lerp(Color("#FF7A3A"), sunset)
+		_sun.light_energy = lerpf(1.0, 0.05, smoothstep(0.3, 0.6, dusk))
+		_sky_mat.sun_angle_max = 18.0
+	else:
+		# The moon rises on the other side: pale, blue, and dim.
+		_sun.rotation_degrees = Vector3(-42.0, 290.0, 0.0)
+		_sun.light_color = Color("#9DB4FF")
+		_sun.light_energy = lerpf(0.0, 0.16, smoothstep(0.6, 0.85, dusk))
+		_sky_mat.sun_angle_max = 6.0
 
 func _step_death(delta: float) -> void:
 	_death_t += delta
@@ -471,11 +616,20 @@ func _collect_coins(seg: World.Segment) -> void:
 		if absf(c.s - s) < 0.75 and absf(c.x - x) < 0.85 and absf(c.y - head) < 1.0:
 			c.taken = true
 			coins += 1
+			light = minf(light + DROP_LIGHT, 1.0)
 			sfx.play(Sfx.COIN)
 
 ## First-runs coaching: name the move the moment it's needed.
 func _maybe_hint(seg: World.Segment) -> void:
 	if save.tutorial_runs >= 2:
+		return
+	if light < DARK_LIGHT + 0.05 and chaser_gap < 14.0 and not _hints_shown.has("flare"):
+		_hints_shown["flare"] = true
+		ui.show_hint("Tap to flare the Sunstone", Vector2.ZERO)
+		return
+	if light < 0.6 and not _hints_shown.has("drops"):
+		_hints_shown["drops"] = true
+		ui.show_hint("Sun-drops keep the stone lit", Vector2.ZERO)
 		return
 	if s > seg.length - TURN_WINDOW - 2.0 and not _hints_shown.has("turn%d" % seg.index):
 		_hints_shown["turn%d" % seg.index] = true
@@ -503,7 +657,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_touch_start = event.position
 			_touch_active = true
 			_swiped = false
+			_touch_time = Time.get_ticks_msec()
 		else:
+			# A short touch that didn't travel is a tap: flare.
+			if _touch_active and not _swiped and (event.position - _touch_start).length() < SWIPE_DISTANCE * 0.6 \
+					and Time.get_ticks_msec() - _touch_time < 350:
+				_flare()
 			_touch_active = false
 	elif event is InputEventScreenDrag and _touch_active and not _swiped:
 		var d: Vector2 = event.position - _touch_start
@@ -520,6 +679,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_UP, KEY_W, KEY_SPACE: _swipe(Vector2.UP)
 			KEY_DOWN, KEY_S: _swipe(Vector2.DOWN)
 			KEY_ESCAPE, KEY_P: _pause()
+			KEY_F, KEY_E: _flare()
 
 func _swipe(dir: Vector2) -> void:
 	if state != State.RUNNING:
@@ -691,6 +851,7 @@ func _apply_shake(delta: float) -> void:
 
 func _make_environment() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
+	_sky_mat = sky_mat
 	sky_mat.sky_top_color = Color("#46285C")
 	sky_mat.sky_horizon_color = Color("#F09A5E")
 	sky_mat.sky_curve = 0.22
@@ -703,6 +864,8 @@ func _make_environment() -> void:
 	sky.sky_material = sky_mat
 
 	var env := Environment.new()
+	_env = env
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	# Shade is a muted dusk violet, not the sky's saturated purple.
@@ -732,6 +895,7 @@ func _make_environment() -> void:
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
+	_sun = sun
 	sun.light_color = Color("#FFC890")
 	sun.light_energy = 1.0
 	# Late afternoon from the side: long enough to model the stones, short
@@ -812,6 +976,25 @@ func _drive(seg: World.Segment) -> void:
 		var ahead: float = g.x - s
 		if ahead > 0.0 and ahead < 2.2 and y <= 0.01:
 			_swipe(Vector2.UP)
+	if _freeze_t <= 0.0 and light >= FLARE_COST and (chaser_gap < 5.0 or (light < DARK_LIGHT and chaser_gap < 10.0)):
+		_flare()
+	# Drift toward the nearest sun-drop when the lane over is clear.
+	if lane != lane_target or s > seg.length - TURN_WINDOW - 1.0:
+		return
+	for c in seg.coins:
+		var ahead: float = c.s - s
+		if c.taken or ahead < 2.0 or ahead > 16.0:
+			continue
+		var want := clampi(roundi(c.x / LW), -1, 1)
+		if want == lane:
+			return
+		var step := signi(want - lane)
+		for o in seg.obstacles:
+			var oa: float = o.s - s
+			if oa > -1.0 and oa < 9.0 and (o.lane == lane + step or o.lane == World.ALL) and o.kind == "statue":
+				return
+		_swipe(Vector2(step, 0))
+		return
 
 ## Dev-only perf switches, read from user:// flag files so a device build can be
 ## profiled without rebuilding: perf_noglow, perf_noshadow, perf_nomsaa,

@@ -239,10 +239,15 @@ static func far_pyramid(m: Mesher, xf: Transform3D, scale: float) -> void:
 		m.box(sub(xf, Vector3(0, (i * 6.0 + 3.0) * scale, 0)), Vector3(w, 6.0 * scale, w), STONE_DARK.lerp(Color("#5B4A63"), 0.5))
 	m.box(sub(xf, Vector3(0, 33.0 * scale, 0)), Vector3(7.0 * scale, 6.0 * scale, 7.0 * scale), CINNABAR.darkened(0.3))
 
-## The shared coin mesh: a faceted gold disc with a glowing heart.
+## The shared sun-drop mesh: a small gold sun disc with the four glowing
+## petals of the k'in glyph on both faces — the HUD's drop glyph in 3D.
 static func coin_mesh() -> ArrayMesh:
 	var m := Mesher.new()
 	var upright := Basis(Vector3.RIGHT, PI / 2.0)
-	m.prism(Transform3D(upright, Vector3(0, 0, -0.06)), 0.34, 0.34, 0.12, 8, GOLD)
-	m.prism(Transform3D(upright, Vector3(0, 0, -0.08)), 0.14, 0.14, 0.16, 4, FLAME_CORE, true)
+	m.prism(Transform3D(upright, Vector3(0, 0, -0.06)), 0.34, 0.34, 0.12, 12, GOLD)
+	for face in [-1.0, 1.0]:
+		for k in 4:
+			var a := PI / 4.0 + k * PI / 2.0
+			var petal := Basis(Vector3.FORWARD, a) * Basis().scaled(Vector3(1.0, 0.55, 1.0))
+			m.box(Transform3D(petal, Vector3(cos(a) * 0.14, sin(a) * 0.14, face * 0.07)), Vector3(0.17, 0.17, 0.03), FLAME_CORE, true)
 	return m.commit()

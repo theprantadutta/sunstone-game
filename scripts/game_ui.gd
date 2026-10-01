@@ -1,7 +1,8 @@
 class_name GameUI
 extends CanvasLayer
-## Every screen, composed from UiKit: title, HUD, pause, settings, results.
-## The 3D world is always the background; these are slabs laid over it.
+## Every screen, composed from UiKit's codex pieces: title, HUD, pause,
+## settings, results. The 3D world is always the background; menus are codex
+## pages that unfold over it.
 ##
 ## Layout is anchor-based throughout, so it holds on any aspect ratio (tall
 ## 20:9 phones included) and re-flows if the window changes size.
@@ -14,41 +15,78 @@ signal again_pressed
 signal settings_changed
 signal back_requested
 
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
-		back_requested.emit()
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_BACK:
-		back_requested.emit()
-		get_viewport().set_input_as_handled()
-
-## Closes the settings modal if it is open; true when it was.
-func close_modal() -> bool:
-	if _settings and _settings.visible:
-		_settings.visible = false
-		return true
-	return false
-
 var _save: SaveData
 var _top := 28.0 ## below the status bar / camera cutout
 
 var _title: Control
 var _wordmark: UiKit.Wordmark
-var _best_label: Label
+var _best: UiKit.PaperSlip
 var _hud: Control
 var _distance: Label
-var _coins: Label
-var _hint: UiKit.HintToast
+var _drops: Label
+var _meter: UiKit.SunMeter
+var _hint: UiKit.HintStrip
 var _danger: UiKit.DangerFlash
 var _pause: Control
 var _settings: Control
 var _results: Control
+var _dark: TextureRect
+var _flare_rect: ColorRect
+
+## A freehand cinnabar rule between two registers of a page.
+class Rule:
+	extends Control
+	var seed := 0
+	func _init(s := 0) -> void:
+		seed = s
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func _draw() -> void:
+		UiKit.draw_rule(self, Vector2(0, size.y / 2.0), Vector2(size.x, size.y / 2.0), UiKit.CINNABAR, 3.0, seed)
+
+## A number written in Maya bar-and-dot numerals.
+class MayaNumber:
+	extends Control
+	var value := 0
+	var unit := 9.0
+	var color := UiKit.CINNABAR
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func set_value(v: int) -> void:
+		value = v
+		queue_redraw()
+	func _draw() -> void:
+		UiKit.draw_maya_number(self, Vector2.ZERO, value, unit, color)
 
 func _ready() -> void:
 	layer = 10
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_top = _safe_top() + 28.0
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_back()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_BACK:
+		_back()
+		get_viewport().set_input_as_handled()
+
+## Android can deliver one press of back both as a key and as a request;
+## count it once.
+var _last_back := -1000
+func _back() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_back < 250:
+		return
+	_last_back = now
+	back_requested.emit()
+
+## Closes the settings page if it is open; true when it was.
+func close_modal() -> bool:
+	if _settings and _settings.visible:
+		_settings.visible = false
+		return true
+	return false
 
 func setup(save: SaveData) -> void:
 	_save = save
@@ -57,6 +95,32 @@ func setup(save: SaveData) -> void:
 	_danger = UiKit.DangerFlash.new()
 	_root().add_child(_danger)
 	_danger.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Darkness at the edges: a radial vignette, faded in as the light fails.
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.02, 0.02, 0.06, 0.0))
+	grad.set_color(1, Color(0.02, 0.02, 0.06, 0.95))
+	grad.add_point(0.55, Color(0.02, 0.02, 0.06, 0.15))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.55)
+	tex.fill_to = Vector2(1.05, 1.05)
+	tex.width = 256
+	tex.height = 256
+	_dark = TextureRect.new()
+	_dark.texture = tex
+	_dark.stretch_mode = TextureRect.STRETCH_SCALE
+	_dark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_dark.modulate.a = 0.0
+	_root().add_child(_dark)
+	_root().move_child(_dark, 0)
+	_dark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_flare_rect = ColorRect.new()
+	_flare_rect.color = Color("#FFE6A8")
+	_flare_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_flare_rect.modulate.a = 0.0
+	_root().add_child(_flare_rect)
+	_flare_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 ## The camera-cutout inset, in UI units.
 func _safe_top() -> float:
@@ -99,7 +163,6 @@ const TOP_LEFT := Rect2(0, 0, 0, 0)
 const TOP_RIGHT := Rect2(1, 0, 0, 0)
 const TOP_CENTER := Rect2(0.5, 0, 0, 0)
 const BOTTOM_CENTER := Rect2(0.5, 1, 0, 0)
-const BOTTOM_WIDE := Rect2(0, 1, 1, 0)
 const CENTER := Rect2(0.5, 0.5, 0, 0)
 
 func _hide_all() -> void:
@@ -113,27 +176,29 @@ func _build_title() -> void:
 	_title = _layer()
 	_wordmark = UiKit.Wordmark.new()
 	_title.add_child(_wordmark)
-	_pin(_wordmark, TOP_CENTER, Rect2(-320, _top + 30, 640, 260))
+	_pin(_wordmark, TOP_CENTER, Rect2(-320, _top + 6, 640, 300))
 
-	var run := UiKit.SlabButton.new("Run", UiKit.SlabButton.Kind.GOLD)
-	run.font_size = 44
+	var run := UiKit.GlyphButton.new("Run", UiKit.GlyphButton.Kind.PRIMARY)
+	run.font_size = 48
 	_title.add_child(run)
-	_pin(run, BOTTOM_CENTER, Rect2(-210, -310, 420, 122))
+	_pin(run, BOTTOM_CENTER, Rect2(-200, -340, 400, 128))
 	run.pressed.connect(func(): run_pressed.emit())
 
-	_best_label = UiKit.label("", UiKit.text_font(800), 30, UiKit.LIMESTONE, 8)
-	_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title.add_child(_best_label)
-	_pin(_best_label, BOTTOM_WIDE, Rect2(0, -172, 0, 44))
+	_best = UiKit.PaperSlip.new()
+	_title.add_child(_best)
+	_pin(_best, BOTTOM_CENTER, Rect2(-200, -190, 400, 70))
 
-	var gear := UiKit.IconButton.new(UiKit.IconButton.Icon.GEAR)
+	var gear := UiKit.GlyphIcon.new(UiKit.GlyphIcon.Icon.SETTINGS)
 	_title.add_child(gear)
-	_pin(gear, TOP_RIGHT, Rect2(-112, _top, 84, 84))
+	_pin(gear, TOP_RIGHT, Rect2(-108, _top, 84, 84))
 	gear.pressed.connect(_open_settings)
 
 func show_title(best: int) -> void:
 	_hide_all()
-	_best_label.text = "Best %s m" % UiKit.thousands(best) if best > 0 else "Outrun the stone jaguars"
+	if best > 0:
+		_best.set_text("Best %s m" % UiKit.thousands(best), best)
+	else:
+		_best.set_text("Outrun the stone jaguars")
 	_title.visible = true
 	_wordmark.replay()
 
@@ -141,33 +206,45 @@ func show_title(best: int) -> void:
 
 func _build_hud() -> void:
 	_hud = _layer()
-	_distance = UiKit.label("0 m", UiKit.display_font(), 54, UiKit.LIMESTONE, 12)
+	_distance = UiKit.label("0 m", UiKit.display_font(), 52, UiKit.STUCCO, 12)
 	_hud.add_child(_distance)
-	_pin(_distance, TOP_LEFT, Rect2(30, _top - 8, 420, 80))
+	_pin(_distance, TOP_LEFT, Rect2(28, _top - 6, 320, 80))
 
-	var glyph := UiKit.CoinGlyph.new(34)
+	var glyph := UiKit.DropGlyph.new(34)
 	_hud.add_child(glyph)
-	_pin(glyph, TOP_LEFT, Rect2(34, _top + 80, 34, 34))
-	_coins = UiKit.label("0", UiKit.text_font(900), 36, UiKit.GOLD, 10)
-	_hud.add_child(_coins)
-	_pin(_coins, TOP_LEFT, Rect2(78, _top + 70, 200, 50))
+	_pin(glyph, TOP_LEFT, Rect2(32, _top + 80, 34, 34))
+	_drops = UiKit.label("0", UiKit.text_font(900), 34, UiKit.OCHRE_LIGHT, 10)
+	_hud.add_child(_drops)
+	_pin(_drops, TOP_LEFT, Rect2(76, _top + 70, 200, 50))
 
-	var pause := UiKit.IconButton.new(UiKit.IconButton.Icon.PAUSE)
+	_meter = UiKit.SunMeter.new()
+	_hud.add_child(_meter)
+	_pin(_meter, TOP_CENTER, Rect2(-75, _top - 10, 150, 190))
+
+	var pause := UiKit.GlyphIcon.new(UiKit.GlyphIcon.Icon.PAUSE)
 	_hud.add_child(pause)
-	_pin(pause, TOP_RIGHT, Rect2(-112, _top, 84, 84))
+	_pin(pause, TOP_RIGHT, Rect2(-108, _top, 84, 84))
 	pause.pressed.connect(func(): pause_pressed.emit())
 
-	_hint = UiKit.HintToast.new()
+	_hint = UiKit.HintStrip.new()
 	_hud.add_child(_hint)
-	_pin(_hint, Rect2(0.5, 0.62, 0, 0), Rect2(-250, 0, 500, 120))
+	_pin(_hint, Rect2(0.5, 0.62, 0, 0), Rect2(-270, 0, 540, 112))
 
 func show_hud() -> void:
 	_hide_all()
 	_hud.visible = true
 
-func set_run_numbers(metres: int, coin_count: int) -> void:
+func set_run_numbers(metres: int, drop_count: int) -> void:
 	_distance.text = "%s m" % UiKit.thousands(metres)
-	_coins.text = str(coin_count)
+	_drops.text = str(drop_count)
+
+## The Sunstone's charge, how far night has fallen, and how close the jaguars are.
+func set_light(value: float, night: float, chaser_gap: float) -> void:
+	_meter.light = value
+	_meter.night = night
+	_meter.gap = chaser_gap
+	# The world closes in from the edges as the light fails at night.
+	_dark.modulate.a = clampf((0.45 - value) / 0.45, 0.0, 1.0) * lerpf(0.5, 0.9, night)
 
 func show_hint(text: String, dir: Vector2) -> void:
 	_hint.show_hint(text, dir)
@@ -178,134 +255,157 @@ func dismiss_hint() -> void:
 func flash_danger() -> void:
 	_danger.flash()
 
-# ----------------------------------------------------------- modal slab ---
+## A warm white burst for the flare.
+func flash_flare() -> void:
+	_flare_rect.modulate.a = 0.55
+	var tw := create_tween()
+	tw.tween_property(_flare_rect, "modulate:a", 0.0, 0.45)
 
-## A dimmed backdrop plus a centred slab; returns [layer, slab].
-func _modal(height: float, dim := 0.62) -> Array:
+# ---------------------------------------------------------------- pages ---
+
+## A dimmed backdrop plus a centred codex page; returns [layer, page].
+func _modal(height: float, dim := 0.55) -> Array:
 	var root := _layer()
 	var shade := ColorRect.new()
-	shade.color = Color(UiKit.DUSK, dim)
+	shade.color = Color(UiKit.NIGHT, dim)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(shade)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var slab := UiKit.Slab.new()
-	root.add_child(slab)
-	_pin(slab, CENTER, Rect2(-290, -height / 2.0, 580, height))
-	return [root, slab]
+	var page := UiKit.Page.new()
+	root.add_child(page)
+	_pin(page, CENTER, Rect2(-300, -height / 2.0, 600, height))
+	return [root, page]
 
-func _settings_rows(parent: Control, y: float) -> float:
+func _headline(page: Control, text: String) -> void:
+	var l := UiKit.label(text, UiKit.display_font(), 46, UiKit.INK)
+	l.position = Vector2(56, 44)
+	page.add_child(l)
+	_rule(page, 122, 1)
+
+func _rule(page: Control, y: float, seed: int) -> void:
+	var r := Rule.new(seed)
+	r.position = Vector2(48, y - 6)
+	r.size = Vector2(504, 12)
+	page.add_child(r)
+
+func _settings_rows(page: Control, y: float) -> float:
+	var i := 0
 	for row in [["Music", "music"], ["Sound", "sound"], ["Vibration", "vibration"]]:
 		var key: String = row[1]
 		var t := UiKit.Toggle.new(row[0], _save.get(key))
-		t.position = Vector2(54, y)
-		t.size = Vector2(472, 76)
+		t.position = Vector2(56, y)
+		t.size = Vector2(488, 76)
 		t.toggled.connect(func(on: bool):
 			_save.set(key, on)
 			settings_changed.emit())
-		parent.add_child(t)
+		page.add_child(t)
 		y += 84
-	return y
-
-func _headline(parent: Control, text: String, y: float, font_size := 52) -> void:
-	var l := UiKit.label(text, UiKit.display_font(), font_size, UiKit.LIMESTONE)
-	l.position = Vector2(54, y)
-	parent.add_child(l)
-
-# ---------------------------------------------------------------- pause ---
+		i += 1
+	_rule(page, y + 8, 7)
+	return y + 16
 
 func show_pause() -> void:
 	_hide_all()
 	if _pause:
 		_pause.queue_free()
-	var m := _modal(700)
+	var m := _modal(720)
 	_pause = m[0]
-	var slab: Control = m[1]
-	_headline(slab, "Paused", 44)
-	var y := _settings_rows(slab, 150)
-	var resume := UiKit.SlabButton.new("Resume", UiKit.SlabButton.Kind.GOLD)
-	resume.position = Vector2(54, y + 26)
-	resume.size = Vector2(472, 104)
+	var page: UiKit.Page = m[1]
+	_headline(page, "Paused")
+	var y := _settings_rows(page, 140)
+	var resume := UiKit.GlyphButton.new("Resume", UiKit.GlyphButton.Kind.PRIMARY)
+	resume.position = Vector2(56, y + 18)
+	resume.size = Vector2(488, 112)
 	resume.pressed.connect(func(): resume_pressed.emit())
-	slab.add_child(resume)
-	var home := UiKit.SlabButton.new("Home", UiKit.SlabButton.Kind.JADE)
-	home.position = Vector2(54, y + 144)
-	home.size = Vector2(472, 92)
+	page.add_child(resume)
+	var home := UiKit.GlyphButton.new("Home", UiKit.GlyphButton.Kind.SECONDARY)
+	home.font_size = 30
+	home.position = Vector2(56, y + 140)
+	home.size = Vector2(488, 96)
 	home.pressed.connect(func(): home_pressed.emit())
-	slab.add_child(home)
-
-# ------------------------------------------------------------- settings ---
+	page.add_child(home)
+	page.open()
 
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(560)
+	var m := _modal(580)
 	_settings = m[0]
-	var slab: Control = m[1]
-	_headline(slab, "Settings", 44)
-	var y := _settings_rows(slab, 150)
-	var done := UiKit.SlabButton.new("Done", UiKit.SlabButton.Kind.GOLD)
-	done.position = Vector2(54, y + 26)
-	done.size = Vector2(472, 104)
+	var page: UiKit.Page = m[1]
+	_headline(page, "Settings")
+	var y := _settings_rows(page, 140)
+	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
+	done.position = Vector2(56, y + 18)
+	done.size = Vector2(488, 112)
 	done.pressed.connect(func(): _settings.visible = false)
-	slab.add_child(done)
+	page.add_child(done)
+	page.open()
 
 # -------------------------------------------------------------- results ---
 
-func show_results(cause: String, metres: int, coin_count: int, best: int, is_best: bool) -> void:
+## The run, recorded as a codex entry: what ended it, the distance in our
+## numerals and in Maya ones, the sun-drops gathered, and the way back in.
+func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool) -> void:
 	_hide_all()
 	if _results:
 		_results.queue_free()
 	_results = _layer()
 	var shade := ColorRect.new()
-	shade.color = Color(UiKit.DUSK, 0.45)
+	shade.color = Color(UiKit.NIGHT, 0.4)
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	_results.add_child(shade)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	# The slab is pinned to the bottom; it rises by animating a holder's offset.
-	var holder := Control.new()
-	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_results.add_child(holder)
-	_pin(holder, BOTTOM_CENTER, Rect2(-330, -730, 660, 660))
-	var slab := UiKit.Slab.new()
-	slab.size = Vector2(660, 660)
-	slab.position = Vector2(0, 760)
-	holder.add_child(slab)
+	var page := UiKit.Page.new()
+	page.seed = 19
+	_results.add_child(page)
+	_pin(page, BOTTOM_CENTER, Rect2(-310, -760, 620, 700))
 
-	var head := UiKit.label(cause, UiKit.display_font(), 40, UiKit.LIMESTONE)
-	head.position = Vector2(54, 50)
-	head.size = Vector2(560, 110)
+	var head := UiKit.label(cause, UiKit.display_font(), 38, UiKit.INK)
+	head.position = Vector2(56, 44)
+	head.size = Vector2(508, 100)
 	head.autowrap_mode = TextServer.AUTOWRAP_WORD
-	slab.add_child(head)
+	page.add_child(head)
+	_rule(page, 150, 21)
 
-	var dist := UiKit.label("0 m", UiKit.display_font(), 100, UiKit.GOLD)
-	dist.position = Vector2(50, 150)
-	slab.add_child(dist)
+	var dist := UiKit.label("0 m", UiKit.display_font(), 92, UiKit.INK)
+	dist.position = Vector2(52, 160)
+	page.add_child(dist)
+	var maya := MayaNumber.new()
+	maya.position = Vector2(510, 176)
+	maya.size = Vector2(40, 120)
+	page.add_child(maya)
 
-	var glyph := UiKit.CoinGlyph.new(36)
-	glyph.position = Vector2(56, 316)
-	slab.add_child(glyph)
-	var coin_l := UiKit.label("+%d coins" % coin_count, UiKit.text_font(900), 34, UiKit.GOLD)
-	coin_l.position = Vector2(104, 304)
-	slab.add_child(coin_l)
+	var glyph := UiKit.DropGlyph.new(36)
+	glyph.position = Vector2(58, 306)
+	page.add_child(glyph)
+	var drops := UiKit.label("+%d sun-drops" % drop_count, UiKit.text_font(900), 32, UiKit.INK)
+	drops.position = Vector2(106, 298)
+	page.add_child(drops)
 
 	var best_l := UiKit.label("New best" if is_best else "Best %s m" % UiKit.thousands(best),
-		UiKit.text_font(900 if is_best else 800), 32, UiKit.MAYA_BLUE if is_best else UiKit.LIMESTONE)
-	best_l.position = Vector2(56, 362)
-	slab.add_child(best_l)
+		UiKit.display_font() if is_best else UiKit.text_font(900), 30, UiKit.CINNABAR if is_best else UiKit.INK)
+	best_l.position = Vector2(58, 352)
+	page.add_child(best_l)
+	_rule(page, 420, 23)
 
-	var again := UiKit.SlabButton.new("Run again", UiKit.SlabButton.Kind.GOLD)
-	again.position = Vector2(54, 440)
-	again.size = Vector2(552, 106)
+	var again := UiKit.GlyphButton.new("Run again", UiKit.GlyphButton.Kind.PRIMARY)
+	again.position = Vector2(56, 444)
+	again.size = Vector2(508, 116)
 	again.pressed.connect(func(): again_pressed.emit())
-	slab.add_child(again)
-	var home := UiKit.SlabButton.new("Home", UiKit.SlabButton.Kind.JADE)
-	home.position = Vector2(54, 556)
-	home.size = Vector2(552, 80)
+	page.add_child(again)
+	var home := UiKit.GlyphButton.new("Home", UiKit.GlyphButton.Kind.SECONDARY)
+	home.font_size = 30
+	home.position = Vector2(56, 574)
+	home.size = Vector2(508, 96)
 	home.pressed.connect(func(): home_pressed.emit())
-	slab.add_child(home)
+	page.add_child(home)
 
-	# The one orchestrated moment: the slab rises, then the distance counts up.
+	# The one orchestrated moment: the page unfolds, then the distance is
+	# counted out — in both kinds of numerals.
+	page.open()
 	var tw := create_tween()
-	tw.tween_property(slab, "position", Vector2.ZERO, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw.tween_method(func(v: float): dist.text = "%s m" % UiKit.thousands(int(v)), 0.0, float(metres), 0.8).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.5)
+	tw.tween_method(func(v: float):
+		dist.text = "%s m" % UiKit.thousands(int(v))
+		maya.set_value(int(v)), 0.0, float(metres), 0.8).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)

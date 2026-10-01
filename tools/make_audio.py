@@ -228,6 +228,24 @@ def make_music():
     write("music", buf, 0.75)
 
 
+def make_dusk():
+    """The Sunstone's flare and its fizzle when there's no light left."""
+    # Flare: a bright rising shimmer — stacked bells over a rising whoosh.
+    f = whoosh(0.7, 400, 5000)
+    for k, (note, at) in enumerate([(659.25, 0.0), (987.77, 0.05), (1318.5, 0.1), (1975.5, 0.16)]):
+        mix_into(f, bell(note, 0.6), int(at * SR), 0.55 - k * 0.08)
+    write("flare", fade(f, 0.004, 0.2), 0.85)
+    # Fizzle: a dull, falling puff.
+    z = sweep(420, 160, 0.22, 0.06, "tri")
+    mix_into(z, lowpass(noise(int(SR * 0.2)), 900), 0, 0.4)
+    write("fizzle", fade(z), 0.6)
+
+
 if __name__ == "__main__":
-    make_sfx()
-    make_music()
+    import sys
+    if "--dusk" in sys.argv:
+        make_dusk()
+    else:
+        make_sfx()
+        make_music()
+        make_dusk()

@@ -8,6 +8,7 @@ const STONE_DARK := Color("#76806C")
 const SPOTS := Color("#3E463B")
 
 var _phase := randf() * TAU
+var frozen := false ## held still by the Sunstone's flare
 var _body: Node3D
 var _legs: Array[Node3D] = []
 var _tail: Node3D
@@ -57,6 +58,8 @@ func _part(parent: Node3D, build: Callable) -> void:
 
 ## Gallop: front and back legs move in pairs, the spine rocks, the tail lashes.
 func animate(delta: float, speed: float) -> void:
+	if frozen:
+		return # turned back to stone mid-stride
 	# Bounds of about 2.4 m, so the paws keep pace with the ground.
 	_phase += delta * TAU * clampf(speed / 4.8, 0.8, 3.0)
 	var s := sin(_phase)

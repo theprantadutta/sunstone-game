@@ -1,23 +1,23 @@
 class_name UiKit
-## The Sunstone design system in code: palette, type, and the components every
-## screen is built from. See DESIGN.md.
+## The Sunstone design system in code: the Codex. Every screen is a page from a
+## Maya codex — lime-stucco bark paper, black ink linework, cinnabar-red rules
+## between registers, glyph-block cartouches for buttons. See DESIGN.md.
 ##
-## Shape: polished stone — generous, smooth curves, chunky depth. Buttons are
-## pills standing on a darker lip they press into, with a soft sheen on top;
-## panels are deep rounded slabs. All curves are anti-aliased styleboxes.
+## Lines waver like a scribe's hand, but steadily (seeded), never boiling.
 
-const MAYA_BLUE := Color("#3FA7B5")
+const INK := Color("#1B1410")
+const STUCCO := Color("#EFE3C8")
+const STUCCO_SHADE := Color("#C9B48A")
 const CINNABAR := Color("#B8322A")
-const JADE := Color("#0E3B33")
-const JADE_LIGHT := Color("#1C5A4E")
-const GOLD := Color("#F4B732")
-const GOLD_DEEP := Color("#B9801A")
-const DUSK := Color("#2A1B3D")
-const LIMESTONE := Color("#EDE6D6")
-const INK := Color("#1A120C")
+const CINNABAR_DEEP := Color("#7A1D17")
+const MAYA_BLUE := Color("#3FA7B5")
+const OCHRE := Color("#E3A82F") ## the sun, sun-drops
+const OCHRE_LIGHT := Color("#FFE3A0")
+const NIGHT := Color("#0B0E24") ## the dim behind an open page
 
 static var _display: FontFile
 static var _text := {}
+static var _paper: Texture2D
 
 static func display_font() -> FontFile:
 	if _display == null:
@@ -33,6 +33,11 @@ static func text_font(weight := 800) -> Font:
 		fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): weight}
 		_text[weight] = fv
 	return _text[weight]
+
+static func paper() -> Texture2D:
+	if _paper == null:
+		_paper = load("res://assets/ui/paper.png")
+	return _paper
 
 static func label(text: String, font: Font, size: int, color: Color, outline := 0, outline_color := INK) -> Label:
 	var l := Label.new()
@@ -56,81 +61,257 @@ static func thousands(n: int) -> String:
 		digits = digits.substr(0, digits.length() - 3)
 	return ("-" if n < 0 else "") + digits + out
 
-## A rounded box: [fill] with corner [radius], optional [border], optional
-## soft [shadow] (alpha) dropped [shadow_y] below. Anti-aliased.
-static func round_box(fill: Color, radius: float, border := Color(0, 0, 0, 0), border_w := 0, shadow := 0.0, shadow_y := 0.0) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = fill
-	sb.set_corner_radius_all(int(radius))
-	sb.corner_detail = 12
-	sb.anti_aliasing = true
-	sb.anti_aliasing_size = 1.2
-	if border_w > 0:
-		sb.border_color = border
-		sb.set_border_width_all(border_w)
-	if shadow > 0.0:
-		sb.shadow_color = Color(0, 0, 0, shadow)
-		sb.shadow_size = 18
-		sb.shadow_offset = Vector2(0, shadow_y)
-	return sb
+# ============================================================ geometry ===
 
-## A rim line just inside [rect] — the polished edge of a slab.
-static func draw_rim(ci: CanvasItem, rect: Rect2, radius: float, color: Color, inset := 7.0, width := 2) -> void:
-	var sb := round_box(Color(0, 0, 0, 0), maxf(radius - inset, 4.0), color, width)
-	sb.draw_center = false
-	ci.draw_style_box(sb, rect.grow(-inset))
+## A steady hand-drawn waver along a perimeter: two slow sines, seeded.
+static func _waver(t: float, seed: int, amount: float) -> float:
+	return amount * (sin(t * 7.0 + seed * 1.7) * 0.6 + sin(t * 17.0 + seed * 0.9) * 0.4)
 
-## The sheen across the upper part of a face: light catching polished stone.
-static func draw_sheen(ci: CanvasItem, rect: Rect2, radius: float, alpha := 0.2) -> void:
-	var r := Rect2(rect.position + Vector2(6, 5), Vector2(rect.size.x - 12, rect.size.y * 0.42))
-	var sb := round_box(Color(1, 1, 1, alpha), minf(radius - 4.0, r.size.y / 2.0))
-	ci.draw_style_box(sb, r)
+## The glyph block: the squared, puffy cartouche Maya scribes wrote each glyph
+## into — rounded corners and gently bulging sides.
+static func glyph_block(rect: Rect2, seed := 0, wobble := 1.0) -> PackedVector2Array:
+	var m := minf(rect.size.x, rect.size.y)
+	var r := m * 0.3
+	var bulge := m * 0.05
+	var corners := [
+		Vector2(rect.end.x - r, rect.position.y + r), Vector2(rect.end.x - r, rect.end.y - r),
+		Vector2(rect.position.x + r, rect.end.y - r), Vector2(rect.position.x + r, rect.position.y + r),
+	]
+	var pts := PackedVector2Array()
+	for k in 4:
+		var a0 := -PI / 2.0 + k * PI / 2.0
+		var c: Vector2 = corners[k]
+		for i in 7:
+			var a := a0 + PI / 2.0 * i / 6.0
+			pts.append(c + Vector2(cos(a), sin(a)) * r)
+		var a1 := a0 + PI / 2.0
+		var from := c + Vector2(cos(a1), sin(a1)) * r
+		var nxt: Vector2 = corners[(k + 1) % 4]
+		var to := nxt + Vector2(cos(a1), sin(a1)) * r
+		var normal := Vector2(cos(a1), sin(a1))
+		var steps := maxi(int(from.distance_to(to) / 14.0), 2)
+		for i in range(1, steps):
+			var t := float(i) / steps
+			pts.append(from.lerp(to, t) + normal * bulge * sin(PI * t))
+	if wobble > 0.0:
+		var c0 := rect.get_center()
+		for i in pts.size():
+			var d := (pts[i] - c0).normalized()
+			pts[i] += d * _waver(float(i) / pts.size() * TAU, seed, wobble)
+	return pts
 
-# ================================================================ slab ===
+## A paper rectangle with a slightly torn, hand-cut edge.
+static func torn(rect: Rect2, seed := 0, rough := 1.8) -> PackedVector2Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var pts := PackedVector2Array()
+	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	for k in 4:
+		var a: Vector2 = corners[k]
+		var b: Vector2 = corners[(k + 1) % 4]
+		var n := (b - a).normalized().orthogonal()
+		var steps := maxi(int(a.distance_to(b) / 16.0), 2)
+		for i in steps:
+			var t := float(i) / steps
+			pts.append(a.lerp(b, t) + n * rng.randf_range(-rough, rough))
+	return pts
 
-## A polished panel: deep jade, big soft corners, a Maya-blue rim, and a soft
-## shadow that lifts it off the scene.
-class Slab:
+static func ellipse(c: Vector2, rx: float, ry: float, angle := 0.0, seg := 20) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var rot := Vector2(cos(angle), sin(angle))
+	for i in seg:
+		var t := TAU * i / seg
+		var p := Vector2(cos(t) * rx, sin(t) * ry)
+		pts.append(c + Vector2(p.x * rot.x - p.y * rot.y, p.x * rot.y + p.y * rot.x))
+	return pts
+
+static func closed(pts: PackedVector2Array) -> PackedVector2Array:
+	var out := pts.duplicate()
+	out.append(pts[0])
+	return out
+
+# ============================================================== drawing ===
+
+## Fills [pts] with codex paper, tinted by [tint] (white = plain stucco).
+static func draw_paper(ci: CanvasItem, pts: PackedVector2Array, tint := Color.WHITE) -> void:
+	var uvs := PackedVector2Array()
+	for p in pts:
+		uvs.append(p / 512.0)
+	ci.draw_colored_polygon(pts, tint, uvs, paper())
+
+## An ink outline along a closed shape.
+static func draw_ink(ci: CanvasItem, pts: PackedVector2Array, color := INK, width := 4.0) -> void:
+	ci.draw_polyline(closed(pts), color, width, true)
+
+## A red rule dividing two registers, drawn freehand.
+static func draw_rule(ci: CanvasItem, a: Vector2, b: Vector2, color := CINNABAR, width := 3.0, seed := 0) -> void:
+	var pts := PackedVector2Array()
+	var steps := maxi(int(a.distance_to(b) / 20.0), 2)
+	var n := (b - a).normalized().orthogonal()
+	for i in steps + 1:
+		var t := float(i) / steps
+		pts.append(a.lerp(b, t) + n * _waver(t * 3.0, seed, 0.8))
+	ci.draw_polyline(pts, color, width, true)
+
+## The k'in glyph — the Maya sign for sun and day: a four-petalled flower in a
+## round cartouche. [lit] 0..1 dims the petals.
+static func draw_kin(ci: CanvasItem, c: Vector2, r: float, lit := 1.0, ink_w := 3.0, paper_fill := true) -> void:
+	var disc := ellipse(c, r, r, 0.0, 40)
+	if paper_fill:
+		draw_paper(ci, disc)
+	else:
+		ci.draw_colored_polygon(disc, STUCCO)
+	var petal := OCHRE.lerp(Color("#5A4632"), 1.0 - lit)
+	for k in 4:
+		var a := PI / 4.0 + k * PI / 2.0
+		var pc := c + Vector2(cos(a), sin(a)) * r * 0.38
+		var e := ellipse(pc, r * 0.36, r * 0.22, a, 18)
+		ci.draw_colored_polygon(e, petal)
+		ci.draw_polyline(closed(e), INK, maxf(ink_w - 1.0, 1.5), true)
+	var hub := ellipse(c, r * 0.17, r * 0.17, 0.0, 16)
+	ci.draw_colored_polygon(hub, OCHRE_LIGHT.lerp(petal, 0.4))
+	ci.draw_polyline(closed(hub), INK, maxf(ink_w - 1.0, 1.5), true)
+	ci.draw_polyline(closed(disc), INK, ink_w, true)
+
+## A Maya bar-and-dot numeral (base 20, highest place on top), its top-left at
+## [origin], each place [u]*4 wide. Returns the drawn height.
+static func draw_maya_number(ci: CanvasItem, origin: Vector2, n: int, u := 8.0, color := INK) -> float:
+	var places: Array[int] = []
+	var v := absi(n)
+	if v == 0:
+		places.append(0)
+	while v > 0:
+		places.push_front(v % 20)
+		v /= 20
+	var y := origin.y
+	for i in places.size():
+		y += _maya_digit(ci, Vector2(origin.x, y), places[i], u, color)
+		if i < places.size() - 1:
+			y += u * 1.1 # gap between places
+	return y - origin.y
+
+## Height of [n] written as a Maya numeral at unit [u].
+static func maya_height(n: int, u := 8.0) -> float:
+	var h := 0.0
+	var v := absi(n)
+	var first := true
+	if v == 0:
+		return u * 2.0
+	while v > 0:
+		var d := v % 20
+		var dh := u * 2.0 if d == 0 else (u * 1.1 if d % 5 > 0 else 0.0) + (d / 5) * u * 1.05
+		h += dh + (0.0 if first else u * 1.1)
+		first = false
+		v /= 20
+	return h
+
+static func _maya_digit(ci: CanvasItem, at: Vector2, d: int, u: float, color: Color) -> float:
+	var w := u * 4.0
+	if d == 0:
+		# The shell, the Maya zero.
+		var sh := ellipse(at + Vector2(w / 2.0, u), w / 2.0, u * 0.9, 0.0, 22)
+		ci.draw_polyline(closed(sh), color, maxf(u * 0.28, 1.5), true)
+		ci.draw_line(at + Vector2(w * 0.25, u * 0.7), at + Vector2(w * 0.75, u * 0.7), color, maxf(u * 0.22, 1.2), true)
+		ci.draw_line(at + Vector2(w * 0.3, u * 1.3), at + Vector2(w * 0.7, u * 1.3), color, maxf(u * 0.22, 1.2), true)
+		return u * 2.0
+	var y := 0.0
+	var dots := d % 5
+	if dots > 0:
+		var gap := w / 4.0
+		var x0 := at.x + w / 2.0 - gap * (dots - 1) / 2.0
+		for i in dots:
+			ci.draw_circle(Vector2(x0 + gap * i, at.y + y + u * 0.45), u * 0.42, color, true, -1.0, true)
+		y += u * 1.1
+	for b in d / 5:
+		var top := at.y + y + u * 0.1
+		var h := u * 0.7
+		ci.draw_rect(Rect2(at.x + h / 2.0, top, w - h, h), color)
+		ci.draw_circle(Vector2(at.x + h / 2.0, top + h / 2.0), h / 2.0, color, true, -1.0, true)
+		ci.draw_circle(Vector2(at.x + w - h / 2.0, top + h / 2.0), h / 2.0, color, true, -1.0, true)
+		y += u * 1.05
+	return y
+
+# ================================================================ page ===
+
+## A codex page: stucco paper with a hand-cut edge and a double cinnabar frame.
+## It opens like the codex's screenfold — three leaves unfolding from the middle.
+class Page:
 	extends Control
-	var radius := 40.0
-	var fill := UiKit.JADE
-	var trim := UiKit.MAYA_BLUE
+	var seed := 7
+	var unfold := 1.0
+
+	func _init() -> void:
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_STOP # panels swallow taps
+		mouse_filter = Control.MOUSE_FILTER_STOP # pages swallow taps
+
+	## Unfolds the page, then lets its contents ink in.
+	func open() -> void:
+		unfold = 0.0
+		queue_redraw()
+		for c in get_children():
+			if c is CanvasItem:
+				c.modulate.a = 0.0
+		var tw := create_tween()
+		tw.tween_method(_set_unfold, 0.0, 1.0, 0.42).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		var fade := tw.chain().set_parallel()
+		for c in get_children():
+			if c is CanvasItem:
+				fade.tween_property(c, "modulate:a", 1.0, 0.18)
+
+	func _set_unfold(v: float) -> void:
+		unfold = v
+		queue_redraw()
 
 	func _draw() -> void:
+		var e := maxf(unfold, 0.001)
+		draw_set_transform(Vector2(size.x * (1.0 - e) / 2.0, 0.0), 0.0, Vector2(e, 1.0))
 		var r := Rect2(Vector2.ZERO, size)
-		draw_style_box(UiKit.round_box(fill, radius, Color(0, 0, 0, 0), 0, 0.4, 12.0), r)
-		UiKit.draw_rim(self, r, radius, Color(trim, 0.75), 9.0, 2)
+		var edge := UiKit.torn(r, seed)
+		var shadow := PackedVector2Array()
+		for p in edge:
+			shadow.append(p + Vector2(0, 10))
+		draw_colored_polygon(shadow, Color(0, 0, 0, 0.35))
+		UiKit.draw_paper(self, edge)
+		# Screenfold leaves: the creases show, and fade as the page lies flat.
+		var crease := 1.0 - e
+		for k in [1, 2]:
+			var x: float = size.x * k / 3.0
+			draw_line(Vector2(x, 4), Vector2(x, size.y - 4), Color(UiKit.STUCCO_SHADE, 0.35 + 0.5 * crease), 2.0)
+		draw_rect(Rect2(size.x / 3.0, 0, size.x / 3.0, size.y), Color(0, 0, 0, 0.22 * crease))
+		UiKit.draw_ink(self, UiKit.torn(r.grow(-16), seed + 1, 0.8), UiKit.CINNABAR, 4.0)
+		UiKit.draw_ink(self, UiKit.torn(r.grow(-25), seed + 2, 0.6), UiKit.CINNABAR, 1.6)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # ============================================================== button ===
 
-## A pill button standing on a darker lip; pressing sinks it into the lip.
-## GOLD is the primary action.
-class SlabButton:
+## A glyph-block button. It stands on its own ink edge and stamps down into it
+## when pressed. PRIMARY is cinnabar with stucco lettering; SECONDARY is paper.
+class GlyphButton:
 	extends Control
 	signal pressed
 
-	enum Kind { GOLD, JADE }
+	enum Kind { PRIMARY, SECONDARY }
 
 	var text := ""
-	var kind := Kind.GOLD
+	var kind := Kind.PRIMARY
 	var font_size := 34
 	var _down := false
 	var _label: Label
-	const LIP := 9.0
+	const DEPTH := 8.0
 
-	func _init(t := "", k := Kind.GOLD) -> void:
+	func _init(t := "", k := Kind.PRIMARY) -> void:
 		text = t
 		kind = k
 		custom_minimum_size = Vector2(200, 92)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		focus_mode = Control.FOCUS_NONE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _ready() -> void:
-		var color := UiKit.INK if kind == Kind.GOLD else UiKit.LIMESTONE
-		_label = UiKit.label(text, UiKit.text_font(900), font_size, color)
+		var color := UiKit.STUCCO if kind == Kind.PRIMARY else UiKit.INK
+		_label = UiKit.label(text, UiKit.display_font(), font_size, color)
 		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		add_child(_label)
@@ -138,22 +319,26 @@ class SlabButton:
 		_layout()
 
 	func _layout() -> void:
-		var drop := LIP - 2.0 if _down else 0.0
-		_label.position = Vector2(0, drop)
-		_label.size = Vector2(size.x, size.y - LIP)
+		_label.position = Vector2(0, (DEPTH - 2.0 if _down else 0.0) - 2.0)
+		_label.size = Vector2(size.x, size.y - DEPTH)
 
 	func _draw() -> void:
-		var face := UiKit.GOLD if kind == Kind.GOLD else UiKit.JADE_LIGHT
-		var lip := UiKit.GOLD_DEEP if kind == Kind.GOLD else UiKit.JADE
-		var h := size.y - LIP
-		var radius := h / 2.0
-		# Lip (with the drop shadow under it), then the face sitting on top.
-		draw_style_box(UiKit.round_box(lip, radius, Color(0, 0, 0, 0), 0, 0.3, 6.0), Rect2(Vector2(0, LIP), Vector2(size.x, h)))
-		var face_rect := Rect2(Vector2(0, LIP - 2.0 if _down else 0.0), Vector2(size.x, h))
-		draw_style_box(UiKit.round_box(face, radius), face_rect)
-		UiKit.draw_sheen(self, face_rect, radius, 0.28 if kind == Kind.GOLD else 0.1)
-		if kind == Kind.JADE:
-			UiKit.draw_rim(self, face_rect, radius, Color(UiKit.MAYA_BLUE, 0.8), 5.0, 2)
+		var h := size.y - DEPTH
+		var seed := int(size.x) + kind * 13
+		var base := UiKit.glyph_block(Rect2(Vector2(0, DEPTH), Vector2(size.x, h)), seed)
+		draw_colored_polygon(base, UiKit.INK)
+		var face_rect := Rect2(Vector2(0, DEPTH - 2.0 if _down else 0.0), Vector2(size.x, h))
+		var face := UiKit.glyph_block(face_rect, seed)
+		UiKit.draw_paper(self, face, UiKit.CINNABAR.lightened(0.12) if kind == Kind.PRIMARY else Color.WHITE)
+		UiKit.draw_ink(self, face, UiKit.INK, 5.0)
+		var inner := UiKit.glyph_block(face_rect.grow(-10), seed + 5, 0.6)
+		UiKit.draw_ink(self, inner, Color(UiKit.STUCCO, 0.55) if kind == Kind.PRIMARY else UiKit.CINNABAR, 2.0)
+		# Affixes: the small dotted marks scribes set beside a main sign.
+		var dot := Color(UiKit.STUCCO, 0.85) if kind == Kind.PRIMARY else UiKit.CINNABAR
+		for side in [-1.0, 1.0]:
+			var x: float = face_rect.get_center().x + side * (face_rect.size.x / 2.0 - 26.0)
+			for dy in [-9.0, 0.0, 9.0]:
+				draw_circle(Vector2(x, face_rect.get_center().y + dy), 3.2, dot, true, -1.0, true)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
@@ -175,48 +360,49 @@ class SlabButton:
 
 # ========================================================= icon button ===
 
-## A round button with a drawn pictogram, on the same lip as the pills.
-class IconButton:
+## A small square glyph block with an inked sign: pause, settings, close.
+class GlyphIcon:
 	extends Control
 	signal pressed
 
-	enum Icon { PAUSE, GEAR, CLOSE }
+	enum Icon { PAUSE, SETTINGS, CLOSE }
 
 	var icon := Icon.PAUSE
 	var _down := false
-	const LIP := 6.0
+	const DEPTH := 6.0
 
 	func _init(i := Icon.PAUSE) -> void:
 		icon = i
 		custom_minimum_size = Vector2(84, 84)
 		size = custom_minimum_size
 		mouse_filter = Control.MOUSE_FILTER_STOP
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _draw() -> void:
-		var d := size.y - LIP
-		var radius := d / 2.0
-		draw_style_box(UiKit.round_box(UiKit.JADE.darkened(0.35), radius, Color(0, 0, 0, 0), 0, 0.3, 5.0), Rect2(Vector2(0, LIP), Vector2(size.x, d)))
-		var r := Rect2(Vector2(0, LIP - 1.0 if _down else 0.0), Vector2(size.x, d))
-		draw_style_box(UiKit.round_box(UiKit.JADE, radius), r)
-		UiKit.draw_sheen(self, r, radius, 0.08)
-		UiKit.draw_rim(self, r, radius, Color(UiKit.MAYA_BLUE, 0.85), 5.0, 2)
+		var h := size.y - DEPTH
+		draw_colored_polygon(UiKit.glyph_block(Rect2(Vector2(0, DEPTH), Vector2(size.x, h)), 31), UiKit.INK)
+		var r := Rect2(Vector2(0, DEPTH - 1.0 if _down else 0.0), Vector2(size.x, h))
+		var face := UiKit.glyph_block(r, 31)
+		UiKit.draw_paper(self, face)
+		UiKit.draw_ink(self, face, UiKit.INK, 4.0)
+		UiKit.draw_ink(self, UiKit.glyph_block(r.grow(-8), 33, 0.5), UiKit.CINNABAR, 1.6)
 		var c := r.get_center()
 		match icon:
 			Icon.PAUSE:
 				for dx in [-9.0, 9.0]:
-					draw_style_box(UiKit.round_box(UiKit.LIMESTONE, 4.0), Rect2(c + Vector2(dx - 5, -14), Vector2(10, 28)))
-			Icon.GEAR:
-				# A sun-wheel: tapered rays around a hub (doubles as the brand sun).
-				for k in 8:
-					var a := TAU * k / 8.0
-					var dir := Vector2(cos(a), sin(a))
-					var p := Vector2(-dir.y, dir.x)
-					draw_colored_polygon(PackedVector2Array([c + dir * 11 + p * 5.5, c + dir * 23, c + dir * 11 - p * 5.5]), UiKit.LIMESTONE)
-				draw_circle(c, 13.0, UiKit.LIMESTONE, true, -1.0, true)
-				draw_circle(c, 6.0, UiKit.JADE, true, -1.0, true)
+					draw_rect(Rect2(c + Vector2(dx - 5, -13), Vector2(10, 26)), UiKit.INK)
+			Icon.SETTINGS:
+				# Three sliders, drawn as bars and dots — like Maya numerals.
+				var knobs := [-8.0, 9.0, -2.0]
+				for i in 3:
+					var y := c.y - 12.0 + i * 12.0
+					var kx: float = c.x + knobs[i]
+					draw_line(Vector2(c.x - 18, y), Vector2(c.x + 18, y), UiKit.INK, 4.0, true)
+					draw_circle(Vector2(kx, y), 5.5, UiKit.CINNABAR, true, -1.0, true)
+					draw_arc(Vector2(kx, y), 5.5, 0.0, TAU, 16, UiKit.INK, 2.0, true)
 			Icon.CLOSE:
-				draw_line(c + Vector2(-12, -12), c + Vector2(12, 12), UiKit.LIMESTONE, 6.0, true)
-				draw_line(c + Vector2(12, -12), c + Vector2(-12, 12), UiKit.LIMESTONE, 6.0, true)
+				draw_line(c + Vector2(-12, -12), c + Vector2(12, 12), UiKit.INK, 6.0, true)
+				draw_line(c + Vector2(12, -12), c + Vector2(-12, 12), UiKit.INK, 6.0, true)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
@@ -228,17 +414,18 @@ class IconButton:
 
 # ============================================================ wordmark ===
 
-## SUNSTONE, carved: a deep jade extrusion under a limestone face,
-## with the sun glyph rising behind it. Settles into place once.
+## The title, as a codex heading: a strip of bark paper ruled in cinnabar, the
+## name inked in two colours (red printed a hair off the black), and the k'in
+## sun glyph rising above it. The strip unrolls once when the title appears.
 class Wordmark:
 	extends Control
 	var _t := 0.0
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(640, 260)
+		custom_minimum_size = Vector2(640, 300)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
-	## Plays the settle again (each time the title screen appears).
 	func replay() -> void:
 		_t = 0.0
 
@@ -248,56 +435,157 @@ class Wordmark:
 			queue_redraw()
 
 	func _draw() -> void:
-		var e := 1.0 - pow(1.0 - _t, 3.0) # ease out
-		var center := Vector2(size.x / 2.0, 92)
-		# The sun glyph: a disc with twelve tapered rays, behind the letters.
-		var sun_r := 70.0 * (0.85 + 0.15 * e)
-		var a := e
-		for k in 12:
-			var ang := TAU * k / 12.0 + PI / 12.0
-			var d := Vector2(cos(ang), sin(ang))
-			var p := Vector2(-d.y, d.x)
-			var base := center + d * (sun_r - 6)
-			var reach := 40.0 if k % 2 == 0 else 26.0
-			draw_colored_polygon(PackedVector2Array([base + p * 13, base + d * reach, base - p * 13]), Color(UiKit.CINNABAR, 0.9 * a))
-		draw_circle(center, sun_r, Color(UiKit.GOLD_DEEP, a), true, -1.0, true)
-		draw_circle(center, sun_r - 12, Color(UiKit.GOLD, a), true, -1.0, true)
-		draw_circle(center + Vector2(-sun_r * 0.25, -sun_r * 0.3), sun_r * 0.35, Color(1, 1, 1, 0.16 * a), true, -1.0, true)
+		var e := 1.0 - pow(1.0 - _t, 3.0)
+		var strip := Rect2(Vector2(20, 130), Vector2(600, 150))
+		var w := strip.size.x * e
+		var unrolled := Rect2(Vector2(strip.get_center().x - w / 2.0, strip.position.y), Vector2(maxf(w, 1.0), strip.size.y))
+		var edge := UiKit.torn(unrolled, 41)
+		var shadow := PackedVector2Array()
+		for p in edge:
+			shadow.append(p + Vector2(0, 8))
+		draw_colored_polygon(shadow, Color(0, 0, 0, 0.35))
+		UiKit.draw_paper(self, edge)
+		UiKit.draw_rule(self, unrolled.position + Vector2(14, 16), Vector2(unrolled.end.x - 14, unrolled.position.y + 16), UiKit.CINNABAR, 4.0, 3)
+		UiKit.draw_rule(self, Vector2(unrolled.position.x + 14, unrolled.end.y - 16), unrolled.end - Vector2(14, 16), UiKit.CINNABAR, 4.0, 5)
+		if _t > 0.35:
+			var a := clampf((_t - 0.35) / 0.4, 0.0, 1.0)
+			var font := UiKit.display_font()
+			var fs := 88
+			var text := "Sunstone"
+			var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			var pos := Vector2(strip.get_center().x - tw / 2.0, strip.position.y + 112)
+			draw_string(font, pos + Vector2(4, 4), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiKit.CINNABAR, a))
+			draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiKit.INK, a))
+		# The sun glyph above the strip, with twenty count marks around it.
+		var s := clampf((_t - 0.15) / 0.6, 0.0, 1.0)
+		if s > 0.0:
+			var c := Vector2(strip.get_center().x, 96)
+			var r := 58.0 * (0.7 + 0.3 * s)
+			for k in 20:
+				var ang := TAU * k / 20.0 - PI / 2.0
+				var d := Vector2(cos(ang), sin(ang))
+				draw_line(c + d * (r + 8), c + d * (r + 22), UiKit.INK, 8.0, true)
+				draw_line(c + d * (r + 9), c + d * (r + 21), UiKit.OCHRE, 4.0, true)
+			UiKit.draw_kin(self, c, r, 1.0, 4.0)
 
-		var font := UiKit.display_font()
-		var fs := 84
-		var text := "SUNSTONE"
-		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var pos := Vector2((size.x - w) / 2.0, 150 + (1.0 - e) * 24.0)
-		# Carved depth: stacked offsets in jade, then a gold face with an ink rim.
-		for i in range(10, 0, -1):
-			draw_string(font, pos + Vector2(i * 0.6, i), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiKit.JADE, a))
-		draw_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color(UiKit.INK, a))
-		draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiKit.LIMESTONE, a))
-		# Maya-blue band under the name, like a painted lintel.
-		var band := Rect2(Vector2((size.x - w) / 2.0, pos.y + 26), Vector2(maxf(w * e, 10.0), 10))
-		draw_style_box(UiKit.round_box(Color(UiKit.MAYA_BLUE, a), 5.0), band)
+# ============================================================ sun meter ===
 
-# ============================================================ coin glyph ===
-
-## The coin as a flat glyph: a round gold coin with a rim and a bright heart.
-class CoinGlyph:
+## The HUD's centrepiece: the k'in sun glyph is the Sunstone's charge. Twenty
+## count marks ring it and go dark as the light drains; at night, with the
+## light failing, a jaguar's eyes open beneath it as the pack closes in.
+class SunMeter:
 	extends Control
-	func _init(px := 34.0) -> void:
+	var light := 1.0
+	var night := 0.0
+	var gap := 24.0
+	var _t := 0.0
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(150, 190)
+		size = custom_minimum_size
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+	func _process(delta: float) -> void:
+		_t += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		var c := Vector2(size.x / 2.0, 66)
+		var r := 36.0
+		var lit := ceili(light * 20.0 - 0.001)
+		for k in 20:
+			var ang := TAU * k / 20.0 - PI / 2.0
+			var d := Vector2(cos(ang), sin(ang))
+			if k < lit:
+				draw_line(c + d * (r + 6), c + d * (r + 22), UiKit.INK, 9.0, true)
+				draw_line(c + d * (r + 7), c + d * (r + 21), UiKit.OCHRE, 4.5, true)
+			else:
+				draw_line(c + d * (r + 9), c + d * (r + 18), Color(UiKit.INK, 0.55), 4.0, true)
+		UiKit.draw_kin(self, c, r, clampf(light * 1.4, 0.15, 1.0), 3.5)
+		if light < 0.35:
+			# Failing: a cinnabar ring beats around the glyph.
+			var beat := 0.5 + 0.5 * sin(_t * 9.0)
+			draw_arc(c, r + 28, 0.0, TAU, 48, Color(UiKit.CINNABAR, 0.45 + 0.4 * beat), 4.0, true)
+		var near := clampf((14.0 - gap) / 10.0, 0.0, 1.0)
+		if near > 0.0:
+			# Jaguar eyes: almond shapes, gold, with slit pupils.
+			var ey := c.y + r + 54
+			var open := near * (0.75 + 0.25 * sin(_t * 3.0))
+			for side in [-1.0, 1.0]:
+				var ec := Vector2(c.x + side * 22.0, ey)
+				var eye := UiKit.ellipse(ec, 15.0, maxf(7.5 * open, 0.5), side * 0.25, 18)
+				draw_colored_polygon(eye, Color(UiKit.OCHRE_LIGHT, near))
+				draw_polyline(UiKit.closed(eye), Color(UiKit.INK, near), 3.0, true)
+				draw_line(ec + Vector2(0, -6 * open), ec + Vector2(0, 6 * open), Color(UiKit.INK, near), 3.5, true)
+
+# ============================================================== glyphs ===
+
+## A sun-drop as a small glyph: a gold k'in sun with no paper behind it.
+class DropGlyph:
+	extends Control
+	func _init(px := 36.0) -> void:
 		custom_minimum_size = Vector2(px, px)
 		size = custom_minimum_size
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func _draw() -> void:
 		var c := size / 2.0
-		var r := size.x / 2.0
-		draw_circle(c, r, UiKit.GOLD_DEEP, true, -1.0, true)
-		draw_circle(c - Vector2(0, r * 0.06), r * 0.8, UiKit.GOLD, true, -1.0, true)
-		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.34), c + Vector2(r * 0.3, 0), c + Vector2(0, r * 0.34), c + Vector2(-r * 0.3, 0)]), Color("#FFF2C4"))
+		var r := size.x / 2.0 - 1.5
+		draw_circle(c, r, UiKit.OCHRE, true, -1.0, true)
+		for k in 4:
+			var a := PI / 4.0 + k * PI / 2.0
+			draw_colored_polygon(UiKit.ellipse(c + Vector2(cos(a), sin(a)) * r * 0.4, r * 0.33, r * 0.2, a, 12), UiKit.OCHRE_LIGHT)
+		draw_arc(c, r, 0.0, TAU, 28, UiKit.INK, 3.0, true)
+
+## A slip of paper with an inked line of text — for small notes over the world.
+## With [maya] >= 0 the number is also written in Maya numerals at the right.
+class PaperSlip:
+	extends Control
+	var text := ""
+	var maya := -1
+	var _label: Label
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+	func _ready() -> void:
+		_label = UiKit.label("", UiKit.text_font(900), 28, UiKit.INK)
+		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		add_child(_label)
+		resized.connect(func(): set_text(text, maya))
+		set_text(text, maya)
+
+	func set_text(t: String, m := -1) -> void:
+		text = t
+		maya = m
+		if _label:
+			_label.text = t
+			_label.position = Vector2(14, 0)
+			_label.size = Vector2(size.x - 28.0 - (44.0 if m >= 0 else 0.0), size.y)
+		queue_redraw()
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		var edge := UiKit.torn(r, 57, 1.4)
+		var shadow := PackedVector2Array()
+		for p in edge:
+			shadow.append(p + Vector2(0, 6))
+		draw_colored_polygon(shadow, Color(0, 0, 0, 0.3))
+		UiKit.draw_paper(self, edge)
+		UiKit.draw_rule(self, Vector2(10, 7), Vector2(size.x - 10, 7), UiKit.CINNABAR, 2.5, 9)
+		UiKit.draw_rule(self, Vector2(10, size.y - 7), Vector2(size.x - 10, size.y - 7), UiKit.CINNABAR, 2.5, 11)
+		if maya >= 0:
+			var u := 4.5
+			var h := UiKit.maya_height(maya, u)
+			UiKit.draw_maya_number(self, Vector2(size.x - 46.0, (size.y - h) / 2.0), maya, u, UiKit.CINNABAR)
 
 # =============================================================== toggle ===
 
-## A labelled on/off row: tap anywhere on it.
+## A labelled setting: a small glyph block that shows the sun when it's on and
+## a red stroke through it when it's off. Tap anywhere on the row.
 class Toggle:
 	extends Control
 	signal toggled(on: bool)
@@ -309,17 +597,22 @@ class Toggle:
 		on = value
 		custom_minimum_size = Vector2(440, 76)
 		mouse_filter = Control.MOUSE_FILTER_STOP
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _ready() -> void:
-		var l := UiKit.label(_text, UiKit.text_font(800), 30, UiKit.LIMESTONE)
-		l.position = Vector2(4, 18)
+		var l := UiKit.label(_text, UiKit.text_font(900), 32, UiKit.INK)
+		l.position = Vector2(4, 16)
 		add_child(l)
 
 	func _draw() -> void:
-		var track := Rect2(Vector2(size.x - 112, 16), Vector2(108, 48))
-		draw_style_box(UiKit.round_box(UiKit.MAYA_BLUE if on else UiKit.JADE.darkened(0.3), 24.0, Color(0, 0, 0, 0.25), 2), track)
-		var knob := Rect2(Vector2(track.position.x + (track.size.x - 44 if on else 4.0), track.position.y + 4), Vector2(40, 40))
-		draw_style_box(UiKit.round_box(UiKit.LIMESTONE, 20.0, Color(0, 0, 0, 0), 0, 0.35, 3.0), knob)
+		var box := Rect2(Vector2(size.x - 66, 8), Vector2(60, 60))
+		var face := UiKit.glyph_block(box, 77)
+		UiKit.draw_paper(self, face, Color(1, 1, 1) if on else Color(0.88, 0.84, 0.78))
+		UiKit.draw_ink(self, face, UiKit.INK, 3.5)
+		if on:
+			UiKit.draw_kin(self, box.get_center(), 19.0, 1.0, 2.5, false)
+		else:
+			draw_line(box.position + Vector2(14, box.size.y - 14), box.position + Vector2(box.size.x - 14, 14), UiKit.CINNABAR, 6.0, true)
 
 	func _gui_input(event: InputEvent) -> void:
 		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
@@ -330,7 +623,7 @@ class Toggle:
 
 # ========================================================= danger flash ===
 
-## Cinnabar glow from the screen edges — a stumble or a crash.
+## A cinnabar wash from the screen edges — a stumble or a crash.
 class DangerFlash:
 	extends Control
 	var strength := 0.0
@@ -364,10 +657,11 @@ class DangerFlash:
 		]:
 			draw_polygon(PackedVector2Array(quad), PackedColorArray([c, c, clear, clear]) if quad[0].y == 0 and quad[1].y == 0 else PackedColorArray([c, clear, clear, c]))
 
-# =========================================================== hint toast ===
+# ========================================================== hint strip ===
 
-## "Swipe up to jump", with an animated chevron showing the swipe.
-class HintToast:
+## A codex strip naming the move: "Swipe up to jump", with an inked gesture —
+## a brush chevron for swipes, ripples for a tap.
+class HintStrip:
 	extends Control
 	var _dir := Vector2.UP
 	var _t := 0.0
@@ -375,22 +669,24 @@ class HintToast:
 	var _label: Label
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(500, 120)
+		custom_minimum_size = Vector2(540, 112)
 		size = custom_minimum_size
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		modulate.a = 0.0
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _ready() -> void:
-		_label = UiKit.label("", UiKit.text_font(900), 32, UiKit.LIMESTONE)
-		_label.position = Vector2(110, 0)
-		_label.size = Vector2(size.x - 130, size.y - 8)
+		_label = UiKit.label("", UiKit.text_font(900), 30, UiKit.INK)
+		_label.position = Vector2(116, 0)
+		_label.size = Vector2(size.x - 134, size.y)
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 		add_child(_label)
 
 	func show_hint(text: String, dir: Vector2) -> void:
 		_label.text = text
 		_dir = dir
-		_life = 2.2
+		_life = 2.4
 		_t = 0.0
 
 	## Fades out now — the player already did what it asked.
@@ -407,15 +703,29 @@ class HintToast:
 			modulate.a = 0.0
 
 	func _draw() -> void:
-		var r := Rect2(Vector2.ZERO, size - Vector2(0, 8))
-		draw_style_box(UiKit.round_box(Color(UiKit.JADE, 0.92), r.size.y / 2.0, Color(0, 0, 0, 0), 0, 0.3, 6.0), r)
-		UiKit.draw_rim(self, r, r.size.y / 2.0, Color(UiKit.MAYA_BLUE, 0.8), 6.0, 2)
-		# A chevron travelling in the swipe direction, repeating.
-		var c := Vector2(56, (size.y - 8) / 2.0)
-		var travel := fmod(_t * 1.6, 1.0)
+		var r := Rect2(Vector2.ZERO, size)
+		var edge := UiKit.torn(r, 63, 1.6)
+		var shadow := PackedVector2Array()
+		for p in edge:
+			shadow.append(p + Vector2(0, 7))
+		draw_colored_polygon(shadow, Color(0, 0, 0, 0.32))
+		UiKit.draw_paper(self, edge)
+		UiKit.draw_rule(self, Vector2(12, 9), Vector2(size.x - 12, 9), UiKit.CINNABAR, 3.0, 13)
+		UiKit.draw_rule(self, Vector2(12, size.y - 9), Vector2(size.x - 12, size.y - 9), UiKit.CINNABAR, 3.0, 17)
+		UiKit.draw_rule(self, Vector2(102, 18), Vector2(102, size.y - 18), UiKit.CINNABAR, 2.0, 19)
+		var c := Vector2(54, size.y / 2.0)
+		var travel := fmod(_t * 1.5, 1.0)
+		if _dir == Vector2.ZERO:
+			# A tap: ink ripples spreading from a fingertip dot.
+			draw_circle(c, 9.0, UiKit.INK, true, -1.0, true)
+			for k in 2:
+				var p := fmod(travel + k * 0.5, 1.0)
+				draw_arc(c, 12.0 + p * 26.0, 0.0, TAU, 32, Color(UiKit.INK, 1.0 - p), 4.0, true)
+			return
 		var d := _dir.normalized()
-		var p := Vector2(-d.y, d.x)
-		var tip := c + d * (-12.0 + 24.0 * travel)
-		var col := Color(UiKit.GOLD, 1.0 - travel * 0.6)
-		draw_polyline(PackedVector2Array([tip - d * 8 + p * 16, tip + d * 8, tip - d * 8 - p * 16]), col, 9.0, true)
-		draw_circle(tip + d * 8, 4.5, col, true, -1.0, true)
+		var n := d.orthogonal()
+		for k in 2:
+			var p := fmod(travel + k * 0.5, 1.0)
+			var tip := c + d * (-16.0 + 32.0 * p)
+			var col := Color(UiKit.INK if k == 0 else UiKit.CINNABAR, 1.0 - p * 0.7)
+			draw_polyline(PackedVector2Array([tip - d * 11 + n * 16, tip + d * 6, tip - d * 11 - n * 16]), col, 8.0, true)

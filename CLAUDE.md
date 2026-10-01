@@ -1,8 +1,12 @@
 # Sunstone — 3D endless runner (Godot 4.7)
 
 An explorer takes the glowing Sunstone from a painted Maya temple at dusk; stone
-jaguar guardians chase him along an endless causeway. Temple-Run-style: swipe
-left/right to change lanes (or to turn at corners), up to jump, down to slide.
+jaguar guardians chase him along an endless causeway. Temple-Run-style controls:
+swipe left/right to change lanes (or to turn at corners), up to jump, down to
+slide — plus our own twist, the **dusk run**: the sun sets over each run, the
+Sunstone is the only light (drains; sun-drops refill it), the jaguars move only
+in the dark, and a tap flares the stone to freeze and push them back. The UI is
+the **Codex** (Maya codex pages, glyph-block buttons). Keep both original.
 "Sunstone" is a working title. Visual identity and rules: **`DESIGN.md`** — read it
 before touching any UI. Nothing from the old Deadbounce app is reused here.
 
@@ -23,12 +27,13 @@ scripts/
   models.gd             every 3D asset, written into a Mesher (no imported models)
   runner_model.gd       the explorer, jointed, procedural run/jump/slide/fall/idle
   jaguar_model.gd       the chasers
-  ui_kit.gd             design system: palette, fonts, stepped slabs/buttons,
-                        icons, wordmark, toggles, hint toast, danger flash
+  ui_kit.gd             the Codex design system: palette, fonts, paper, glyph
+                        blocks, pages, k'in sun glyph, sun meter, Maya numerals
   game_ui.gd            screens (title, HUD, pause, settings, results), anchored
   sfx.gd / save_data.gd audio + vibration / ConfigFile at user://save.cfg
 tools/make_audio.py     synthesizes every sound + the music loop (pure Python)
 tools/make_icon.py      draws the app icon, adaptive layers and boot splash
+tools/make_paper.py     draws the tileable codex bark-paper texture
 ```
 
 ## Rules of the world (path space)
@@ -74,6 +79,8 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
   is ~9 ms; Compatibility holds a locked 60. Verify pacing with
   `dumpsys SurfaceFlinger --latency '<SurfaceView layer>'` — every interval
   should be one vsync.
+- **Dusk dev switches:** `files/dev_dusk` (e.g. `1.0`) starts runs at that much
+  night; `files/dev_light` (e.g. `0.3`) sets the starting light.
 - **Perf switches** (dev): with autopilot on, logcat prints fps / frame-time /
   draw calls every 2 s. Flag files in `files/` toggle features without a rebuild:
   `perf_noglow`, `perf_noshadow`, `perf_nomsaa`, `perf_nosky`, `perf_noui`,
