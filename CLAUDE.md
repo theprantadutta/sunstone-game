@@ -114,6 +114,8 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
 - Debug keystore SHA-1 (register in Firebase for Google sign-in on test builds):
   `DB:66:45:43:4B:46:84:35:E8:50:2E:B7:81:C0:15:1D:DE:98:A6:3C`
 - The server exchanges the Firebase ID token for its own JWT (`POST /api/v1/auth/firebase`).
+- Dev API base URL (LAN, the dev PC): `http://192.168.0.141:8395`. Hosted later at
+  `https://sunstone.pranta.dev`. Anonymous + Google sign-in are enabled and verified.
 
 ## Assets
 
