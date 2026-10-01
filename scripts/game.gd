@@ -66,6 +66,7 @@ var _cam_yaw := 0.0
 var _cam_off := Vector3.ZERO
 var _cam_lift := 0.0
 var _fps_t := 0.0
+var _backdrop: Node3D
 var _prof_n := 0
 var _perf_nocoins := FileAccess.file_exists("user://perf_nocoins")
 var _prof_coins := 0
@@ -277,6 +278,7 @@ func _process(delta: float) -> void:
 		State.RESULTS:
 			runner.animate(delta, 0.0)
 	_apply_shake(delta)
+	_backdrop.position = Vector3(camera.global_position.x, 0.0, camera.global_position.z)
 	_prof_step += Time.get_ticks_usec() - t1
 
 func _step_run(delta: float) -> void:
@@ -698,10 +700,12 @@ func _make_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.75
+	# Shade is a muted dusk violet, not the sky's saturated purple.
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color("#A08CB4")
+	env.ambient_light_energy = 0.7
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.0
+	env.tonemap_exposure = 0.92
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.1
 	env.adjustment_contrast = 1.06
@@ -710,43 +714,63 @@ func _make_environment() -> void:
 	env.glow_bloom = 0.04
 	env.glow_hdr_threshold = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color("#D99A6C")
-	env.fog_density = 0.0042
+	# Fog is the horizon colour, so land melts into sky with no seam; a little
+	# extra mist pools on the jungle floor.
+	env.fog_light_color = sky_mat.sky_horizon_color
+	env.fog_light_energy = 0.95
+	env.fog_density = 0.0045
 	env.fog_sky_affect = 0.0
-	env.fog_height = -4.0
-	env.fog_height_density = 0.18
+	env.fog_height = -5.0
+	env.fog_height_density = 0.08
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
-	sun.light_color = Color("#FFB678")
-	sun.light_energy = 1.5
-	sun.rotation_degrees = Vector3(-16.0, 140.0, 0.0) # low, raking from the side
+	sun.light_color = Color("#FFC890")
+	sun.light_energy = 1.0
+	# Late afternoon from the side: long enough to model the stones, short
+	# enough that shadows stay crisp.
+	sun.rotation_degrees = Vector3(-32.0, 140.0, 0.0)
 	sun.shadow_enabled = true
+	sun.shadow_blur = 1.5
 	# One orthogonal map over the stretch around him is all a runner needs.
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-	sun.directional_shadow_max_distance = 30.0
+	sun.directional_shadow_max_distance = 22.0
 	add_child(sun)
 	_dev_perf_flags(env, sun)
 
-	# The jungle floor far below, lost in mist.
+	# The backdrop rides along under the camera (position only), so the jungle
+	# floor never ends and the skyline sits at the horizon however far he runs.
+	_backdrop = Node3D.new()
+	add_child(_backdrop)
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(3000, 3000)
+	plane.size = Vector2(2400, 2400)
 	ground.mesh = plane
 	var gm := StandardMaterial3D.new()
-	gm.albedo_color = Color("#1E3A2C")
+	gm.albedo_color = Models.JUNGLE
 	gm.roughness = 1.0
 	ground.material_override = gm
-	ground.position = Vector3(0, -16.0, 0)
-	add_child(ground)
+	ground.position = Vector3(0, Models.GROUND_Y, 0)
+	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_backdrop.add_child(ground)
 
-	# Distant pyramids on the skyline.
+	# Skyline: temple pyramids rising out of forested hills, hazed by distance.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
 	var m := Mesher.new()
-	for spot in [Vector3(-160, -14, -320), Vector3(210, -14, -260), Vector3(-40, -14, -420), Vector3(330, -14, -60), Vector3(-300, -14, -120)]:
-		Models.far_pyramid(m, Models.at(spot), randf_range(1.4, 2.2))
-	add_child(m.to_instance())
+	for i in 9:
+		var a := TAU * i / 9.0 + rng.randf_range(-0.2, 0.2)
+		var r := rng.randf_range(190.0, 250.0)
+		Models.far_pyramid(m, Models.at(Vector3(sin(a) * r, Models.GROUND_Y - 2.0, cos(a) * r)), rng.randf_range(1.2, 2.0))
+	for i in 16:
+		var a := TAU * i / 16.0 + rng.randf_range(-0.15, 0.15)
+		var r := rng.randf_range(240.0, 320.0)
+		Models.far_hill(m, Models.at(Vector3(sin(a) * r, Models.GROUND_Y - 6.0, cos(a) * r), Basis(Vector3.UP, a)), rng.randf_range(35.0, 60.0), i)
+	var skyline := m.to_instance()
+	skyline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_backdrop.add_child(skyline)
 
 # -------------------------------------------------------------- autopilot ---
 
@@ -800,5 +824,10 @@ func _dev_perf_flags(env: Environment, sun: DirectionalLight3D) -> void:
 		env.background_mode = Environment.BG_COLOR
 		env.background_color = Color("#C98A6A")
 		env.fog_enabled = false
+	if FileAccess.file_exists("user://perf_shadow"):
+		# "<atlas size> <soft filter quality 0-5>"
+		var parts := FileAccess.get_file_as_string("user://perf_shadow").split(" ")
+		RenderingServer.directional_shadow_atlas_set_size(parts[0].to_int(), true)
+		RenderingServer.directional_soft_shadow_filter_set_quality(parts[1].to_int() as RenderingServer.ShadowQuality)
 	if FileAccess.file_exists("user://perf_scale"):
 		get_viewport().scaling_3d_scale = clampf(FileAccess.get_file_as_string("user://perf_scale").to_float(), 0.5, 1.0)

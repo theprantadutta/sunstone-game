@@ -22,6 +22,7 @@ class Segment:
 	var right := Vector3.RIGHT
 	var length := 60.0
 	var turn := 1 ## -1 = corner turns left, +1 = right
+	var prev_turn := 0 ## the corner we came out of (0 for the first stretch)
 	var heading := 0 ## -1/0/+1: net quarter-turns from the start direction
 	var obstacles: Array[Dictionary] = [] ## {s, lane, kind}
 	var gaps: Array[Vector2] = [] ## floor missing across all lanes, (s0, s1)
@@ -106,6 +107,7 @@ func _next_after(prev: Segment) -> Segment:
 	seg.dir = prev.exit_dir()
 	seg.right = seg.dir.cross(Vector3.UP)
 	seg.heading = prev.heading + prev.turn
+	seg.prev_turn = prev.turn
 	seg.origin = prev.point(prev.corner_s()) + seg.dir * (W / 2.0)
 	seg.length = _rng.randf_range(lerpf(70.0, 46.0, difficulty), lerpf(110.0, 72.0, difficulty))
 	# Stay within ±90° of the starting heading: the causeway zig-zags forward
@@ -221,34 +223,74 @@ func _bake(seg: Segment, first: bool) -> void:
 	Models.kerb(m, Models.sub(f, Vector3(closed_side * (W / 2.0 + 0.22), 0, -(seg.length + W / 2.0))), W, closed_side)
 	Models.corner_altar(m, Models.sub(f, Vector3(0, 0, -(seg.end_s() + 0.4))))
 
-	# Piers into the jungle.
-	var p := 6.0
-	while p < seg.end_s():
-		if not seg.in_gap(p):
-			Models.pier(sc, Models.sub(f, Vector3(0, 0, -p)))
-		p += 14.0
+	# The embankment the road stands on, tile-aligned so it breaks exactly where
+	# the floor does. Alternate stretches sit a hair apart so corners never flicker.
+	var dy := 0.02 * (seg.index % 2)
+	var span_from := -1.0
+	var e := 0.0
+	while e < seg.length:
+		var solid := not seg.in_gap(e + Models.TILE_LENGTH / 2.0)
+		if solid and span_from < 0.0:
+			span_from = e
+		elif not solid and span_from >= 0.0:
+			_embankment(m, f, span_from, e, dy)
+			span_from = -1.0
+		if not solid and seg.in_gap(e + Models.TILE_LENGTH / 2.0) and not seg.in_gap(e - Models.TILE_LENGTH / 2.0):
+			# Where a stretch collapsed, its blocks lie in the jungle below.
+			Models.rubble(sc, Models.sub(f, Vector3(0, Models.GROUND_Y, -(e + 1.0))), seg.rng.randi())
+		e += Models.TILE_LENGTH
+	_embankment(m, f, span_from if span_from >= 0.0 else seg.length, seg.end_s() + 0.9, dy)
 
-	# Pillars, torches and the jungle canopy on both flanks.
+	# Dressing along the walls: pillars on buttresses, torches on the parapet,
+	# vines spilling over, growth on the tier ledges.
 	var k := 8.0
 	while k < seg.length - 4.0:
 		for side in [-1.0, 1.0]:
-			if seg.rng.randf() < 0.55:
-				Models.pillar(m, Models.sub(f, Vector3(side * (W / 2.0 + 1.3), 0, -k)), seg.rng.randf_range(2.6, 3.6), seg.rng.randf() < 0.3)
-			elif seg.rng.randf() < 0.6:
-				Models.torch(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.9), 0, -k)))
-			else:
-				Models.fern(sc, Models.sub(f, Vector3(side * (W / 2.0 + 0.9), 0, -k)), seg.rng.randi())
-		k += seg.rng.randf_range(7.0, 11.0)
-	var t := 0.0
-	while t < seg.end_s():
-		for side in [-1.0, 1.0]:
-			# Past the corner, the turn side is where the next stretch runs.
-			if t > seg.length - 3.0 and side == float(seg.turn):
+			var at := Models.sub(f, Vector3(0, 0, -k))
+			if seg.in_gap(k - 1.5) or seg.in_gap(k + 1.5):
 				continue
-			var off := seg.rng.randf_range(5.5, 14.0)
-			var size := seg.rng.randf_range(0.85, 1.3)
-			Models.tree(sc, Models.sub(f, Vector3(side * (W / 2.0 + off), -9.5, -(t + seg.rng.randf_range(0.0, 4.0)))), size, seg.rng.randi_range(0, 99))
-		t += seg.rng.randf_range(3.5, 6.0)
+			var roll := seg.rng.randf()
+			if roll < 0.4:
+				Models.buttress(m, at, side)
+				Models.pillar(m, Models.sub(f, Vector3(side * (Models.WALL_HALF + 0.9), 0, -k)), seg.rng.randf_range(2.6, 3.6), seg.rng.randf() < 0.3)
+			elif roll < 0.75:
+				Models.torch(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.22), 0.4, -k)))
+			else:
+				Models.vines(sc, at, side, seg.rng.randi())
+		k += seg.rng.randf_range(7.0, 11.0)
+	var v := 3.0
+	while v < seg.length:
+		var side := -1.0 if seg.rng.randf() < 0.5 else 1.0
+		if not seg.in_gap(v):
+			if seg.rng.randf() < 0.5:
+				Models.vines(sc, Models.sub(f, Vector3(0, 0, -v)), side, seg.rng.randi())
+			# Bushes rooted on a tier ledge.
+			var tier := seg.rng.randi_range(0, 2)
+			var lx := Models.WALL_HALF + Models.TIER_STEP * tier + 0.35
+			var ly := Models.TIER_TOP - Models.TIER_H * tier + (0.1 if tier == 0 else 0.0)
+			Models.bush(sc, Models.sub(f, Vector3(side * lx, ly, -(v + seg.rng.randf_range(0.0, 2.0)))), seg.rng.randf_range(0.6, 0.9), seg.rng.randi_range(0, 99))
+		v += seg.rng.randf_range(3.0, 6.0)
+
+	# The jungle: trees rooted on the floor in two rows — lower near the wall,
+	# taller behind — with undergrowth at the foot of the embankment.
+	var base := Models.WALL_HALF + Models.TIER_STEP * 3.0
+	for row in 2:
+		var t := 0.0
+		while t < seg.end_s():
+			for side in [-1.0, 1.0]:
+				# Past the corner, the turn side is where the next stretch runs;
+				# near the start, the side we came from is where the last one ran.
+				if t > seg.length - 3.0 and side == float(seg.turn):
+					continue
+				if t < 10.0 + 8.0 * row and side == float(seg.prev_turn):
+					continue
+				var off := seg.rng.randf_range(1.6, 4.5) if row == 0 else seg.rng.randf_range(5.0, 15.0)
+				var size := seg.rng.randf_range(0.7, 0.95) if row == 0 else seg.rng.randf_range(1.0, 1.5)
+				var along := t + seg.rng.randf_range(0.0, 3.0)
+				Models.tree(sc, Models.sub(f, Vector3(side * (base + off), Models.GROUND_Y, -along)), size, seg.rng.randi_range(0, 99))
+				if row == 0 and seg.rng.randf() < 0.6:
+					Models.bush(sc, Models.sub(f, Vector3(side * (base + 0.6), Models.GROUND_Y, -(along + 1.5))), seg.rng.randf_range(1.0, 1.6), seg.rng.randi_range(0, 99))
+			t += seg.rng.randf_range(3.5, 5.5) if row == 0 else seg.rng.randf_range(5.0, 8.0)
 
 	# Obstacles.
 	for o in seg.obstacles:
@@ -264,6 +306,12 @@ func _bake(seg: Segment, first: bool) -> void:
 		Models.start_temple(m, f)
 
 	seg.baked = [m.bake(), sc.bake()]
+
+## Embankment under the road from [s0] to [s1].
+func _embankment(m: Mesher, f: Transform3D, s0: float, s1: float, dy: float) -> void:
+	if s1 - s0 < 0.01:
+		return
+	Models.embankment(m, Models.sub(f, Vector3(0, 0, -(s0 + s1) / 2.0)), s1 - s0, dy)
 
 ## Main thread: turns the baked arrays into nodes.
 func _attach(seg: Segment) -> void:

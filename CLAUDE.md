@@ -38,6 +38,11 @@ y up). The straight run is `s ∈ [0, length]`, the corner square `[length,
 length + PATH_WIDTH]`. Turns alternate so heading stays within ±90° of the start —
 the causeway zig-zags forward and can never cross itself. Lanes are x = −1.6/0/+1.6.
 
+- Nothing floats: the road is a raised sacbe on a stepped embankment
+  (`Models.embankment`) standing on the jungle floor at `Models.GROUND_Y`.
+  Pillars stand on buttresses, torches on the parapet, trees and bushes are
+  rooted on the floor or tier ledges. Gaps break the embankment too (rubble
+  below). The ground plane and skyline ride along under the camera.
 - Head-on hit = run over (specific cause shown). Clipping a statue mid lane-change
   = stumble (jaguars close in); a second stumble within 8 s = caught.
 - Missing the corner = "Ran off the causeway". Gaps = "Fell into the jungle".
