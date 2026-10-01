@@ -314,7 +314,7 @@ class GlyphButton:
 	func _init(t := "", k := Kind.PRIMARY) -> void:
 		text = t
 		kind = k
-		custom_minimum_size = Vector2(200, 92)
+		custom_minimum_size = Vector2(72, 56)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		focus_mode = Control.FOCUS_NONE
 		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
@@ -345,6 +345,8 @@ class GlyphButton:
 		UiKit.draw_ink(self, inner, Color(UiKit.STUCCO, 0.55) if kind == Kind.PRIMARY else UiKit.CINNABAR, 2.0)
 		# Affixes: the small dotted marks scribes set beside a main sign.
 		var dot := Color(UiKit.STUCCO, 0.85) if kind == Kind.PRIMARY else UiKit.CINNABAR
+		if face_rect.size.x < 200.0:
+			return
 		for side in [-1.0, 1.0]:
 			var x: float = face_rect.get_center().x + side * (face_rect.size.x / 2.0 - 26.0)
 			for dy in [-9.0, 0.0, 9.0]:
@@ -376,7 +378,7 @@ class GlyphIcon:
 	extends Control
 	signal pressed
 
-	enum Icon { PAUSE, SETTINGS, CLOSE, RECORDS, DAILY, MARKET, GLYPHS, OFFERINGS }
+	enum Icon { PAUSE, SETTINGS, CLOSE, RECORDS, DAILY, MARKET, GLYPHS, OFFERINGS, RANKS }
 
 	var icon := Icon.PAUSE
 	var badge := false: ## a cinnabar dot: something waits on that page
@@ -443,6 +445,14 @@ class GlyphIcon:
 				draw_colored_polygon(jar, UiKit.CINNABAR)
 				draw_polyline(UiKit.closed(jar), UiKit.INK, 3.0, true)
 				draw_line(c + Vector2(-14, 2), c + Vector2(14, 2), UiKit.STUCCO, 3.0, true)
+			Icon.RANKS:
+				# Three stepped bars, the tallest crowned with a sun.
+				for k in 3:
+					var hgt: float = [16.0, 26.0, 11.0][k]
+					var bx := c.x - 18.0 + k * 13.0
+					draw_rect(Rect2(bx, c.y + 14.0 - hgt, 10.0, hgt), UiKit.INK if k != 1 else UiKit.CINNABAR)
+				draw_circle(Vector2(c.x - 0.0, c.y - 18.0), 5.0, UiKit.OCHRE, true, -1.0, true)
+				draw_arc(Vector2(c.x - 0.0, c.y - 18.0), 5.0, 0.0, TAU, 14, UiKit.INK, 2.0, true)
 			Icon.OFFERINGS:
 				# An offering bowl with three curls of copal smoke rising.
 				var bowl := PackedVector2Array()
@@ -624,6 +634,33 @@ class OfferingDay:
 		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
 		draw_string(font, Vector2((size.x - tw) / 2.0, size.y - 8), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24,
 			UiKit.CINNABAR if state == "today" else UiKit.INK)
+
+# ============================================================ text field ===
+
+## A line of text on paper: a LineEdit dressed as an inked cartouche.
+static func text_field(text: String) -> LineEdit:
+	var e := LineEdit.new()
+	e.text = text
+	e.max_length = 28
+	e.add_theme_font_override("font", text_font(900))
+	e.add_theme_font_size_override("font_size", 32)
+	e.add_theme_color_override("font_color", INK)
+	e.add_theme_color_override("caret_color", CINNABAR)
+	e.add_theme_color_override("selection_color", Color(OCHRE, 0.5))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.55)
+	sb.border_color = INK
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(14)
+	sb.content_margin_left = 18
+	sb.content_margin_right = 18
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	e.add_theme_stylebox_override("normal", sb)
+	var focus := sb.duplicate() as StyleBoxFlat
+	focus.border_color = CINNABAR
+	e.add_theme_stylebox_override("focus", focus)
+	return e
 
 # ============================================================== swatch ===
 

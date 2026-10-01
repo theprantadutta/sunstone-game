@@ -42,6 +42,9 @@ scripts/
   glyphs.gd             the 20 glyphs (achievements) and when they're earned
   market.gd             charms, garbs, hues, Second wind cost — effects mirrored
                         in sunstone-api Runs/RunRules.cs
+  online.gd             Firebase Auth (REST, silent guest) → our JWT; run outbox;
+                        leaderboards; rename/delete account; cloud save merge;
+                        batched analytics. Never blocks play when offline.
   sfx.gd / save_data.gd audio + vibration / ConfigFile at user://save.cfg
 tools/make_audio.py     synthesizes every sound + the music loop (pure Python)
 tools/make_icon.py      draws the app icon, adaptive layers and boot splash
@@ -109,6 +112,8 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
   enabling autowrap locks it to the unwrapped width.
 - After adding a new `class_name` script, run `--import` once so the class
   registers, or other scripts fail to parse.
+- Sun-drops are `earned - spent` (two totals that only grow) so cloud merges can't
+  duplicate or undo spending: `dev/check_save_merge.gd` proves it.
 - `dev/check_calendar.gd` checks the tzolk'in math: `"$G" --headless --path . -s dev/check_calendar.gd`
   (2012-12-21 must be 4 Ajaw).
 

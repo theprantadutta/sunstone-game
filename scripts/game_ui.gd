@@ -15,11 +15,17 @@ signal home_pressed
 signal again_pressed
 signal settings_changed
 signal back_requested
+signal account_deleted
 signal looks_changed
 signal second_wind_accepted
 signal second_wind_declined
 
 var _save: SaveData
+var _online: Online
+var _ranks: Control
+var _ranks_board := "dusk"
+var _ranks_body: Control
+var _account: Control
 var _top := 28.0 ## below the status bar / camera cutout
 
 var _title: Control
@@ -102,14 +108,15 @@ func _back() -> void:
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_settings, _records, _daily, _glyphs, _offerings, _market]:
+	for page in [_account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
 	return false
 
-func setup(save: SaveData) -> void:
+func setup(save: SaveData, online: Online) -> void:
 	_save = save
+	_online = online
 	_build_title()
 	_build_hud()
 	_danger = UiKit.DangerFlash.new()
@@ -214,9 +221,10 @@ func _build_title() -> void:
 		[UiKit.GlyphIcon.Icon.OFFERINGS, "Offerings", _open_offerings],
 		[UiKit.GlyphIcon.Icon.MARKET, "Market", _open_market],
 		[UiKit.GlyphIcon.Icon.GLYPHS, "Glyphs", _open_glyphs],
+		[UiKit.GlyphIcon.Icon.RANKS, "Ranks", _open_ranks],
 		[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records],
 	]
-	var gap := 124.0
+	var gap := 116.0
 	var x0 := -gap * (menu.size() - 1) / 2.0
 	for i in menu.size():
 		var item: Array = menu[i]
@@ -228,7 +236,7 @@ func _build_title() -> void:
 		var l := UiKit.label(item[1], UiKit.text_font(900), 22, UiKit.STUCCO, 8)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_title.add_child(l)
-		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 62, -70, 124, 34))
+		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 58, -70, 116, 34))
 
 	# The sun-drops you hold, on a paper slip top-left.
 	_bank = UiKit.PaperSlip.new()
@@ -395,13 +403,26 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(580)
+	var m := _modal(690)
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")
 	var y := _settings_rows(page, 140)
+	var who: String = _online.player.get("name", "")
+	var acc := UiKit.label("Your runner" if who != "" else "Not signed in yet", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	acc.position = Vector2(58, y + 6)
+	page.add_child(acc)
+	var name_l := UiKit.label(who if who != "" else "Offline", UiKit.display_font(), 30, UiKit.INK)
+	name_l.position = Vector2(58, y + 38)
+	page.add_child(name_l)
+	var account := UiKit.GlyphButton.new("Account", UiKit.GlyphButton.Kind.SECONDARY)
+	account.font_size = 24
+	account.position = Vector2(384, y + 18)
+	account.size = Vector2(160, 72)
+	account.pressed.connect(_open_account)
+	page.add_child(account)
 	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
-	done.position = Vector2(56, y + 18)
+	done.position = Vector2(56, y + 116)
 	done.size = Vector2(488, 112)
 	done.pressed.connect(func(): _settings.visible = false)
 	page.add_child(done)
@@ -555,6 +576,8 @@ func _open_glyphs() -> void:
 				var id: String = Glyphs.DEFS[t.index].id
 				if _save.claim_glyph(id) > 0:
 					_save.save_to_disk()
+					_online.track("glyph_claim", {"id": id})
+					_online.queue_sync()
 					t.state = "claimed"
 					t.queue_redraw()
 					show.call(t.index)
@@ -616,6 +639,8 @@ func _open_offerings() -> void:
 			return
 		var got := _save.take_offering(today)
 		_save.save_to_disk()
+		_online.track("offering_take", {"reward": got})
+		_online.queue_sync()
 		for d in days:
 			if d.state == "today":
 				d.state = "taken"
@@ -623,6 +648,175 @@ func _open_offerings() -> void:
 		take.get_child(0).text = "+%d sun-drops" % got
 		_refresh_title()
 		get_tree().create_timer(0.9).timeout.connect(func(): _offerings.visible = false))
+	page.open()
+
+# ----------------------------------------------------------------- ranks ---
+
+const RANK_BOARDS := [["dusk", "Dusk"], ["day", "Today"], ["week", "Week"], ["all", "All"]]
+
+## The temple's records: the best distances on each board, and your place.
+func _open_ranks() -> void:
+	if _ranks:
+		_ranks.queue_free()
+	var m := _modal(1080)
+	_ranks = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 97
+	_headline(page, "Ranks")
+	_ranks_body = Control.new()
+	_ranks_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ranks_body.size = Vector2(600, 1080)
+	page.add_child(_ranks_body)
+	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	close.font_size = 28
+	close.position = Vector2(56, 970)
+	close.size = Vector2(488, 84)
+	close.pressed.connect(func(): _ranks.visible = false)
+	page.add_child(close)
+	page.open()
+	_fill_ranks()
+
+func _fill_ranks() -> void:
+	for c in _ranks_body.get_children():
+		c.queue_free()
+	var body := _ranks_body
+	for i in RANK_BOARDS.size():
+		var b: Array = RANK_BOARDS[i]
+		var tab := UiKit.GlyphButton.new(b[1], UiKit.GlyphButton.Kind.PRIMARY if b[0] == _ranks_board else UiKit.GlyphButton.Kind.SECONDARY)
+		tab.font_size = 22
+		tab.position = Vector2(56 + i * 124, 138)
+		tab.size = Vector2(116, 70)
+		tab.pressed.connect(func():
+			_ranks_board = b[0]
+			_fill_ranks())
+		body.add_child(tab)
+	var period_note := {
+		"dusk": "Today's dusk: %s" % MayaCalendar.tzolkin_name(MayaCalendar.today_utc()),
+		"day": "Free runs today (UTC)", "week": "Free runs this week", "all": "Every free run, ever",
+	}
+	var note := UiKit.label(period_note[_ranks_board], UiKit.text_font(900), 24, UiKit.CINNABAR)
+	note.position = Vector2(58, 220)
+	body.add_child(note)
+	var reading := UiKit.label("Reading the records…", UiKit.text_font(800), 26, UiKit.INK)
+	reading.position = Vector2(58, 280)
+	body.add_child(reading)
+	var board := _ranks_board
+	var period := MayaCalendar.today_utc() if board == "dusk" else ""
+	var data := await _online.leaderboard(board, period)
+	if not is_instance_valid(body) or board != _ranks_board:
+		return
+	reading.queue_free()
+	if data.is_empty():
+		body.add_child(UiKit.wrapped("The temple's records can't be reached right now. Your runs are kept and sent when they can be.",
+			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 280), 486, 120))
+		return
+	var top: Array = data.get("top", [])
+	if top.is_empty():
+		body.add_child(UiKit.wrapped("No one has run this yet. Be the first name in the codex.",
+			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 280), 486, 80))
+	var y := 266.0
+	for row in top.slice(0, 10):
+		_rank_row(body, row, y)
+		y += 56.0
+	var me: Variant = data.get("me")
+	var in_top := false
+	for row in top.slice(0, 10):
+		if row.get("isMe", false):
+			in_top = true
+	if me is Dictionary and not in_top:
+		_rule(body, y + 10, 101)
+		_rank_row(body, me, y + 26)
+	elif not me is Dictionary:
+		var hint := UiKit.label("Run to take your place here.", UiKit.text_font(800), 24, UiKit.INK)
+		hint.position = Vector2(58, maxf(y + 20, 520))
+		body.add_child(hint)
+	var players := int(data.get("players", 0))
+	var count := UiKit.label("%s %s" % [UiKit.thousands(players), "runner" if players == 1 else "runners"], UiKit.text_font(900), 22, UiKit.CINNABAR)
+	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	count.position = Vector2(344, 222)
+	count.size = Vector2(200, 30)
+	body.add_child(count)
+
+func _rank_row(body: Control, row: Dictionary, y: float) -> void:
+	var mine: bool = row.get("isMe", false)
+	var color := UiKit.CINNABAR if mine else UiKit.INK
+	var rank := UiKit.label("%d" % int(row.get("rank", 0)), UiKit.display_font(), 26, color)
+	rank.position = Vector2(58, y)
+	body.add_child(rank)
+	var n := UiKit.label(str(row.get("name", "")) + ("  (you)" if mine else ""), UiKit.text_font(900), 26, color)
+	n.position = Vector2(126, y + 2)
+	n.size = Vector2(250, 40)
+	n.clip_text = true
+	body.add_child(n)
+	var d := UiKit.label("%s m" % UiKit.thousands(int(row.get("distance", 0))), UiKit.display_font(), 26, color)
+	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	d.position = Vector2(364, y)
+	d.size = Vector2(180, 40)
+	body.add_child(d)
+
+# --------------------------------------------------------------- account ---
+
+## Your runner name (rename it) and the way to delete your account.
+func _open_account() -> void:
+	if _account:
+		_account.queue_free()
+	var m := _modal(740)
+	_account = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 103
+	_headline(page, "Account")
+	var label := UiKit.label("Your name on the ranks", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	label.position = Vector2(58, 140)
+	page.add_child(label)
+	var field := UiKit.text_field(str(_online.player.get("name", "")))
+	field.position = Vector2(56, 180)
+	field.size = Vector2(488, 72)
+	page.add_child(field)
+	var status := UiKit.wrapped("", UiKit.text_font(800), 24, UiKit.CINNABAR, Vector2(58, 262), 486, 34)
+	page.add_child(status)
+	var save_name := UiKit.GlyphButton.new("Save name", UiKit.GlyphButton.Kind.PRIMARY)
+	save_name.font_size = 28
+	save_name.position = Vector2(56, 304)
+	save_name.size = Vector2(488, 96)
+	save_name.pressed.connect(func():
+		status.text = "Saving…"
+		var err := await _online.rename(field.text.strip_edges())
+		status.text = err if err != "" else "Saved.")
+	page.add_child(save_name)
+	_rule(page, 430, 107)
+	page.add_child(UiKit.wrapped("Deleting your account removes your runs, ranks and cloud save from the server and starts this phone fresh.",
+		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 448), 486, 90))
+	var delete := UiKit.GlyphButton.new("Delete account", UiKit.GlyphButton.Kind.SECONDARY)
+	delete.font_size = 23
+	delete.position = Vector2(56, 590)
+	delete.size = Vector2(300, 84)
+	page.add_child(delete)
+	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	close.font_size = 26
+	close.position = Vector2(370, 590)
+	close.size = Vector2(174, 84)
+	close.pressed.connect(func(): _account.visible = false)
+	page.add_child(close)
+	var armed := [false]
+	delete.pressed.connect(func():
+		# Two taps: the first arms it, the second deletes.
+		if not armed[0]:
+			armed[0] = true
+			delete.get_child(0).text = "Tap to confirm"
+			status.text = "This can't be undone."
+			return
+		status.text = "Deleting…"
+		if await _online.delete_account():
+			_save.reset_all()
+			_save.save_to_disk()
+			status.text = "Deleted. This phone starts fresh."
+			account_deleted.emit()
+			await get_tree().create_timer(1.4).timeout
+			_account.visible = false
+			if _settings:
+				_settings.visible = false
+		else:
+			status.text = "Can't reach the temple right now. Try again later.")
 	page.open()
 
 # ---------------------------------------------------------------- market ---
@@ -707,6 +901,8 @@ func _fill_charms(body: Control) -> void:
 			btn.pressed.connect(func():
 				if _save.buy_charm(id):
 					_save.save_to_disk()
+					_online.track("market_buy", {"id": id, "tier": _save.charm_tier(id)})
+					_online.queue_sync()
 					_fill_market()
 					_refresh_title())
 		btn.font_size = 26
@@ -760,6 +956,8 @@ func _fill_looks(body: Control, kind: String, list: Array) -> void:
 			else:
 				_save.hue = id
 			_save.save_to_disk()
+			_online.track("market_wear", {"id": id})
+			_online.queue_sync()
 			looks_changed.emit()
 			_fill_market()
 			_refresh_title()

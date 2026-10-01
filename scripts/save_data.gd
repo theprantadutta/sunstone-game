@@ -9,7 +9,19 @@ const VERSION := 2
 
 # --- progress ---
 var best := 0 ## best distance, metres
-var bank := 0 ## sun-drops to spend
+## Sun-drops are kept as two running totals that only ever grow; the balance
+## is their difference. Merging two phones takes the larger of each, so
+## spending on one can never be undone (or duplicated) by the other.
+var earned := 0
+var spent := 0
+var bank: int: ## sun-drops to spend; assigning records an earning or a spend
+	get:
+		return earned - spent
+	set(v):
+		if v >= earned - spent:
+			earned += v - (earned - spent)
+		else:
+			spent += (earned - spent) - v
 var runs := 0
 var tutorial_runs := 0 ## move hints show for the first two runs
 
@@ -69,7 +81,8 @@ static func _read(path: String) -> Dictionary:
 
 func _apply(d: Dictionary) -> void:
 	best = int(d.get("best", 0))
-	bank = int(d.get("bank", 0))
+	earned = int(d.get("earned", d.get("bank", 0)))
+	spent = int(d.get("spent", 0))
 	runs = int(d.get("runs", 0))
 	tutorial_runs = int(d.get("tutorial_runs", 0))
 	total_distance = int(d.get("total_distance", 0))
@@ -98,10 +111,10 @@ func _apply(d: Dictionary) -> void:
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
 
-func save_to_disk() -> void:
-	var d := {
+func to_dict() -> Dictionary:
+	return {
 		"version": VERSION,
-		"best": best, "bank": bank, "runs": runs, "tutorial_runs": tutorial_runs,
+		"best": best, "earned": earned, "spent": spent, "bank": bank, "runs": runs, "tutorial_runs": tutorial_runs,
 		"total_distance": total_distance, "total_drops": total_drops, "best_drops": best_drops,
 		"flares": flares, "deepest_dusk": deepest_dusk, "play_seconds": play_seconds,
 		"deaths": deaths,
@@ -110,6 +123,59 @@ func save_to_disk() -> void:
 		"charms": charms, "owned": owned, "garb": garb, "hue": hue,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
+
+## Folds another copy of the save (the cloud's) into this one, so progress
+## from two phones adds up instead of one overwriting the other. Records take
+## the larger value, collections the union, claims the furthest state.
+## Returns true when anything changed. Settings stay as this phone has them.
+func merge_from(other: Variant) -> bool:
+	if not other is Dictionary or other.is_empty():
+		return false
+	var o: Dictionary = other
+	var before := JSON.stringify(to_dict())
+	best = maxi(best, int(o.get("best", 0)))
+	earned = maxi(earned, int(o.get("earned", o.get("bank", 0))))
+	spent = maxi(spent, int(o.get("spent", 0)))
+	runs = maxi(runs, int(o.get("runs", 0)))
+	tutorial_runs = maxi(tutorial_runs, int(o.get("tutorial_runs", 0)))
+	total_distance = maxi(total_distance, int(o.get("total_distance", 0)))
+	total_drops = maxi(total_drops, int(o.get("total_drops", 0)))
+	best_drops = maxi(best_drops, int(o.get("best_drops", 0)))
+	flares = maxi(flares, int(o.get("flares", 0)))
+	deepest_dusk = maxf(deepest_dusk, float(o.get("deepest_dusk", 0.0)))
+	play_seconds = maxf(play_seconds, float(o.get("play_seconds", 0.0)))
+	var od: Variant = o.get("deaths", {})
+	if od is Dictionary:
+		for k in od:
+			deaths[k] = maxi(int(deaths.get(k, 0)), int(od[k]))
+	var odl: Variant = o.get("daily", {})
+	if odl is Dictionary:
+		for k in odl:
+			daily[k] = maxi(int(daily.get(k, -1)), int(odl[k]))
+	if str(o.get("daily_last", "")) > daily_last:
+		daily_last = str(o.get("daily_last", ""))
+		daily_streak = int(o.get("daily_streak", daily_streak))
+	var og: Variant = o.get("glyphs", {})
+	if og is Dictionary:
+		for k in og:
+			if og[k] == "claimed" or not glyphs.has(k):
+				glyphs[k] = og[k]
+	if str(o.get("offering_last", "")) > offering_last:
+		offering_last = str(o.get("offering_last", ""))
+		offering_day = clampi(int(o.get("offering_day", 0)), 0, OFFERINGS.size() - 1)
+	var oc: Variant = o.get("charms", {})
+	if oc is Dictionary:
+		for k in oc:
+			charms[k] = maxi(charm_tier(k), clampi(int(oc[k]), 0, 3))
+	var ow: Variant = o.get("owned", [])
+	if ow is Array:
+		for id in ow:
+			if not owned.has(id):
+				owned.append(id)
+	return JSON.stringify(to_dict()) != before
+
+func save_to_disk() -> void:
+	var d := to_dict()
 	# Write beside, keep the last good save as a backup, then swap in — a crash
 	# at any point leaves at least one whole save on disk.
 	var tmp := PATH + ".tmp"
@@ -121,6 +187,16 @@ func save_to_disk() -> void:
 	if not _read(PATH).is_empty():
 		DirAccess.copy_absolute(ProjectSettings.globalize_path(PATH), ProjectSettings.globalize_path(BACKUP))
 	DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp), ProjectSettings.globalize_path(PATH))
+
+## Back to a brand-new save (after deleting the account). Settings stay.
+func reset_all() -> void:
+	var keep := [music, sound, vibration]
+	var fresh := SaveData.new()
+	_apply(fresh.to_dict())
+	music = keep[0]
+	sound = keep[1]
+	vibration = keep[2]
+	tutorial_runs = 2 # they already know how to play
 
 ## Folds one finished run into the records.
 func record_run(metres: int, drops: int, run_flares: int, dusk: float, seconds: float, cause: String) -> void:

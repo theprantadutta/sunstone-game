@@ -39,6 +39,7 @@ var runner: RunnerModel
 var jaguars: Array[JaguarModel] = []
 var camera: Camera3D
 var ui: GameUI
+var online: Online
 var sfx: Sfx
 var save := SaveData.new()
 
@@ -116,6 +117,8 @@ var _autopilot := OS.get_cmdline_user_args().has("--autopilot") or FileAccess.fi
 
 func _ready() -> void:
 	save.load_from_disk()
+	online = Online.new()
+	add_child(online)
 	_make_environment()
 	world = World.new()
 	add_child(world)
@@ -137,6 +140,11 @@ func _ready() -> void:
 	ui.run_pressed.connect(_start_run)
 	ui.daily_pressed.connect(_start_daily)
 	ui.looks_changed.connect(_spawn_runner)
+	ui.account_deleted.connect(func():
+		_spawn_runner()
+		if state == State.TITLE:
+			ui.show_title(save)
+		online.start(save))
 	ui.second_wind_accepted.connect(_second_wind)
 	ui.second_wind_declined.connect(func():
 		if state == State.OFFER:
@@ -147,7 +155,13 @@ func _ready() -> void:
 	ui.again_pressed.connect(_restart)
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.back_requested.connect(_on_back)
-	ui.setup(save)
+	ui.setup(save, online)
+	# Progress from another phone arrived: show it.
+	online.save_merged.connect(func():
+		if state == State.TITLE:
+			_spawn_runner()
+			ui.show_title(save))
+	online.start(save)
 	if FileAccess.file_exists("user://perf_noui"):
 		ui.visible = false
 	if FileAccess.file_exists("user://perf_noworld"):
@@ -228,6 +242,7 @@ func _start_run() -> void:
 		j.visible = true
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 	sfx.play(Sfx.ROAR)
+	online.track("run_start", {"mode": "daily" if daily_key != "" else "free", "runs": save.runs})
 
 ## Today's dusk: the same causeway for everyone, fixed for the whole run even
 ## if the date turns while running.
@@ -286,6 +301,7 @@ func _second_wind() -> void:
 	save.bank -= Market.SECOND_WIND_COST
 	save.save_to_disk()
 	_second_wind_used = true
+	online.track("second_wind", {"distance": int(distance)})
 	var seg := world.get_segment(seg_index)
 	if _fell and s > seg.length:
 		# Ran off the end: rise at the start of the next stretch.
@@ -341,6 +357,14 @@ func _finish_run() -> void:
 	})
 	save.save_to_disk()
 	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info, new_glyphs)
+	online.submit_run({
+		"mode": "daily" if daily_key != "" else "free", "dailyKey": daily_key if daily_key != "" else null,
+		"distance": metres, "drops": coins, "flares": _run_flares, "durationMs": int(_run_time * 1000.0),
+		"dusk": snappedf(dusk, 0.001), "cause": death_cause,
+	})
+	online.track("run_end", {"mode": "daily" if daily_key != "" else "free", "distance": metres, "drops": coins,
+		"flares": _run_flares, "cause": death_cause, "second_wind": _second_wind_used, "glyphs": new_glyphs.size()})
+	online.queue_sync()
 	sfx.play(Sfx.RESULTS)
 
 func _on_settings_changed() -> void:

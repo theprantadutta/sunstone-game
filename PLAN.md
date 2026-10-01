@@ -52,7 +52,11 @@ crashes go through our own server and Sentry.
 - [ ] Purchases verify, ad reward verification (SSV) — with phase 5
 
 ### 4. Online in the game
-- [ ] Leaderboard pages, cloud restore on a new device, account page (link / delete)
+- [x] Silent guest sign-in (Firebase REST) → our JWT; run outbox (offline-safe)
+- [x] Ranks page: daily dusk, today, week, all time — top 10 + your place
+- [x] Cloud save merge (earned/spent totals, unions, max records); analytics events
+- [x] Account page: rename, delete account (server + Firebase + fresh phone)
+- [ ] Link Google to keep progress across reinstalls (needs phase 2's native sign-in)
 
 ### 5. Monetization
 - [ ] Rewarded: second wind, double sun-drops on results, bigger offering
