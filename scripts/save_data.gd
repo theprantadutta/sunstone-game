@@ -52,6 +52,8 @@ var owned: Array = ["explorer", "sun"] ## garbs and hues you own
 var garb := "explorer"
 var hue := "sun"
 var entitlements: Array = [] ## bought for good: "no_ads", "patron"
+var review_asks := 0 ## times we've asked Google to show the rating sheet
+var review_last := "" ## local day of the last ask
 
 # --- settings ---
 var music := true
@@ -108,6 +110,8 @@ func _apply(d: Dictionary) -> void:
 	owned = ow if ow is Array else ["explorer", "sun"]
 	var en: Variant = d.get("entitlements", [])
 	entitlements = en if en is Array else []
+	review_asks = int(d.get("review_asks", 0))
+	review_last = str(d.get("review_last", ""))
 	garb = str(d.get("garb", "explorer"))
 	hue = str(d.get("hue", "sun"))
 	music = bool(d.get("music", true))
@@ -124,6 +128,7 @@ func to_dict() -> Dictionary:
 		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
 		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
 		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "entitlements": entitlements,
+		"review_asks": review_asks, "review_last": review_last,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
 

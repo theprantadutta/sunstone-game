@@ -66,7 +66,7 @@ analytics go through our own server.
 ### 6. Release
 - [x] Privacy policy + terms (in game; hosting pending), Data safety + content rating answers (store/LISTING.md)
 - [x] Store listing: feature graphic, 6 phone screenshots, copy (store/)
-- [ ] In-app review prompt, in-app update
+- [x] In-app review prompt (after a proud moment, paced). In-app update: not needed yet (Play auto-updates)
 - [ ] Closed test → production
 
 ## Needs from you (when we reach them)

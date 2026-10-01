@@ -42,6 +42,7 @@ var ui: GameUI
 var online: Online
 var ads: Ads
 var store: Store
+var review: InappReview
 var sfx: Sfx
 var save := SaveData.new()
 
@@ -125,6 +126,9 @@ func _ready() -> void:
 	add_child(ads)
 	store = Store.new()
 	add_child(store)
+	review = InappReview.new()
+	add_child(review)
+	review.review_info_generated.connect(func(): review.launch_review_flow())
 	online.config_loaded.connect(func(c: Dictionary):
 		ads.configure(c.get("adsEnabled", false), int(c.get("interstitialEveryRuns", 4)), save.has_entitlement("no_ads"))
 		store.open = c.get("storeOpen", false))
@@ -378,6 +382,7 @@ func _finish_run() -> void:
 	})
 	save.save_to_disk()
 	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info, new_glyphs)
+	_maybe_ask_review(is_best, metres)
 	online.submit_run({
 		"mode": "daily" if daily_key != "" else "free", "dailyKey": daily_key if daily_key != "" else null,
 		"distance": metres, "drops": coins, "flares": _run_flares, "durationMs": int(_run_time * 1000.0),
@@ -387,6 +392,25 @@ func _finish_run() -> void:
 		"flares": _run_flares, "cause": death_cause, "second_wind": _second_wind_used, "glyphs": new_glyphs.size()})
 	online.queue_sync()
 	sfx.play(Sfx.RESULTS)
+
+## Asks Google Play for its rating sheet right after a proud moment — a new
+## best of 500 m or more, once the player knows the game — at most once a
+## month and three times ever. Google decides whether it actually shows.
+func _maybe_ask_review(is_best: bool, metres: int) -> void:
+	if not is_best or metres < 500 or save.runs < 5 or save.review_asks >= 3 or OS.get_name() != "Android":
+		return
+	var today := MayaCalendar.today_local()
+	if save.review_last != "":
+		var last := Time.get_unix_time_from_datetime_string(save.review_last + "T00:00:00")
+		if Time.get_unix_time_from_datetime_string(today + "T00:00:00") - last < 30 * 86400:
+			return
+	save.review_asks += 1
+	save.review_last = today
+	save.save_to_disk()
+	# Let the results page land first.
+	await get_tree().create_timer(1.6).timeout
+	review.generate_review_info()
+	online.track("review_prompt", {"distance": metres})
 
 func _on_settings_changed() -> void:
 	save.save_to_disk()
