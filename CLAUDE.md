@@ -155,7 +155,7 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
 ## Release
 
 - `--export-release "Android Play" build/sunstone.aab` → signed AAB. Upload key:
-  `C:ndroid-keys\sunstone\` (outside the repo; password in
+  `C:\android-keys\sunstone\` (outside the repo; password in
   `.godot/export_credentials.cfg`, gitignored). Upload SHA-1
   `61:D9:FE:78:02:71:C8:1E:9C:4E:3A:1B:12:0C:A1:A0:2C:6D:32:96`.
 - Release builds call `https://sunstone.pranta.dev` (debug: the LAN dev API).
