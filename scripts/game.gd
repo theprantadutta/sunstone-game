@@ -62,6 +62,8 @@ var chaser_gap := 3.0
 var light := 1.0 ## the Sunstone's charge, 0..1
 var dusk := 0.0 ## 0 = sunset begins, 1 = full night
 var _freeze_t := 0.0
+var _run_flares := 0
+var _run_time := 0.0
 var _push_back := 0.0
 var _flare_boost := 0.0
 var _growl_cd := 0.0
@@ -177,6 +179,8 @@ func _reset_run() -> void:
 	light = FileAccess.get_file_as_string("user://dev_light").to_float() if FileAccess.file_exists("user://dev_light") else 1.0
 	dusk = _dev_dusk
 	_freeze_t = 0.0
+	_run_flares = 0
+	_run_time = 0.0
 	_push_back = 0.0
 	_flare_boost = 0.0
 	_growl_cd = 0.0
@@ -205,7 +209,7 @@ func _go_title() -> void:
 	_title_t = 0.0
 	runner.pose = RunnerModel.Pose.IDLE
 	_place_runner()
-	ui.show_title(save.best)
+	ui.show_title(save)
 	sfx.play_music()
 
 func _start_run() -> void:
@@ -264,10 +268,7 @@ func _finish_run() -> void:
 	var is_best := metres > save.best
 	if is_best:
 		save.best = metres
-	save.bank += coins
-	save.runs += 1
-	if save.tutorial_runs < 2:
-		save.tutorial_runs += 1
+	save.record_run(metres, coins, _run_flares, dusk, _run_time, death_cause)
 	save.save_to_disk()
 	ui.show_results(death_cause, metres, coins, save.best, is_best)
 	sfx.play(Sfx.RESULTS)
@@ -322,6 +323,7 @@ func _process(delta: float) -> void:
 	_prof_step += Time.get_ticks_usec() - t1
 
 func _step_run(delta: float) -> void:
+	_run_time += delta
 	if _autopilot:
 		_drive(world.get_segment(seg_index))
 	_intro_t = minf(_intro_t + delta / 0.9, 1.0)
@@ -436,6 +438,7 @@ func _flare() -> void:
 		sfx.play(Sfx.FIZZLE)
 		return
 	light -= FLARE_COST
+	_run_flares += 1
 	_freeze_t = FLARE_FREEZE
 	_push_back = FLARE_PUSH
 	_flare_boost = 1.0

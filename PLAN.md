@@ -29,7 +29,7 @@ Firebase is dropped entirely.
 ## Phases
 
 ### 1. The game, complete offline
-- [ ] 1a. Save v2 (versioned; sun-drop bank, stats, unlocks, glyphs, offerings), a title menu
+- [x] 1a. Save v2 (versioned; sun-drop bank, stats, unlocks, glyphs, offerings), a title menu
       in codex style (Run · Daily dusk · Market · Glyphs · Records), Records page (stats)
 - [ ] 1b. **Daily dusk**: one seeded causeway per UTC day, the same for everyone; its own best
 - [ ] 1c. **Glyphs** (achievements, ~20, paying sun-drops) and **Offerings** (7-day login calendar)

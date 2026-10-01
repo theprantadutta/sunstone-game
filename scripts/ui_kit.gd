@@ -360,12 +360,13 @@ class GlyphButton:
 
 # ========================================================= icon button ===
 
-## A small square glyph block with an inked sign: pause, settings, close.
+## A small square glyph block with an inked sign: pause, settings, close, and
+## the title menu's pages.
 class GlyphIcon:
 	extends Control
 	signal pressed
 
-	enum Icon { PAUSE, SETTINGS, CLOSE }
+	enum Icon { PAUSE, SETTINGS, CLOSE, RECORDS, DAILY, MARKET, GLYPHS }
 
 	var icon := Icon.PAUSE
 	var _down := false
@@ -403,6 +404,38 @@ class GlyphIcon:
 			Icon.CLOSE:
 				draw_line(c + Vector2(-12, -12), c + Vector2(12, 12), UiKit.INK, 6.0, true)
 				draw_line(c + Vector2(12, -12), c + Vector2(-12, 12), UiKit.INK, 6.0, true)
+			Icon.RECORDS:
+				# A record of counts: a Maya numeral, dots over bars.
+				UiKit.draw_maya_number(self, c + Vector2(-16, -14), 12, 8.0, UiKit.INK)
+			Icon.DAILY:
+				# Today's sun, half sunk below the horizon.
+				var sc := c + Vector2(0, 6)
+				var half := PackedVector2Array()
+				for i in 11:
+					var a := PI + PI * i / 10.0
+					half.append(sc + Vector2(cos(a), sin(a)) * 11.0)
+				draw_colored_polygon(half, UiKit.OCHRE)
+				draw_arc(sc, 12.0, PI, TAU, 20, UiKit.INK, 3.5, true)
+				for k in 5:
+					var a := PI + PI * (k + 0.5) / 5.0
+					var d := Vector2(cos(a), sin(a))
+					draw_line(sc + d * 17.0, sc + d * 23.0, UiKit.INK, 3.0, true)
+				draw_line(c + Vector2(-22, 7), c + Vector2(22, 7), UiKit.CINNABAR, 4.0, true)
+			Icon.MARKET:
+				# A cacao jar: the Maya market's currency, in a painted pot.
+				var jar := PackedVector2Array([c + Vector2(-8, -16), c + Vector2(8, -16), c + Vector2(6, -11),
+					c + Vector2(15, -2), c + Vector2(12, 12), c + Vector2(7, 16), c + Vector2(-7, 16),
+					c + Vector2(-12, 12), c + Vector2(-15, -2), c + Vector2(-6, -11)])
+				draw_colored_polygon(jar, UiKit.CINNABAR)
+				draw_polyline(UiKit.closed(jar), UiKit.INK, 3.0, true)
+				draw_line(c + Vector2(-14, 2), c + Vector2(14, 2), UiKit.STUCCO, 3.0, true)
+			Icon.GLYPHS:
+				# Four small glyph blocks: the collection.
+				for gx in [-1.0, 1.0]:
+					for gy in [-1.0, 1.0]:
+						var b := UiKit.glyph_block(Rect2(c + Vector2(gx * 10.0 - 8.0, gy * 10.0 - 8.0), Vector2(16, 16)), 3, 0.0)
+						draw_colored_polygon(b, UiKit.OCHRE if gx * gy > 0.0 else UiKit.STUCCO)
+						draw_polyline(UiKit.closed(b), UiKit.INK, 2.5, true)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
@@ -438,7 +471,7 @@ class Wordmark:
 		var e := 1.0 - pow(1.0 - _t, 3.0)
 		var strip := Rect2(Vector2(20, 130), Vector2(600, 150))
 		var w := strip.size.x * e
-		var unrolled := Rect2(Vector2(strip.get_center().x - w / 2.0, strip.position.y), Vector2(maxf(w, 1.0), strip.size.y))
+		var unrolled := Rect2(Vector2(strip.get_center().x - w / 2.0, strip.position.y), Vector2(maxf(w, 40.0), strip.size.y))
 		var edge := UiKit.torn(unrolled, 41)
 		var shadow := PackedVector2Array()
 		for p in edge:

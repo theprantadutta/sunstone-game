@@ -30,6 +30,7 @@ var _danger: UiKit.DangerFlash
 var _pause: Control
 var _settings: Control
 var _results: Control
+var _records: Control
 var _dark: TextureRect
 var _flare_rect: ColorRect
 
@@ -71,21 +72,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		_back()
 		get_viewport().set_input_as_handled()
 
-## Android can deliver one press of back both as a key and as a request;
-## count it once.
+## Android delivers one press of back both as a key and as a request, and a
+## heavy frame (rebuilding the world) can push the second a frame or more
+## later. Count it once: ignore anything within a few frames or 300 ms.
 var _last_back := -1000
+var _last_back_frame := -1000
 func _back() -> void:
 	var now := Time.get_ticks_msec()
-	if now - _last_back < 250:
+	var frame := Engine.get_process_frames()
+	if now - _last_back < 300 or frame - _last_back_frame <= 4:
 		return
 	_last_back = now
+	_last_back_frame = frame
 	back_requested.emit()
 
-## Closes the settings page if it is open; true when it was.
+## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	if _settings and _settings.visible:
-		_settings.visible = false
-		return true
+	for page in [_settings, _records]:
+		if page and is_instance_valid(page) and page.visible:
+			page.visible = false
+			return true
 	return false
 
 func setup(save: SaveData) -> void:
@@ -181,22 +187,37 @@ func _build_title() -> void:
 	var run := UiKit.GlyphButton.new("Run", UiKit.GlyphButton.Kind.PRIMARY)
 	run.font_size = 48
 	_title.add_child(run)
-	_pin(run, BOTTOM_CENTER, Rect2(-200, -340, 400, 128))
+	_pin(run, BOTTOM_CENTER, Rect2(-200, -400, 400, 128))
 	run.pressed.connect(func(): run_pressed.emit())
 
 	_best = UiKit.PaperSlip.new()
 	_title.add_child(_best)
-	_pin(_best, BOTTOM_CENTER, Rect2(-200, -190, 400, 70))
+	_pin(_best, BOTTOM_CENTER, Rect2(-200, -254, 400, 70))
+
+	# The menu: one glyph per page of the codex, labelled underneath.
+	var menu := [[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records]]
+	var gap := 128.0
+	var x0 := -gap * (menu.size() - 1) / 2.0
+	for i in menu.size():
+		var item: Array = menu[i]
+		var b := UiKit.GlyphIcon.new(item[0])
+		_title.add_child(b)
+		_pin(b, BOTTOM_CENTER, Rect2(x0 + gap * i - 42, -158, 84, 84))
+		b.pressed.connect(item[2])
+		var l := UiKit.label(item[1], UiKit.text_font(900), 24, UiKit.STUCCO, 8)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_title.add_child(l)
+		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 70, -70, 140, 34))
 
 	var gear := UiKit.GlyphIcon.new(UiKit.GlyphIcon.Icon.SETTINGS)
 	_title.add_child(gear)
 	_pin(gear, TOP_RIGHT, Rect2(-108, _top, 84, 84))
 	gear.pressed.connect(_open_settings)
 
-func show_title(best: int) -> void:
+func show_title(save: SaveData) -> void:
 	_hide_all()
-	if best > 0:
-		_best.set_text("Best %s m" % UiKit.thousands(best), best)
+	if save.best > 0:
+		_best.set_text("Best %s m" % UiKit.thousands(save.best), save.best)
 	else:
 		_best.set_text("Outrun the stone jaguars")
 	_title.visible = true
@@ -338,6 +359,71 @@ func _open_settings() -> void:
 	done.position = Vector2(56, y + 18)
 	done.size = Vector2(488, 112)
 	done.pressed.connect(func(): _settings.visible = false)
+	page.add_child(done)
+	page.open()
+
+# -------------------------------------------------------------- records ---
+
+## How deep into the night a run reached, in words.
+static func night_name(d: float) -> String:
+	if d < 0.3:
+		return "Sunset"
+	if d < 0.6:
+		return "Twilight"
+	if d < 0.9:
+		return "Moonrise"
+	return "Deep night"
+
+static func duration_text(seconds: float) -> String:
+	var m := int(seconds / 60.0)
+	if m < 60:
+		return "%d min" % m
+	return "%d h %d min" % [m / 60, m % 60]
+
+## The record book: every count the codex keeps, one register per line.
+func _open_records() -> void:
+	if _records:
+		_records.queue_free()
+	var rows := [
+		["Best distance", "%s m" % UiKit.thousands(_save.best)],
+		["Runs", UiKit.thousands(_save.runs)],
+		["Distance run", "%.1f km" % (_save.total_distance / 1000.0)],
+		["Sun-drops gathered", UiKit.thousands(_save.total_drops)],
+		["Most in one run", UiKit.thousands(_save.best_drops)],
+		["Flares", UiKit.thousands(_save.flares)],
+		["Deepest night", night_name(_save.deepest_dusk) if _save.runs > 0 else "-"],
+		["Time in the temple", duration_text(_save.play_seconds)],
+	]
+	var top := _save.most_common_death()
+	var height := 210.0 + rows.size() * 64.0 + (96.0 if top != "" else 0.0) + 150.0
+	var m := _modal(height)
+	_records = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 29
+	_headline(page, "Records")
+	var y := 146.0
+	for row in rows:
+		var name_l := UiKit.label(row[0], UiKit.text_font(900), 28, UiKit.INK)
+		name_l.position = Vector2(58, y)
+		page.add_child(name_l)
+		var val := UiKit.label(row[1], UiKit.display_font(), 28, UiKit.CINNABAR if row[0] == "Best distance" else UiKit.INK)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		val.position = Vector2(300, y - 2)
+		val.size = Vector2(244, 40)
+		page.add_child(val)
+		y += 64.0
+	if top != "":
+		_rule(page, y + 4, 31)
+		var t := UiKit.label("Most runs end: %s" % top.to_lower(), UiKit.text_font(900), 26, UiKit.INK)
+		t.position = Vector2(58, y + 24)
+		t.size = Vector2(486, 60)
+		t.autowrap_mode = TextServer.AUTOWRAP_WORD
+		page.add_child(t)
+		y += 96.0
+	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
+	done.position = Vector2(56, y + 24)
+	done.size = Vector2(488, 104)
+	done.pressed.connect(func(): _records.visible = false)
 	page.add_child(done)
 	page.open()
 
