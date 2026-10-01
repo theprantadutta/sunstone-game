@@ -103,6 +103,18 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
 - `dev/check_calendar.gd` checks the tzolk'in math: `"$G" --headless --path . -s dev/check_calendar.gd`
   (2012-12-21 must be 4 Ajaw).
 
+## Online (Firebase + sunstone-api)
+
+No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
+- Firebase project **`sunstone-95fce`** (Auth: anonymous + Google). The game talks
+  to Firebase Auth over its REST API; the web API key comes from the Android app's
+  `google-services.json` (place it in this repo's root; it is not a secret).
+- Google sign-in web client id (public):
+  `865615140000-9jk5kbkrjg2ip2lmckib1oohokvaiten.apps.googleusercontent.com`
+- Debug keystore SHA-1 (register in Firebase for Google sign-in on test builds):
+  `DB:66:45:43:4B:46:84:35:E8:50:2E:B7:81:C0:15:1D:DE:98:A6:3C`
+- The server exchanges the Firebase ID token for its own JWT (`POST /api/v1/auth/firebase`).
+
 ## Assets
 
 All generated: models in code, audio by `tools/make_audio.py`, icon by
