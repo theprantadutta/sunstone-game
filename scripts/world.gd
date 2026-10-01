@@ -2,7 +2,9 @@ class_name World
 extends Node3D
 ## The endless causeway: straight stretches ("segments") joined by 90° corners
 ## where the runner must turn. Segments are generated a few ahead and freed
-## behind, each built as ONE batched mesh plus its coin nodes.
+## behind, each built as two batched meshes (shadow casters + scenery) and one
+## coin MultiMesh — a handful of draw calls per stretch. The geometry is built
+## on a worker thread, so a new stretch never stalls a frame.
 ##
 ## Path space: a segment has an origin, a forward [dir] and a [right] vector.
 ## A point is (s along dir, x across, y up). The straight run is s ∈ [0, length];
@@ -23,8 +25,12 @@ class Segment:
 	var heading := 0 ## -1/0/+1: net quarter-turns from the start direction
 	var obstacles: Array[Dictionary] = [] ## {s, lane, kind}
 	var gaps: Array[Vector2] = [] ## floor missing across all lanes, (s0, s1)
-	var coins: Array[Dictionary] = [] ## {s, x, y, node, taken}
+	var coins: Array[Dictionary] = [] ## {s, x, y, taken}
 	var node: Node3D
+	var coin_mm: MultiMesh ## every coin of the stretch in one draw
+	var rng := RandomNumberGenerator.new() ## scenery dice, so it can build off-thread
+	var task := -1 ## WorkerThreadPool task building the meshes
+	var baked: Array = [] ## [path arrays, scenery arrays] from the worker
 
 	func point(s: float, x := 0.0, y := 0.0) -> Vector3:
 		return origin + dir * s + right * x + Vector3.UP * y
@@ -52,9 +58,11 @@ var difficulty := 0.0 ## 0..1, set by the game from distance run
 var _segments: Array[Segment] = []
 var _rng := RandomNumberGenerator.new()
 var _coin_mesh: ArrayMesh
+var _coin_angle := 0.0
 
 func reset(seed: int) -> void:
 	for seg in _segments:
+		_finish_task(seg)
 		if seg.node:
 			seg.node.queue_free()
 	_segments.clear()
@@ -67,9 +75,14 @@ func reset(seed: int) -> void:
 	first.length = 52.0
 	first.turn = 1 if _rng.randf() < 0.5 else -1
 	_populate(first, true)
-	_build(first, true)
+	first.rng.seed = _rng.randi()
+	_bake(first, true)
+	_attach(first)
 	_segments.append(first)
 	ensure_ahead(0)
+	# A fresh run starts on finished scenery.
+	for seg in _segments:
+		_finish_task(seg)
 
 func get_segment(index: int) -> Segment:
 	for seg in _segments:
@@ -83,6 +96,7 @@ func ensure_ahead(current: int) -> void:
 		_segments.append(_next_after(_segments.back()))
 	while _segments.front().index < current - 2:
 		var old: Segment = _segments.pop_front()
+		_finish_task(old)
 		if old.node:
 			old.node.queue_free()
 
@@ -103,8 +117,22 @@ func _next_after(prev: Segment) -> Segment:
 	else:
 		seg.turn = 1 if _rng.randf() < 0.5 else -1
 	_populate(seg, false)
-	_build(seg, false)
+	seg.rng.seed = _rng.randi()
+	seg.task = WorkerThreadPool.add_task(_bake.bind(seg, false), false, "segment")
 	return seg
+
+## Attaches any stretch whose worker has finished; called each frame.
+func poll() -> void:
+	for seg in _segments:
+		if seg.task >= 0 and WorkerThreadPool.is_task_completed(seg.task):
+			_finish_task(seg)
+
+func _finish_task(seg: Segment) -> void:
+	if seg.task < 0:
+		return
+	WorkerThreadPool.wait_for_task_completion(seg.task)
+	seg.task = -1
+	_attach(seg)
 
 # ------------------------------------------------------------- content ---
 
@@ -166,8 +194,11 @@ func _coin_arc(seg: Segment, s: float, lane: int) -> void:
 
 # ---------------------------------------------------------------- build ---
 
-func _build(seg: Segment, first: bool) -> void:
-	var m := Mesher.new()
+## Builds the stretch's geometry. Runs on a worker thread: touches nothing but
+## its own Meshers and the segment's dice.
+func _bake(seg: Segment, first: bool) -> void:
+	var m := Mesher.new() # the path and anything that should shadow it
+	var sc := Mesher.new() # jungle and piers far below: no shadows, half the cost
 	var f := seg.frame()
 
 	# Floor + kerbs along the straight, tile by tile (gaps simply skip tiles).
@@ -176,7 +207,7 @@ func _build(seg: Segment, first: bool) -> void:
 		var mid := s + Models.TILE_LENGTH / 2.0
 		if not seg.in_gap(mid):
 			for lane in [-1, 0, 1]:
-				Models.floor_tile(m, Models.sub(f, Vector3(lane * LW, 0, -mid)), _rng.randf())
+				Models.floor_tile(m, Models.sub(f, Vector3(lane * LW, 0, -mid)), seg.rng.randf())
 			for side in [-1.0, 1.0]:
 				Models.kerb(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.22), 0, -mid)), Models.TILE_LENGTH, side)
 		s += Models.TILE_LENGTH
@@ -194,30 +225,30 @@ func _build(seg: Segment, first: bool) -> void:
 	var p := 6.0
 	while p < seg.end_s():
 		if not seg.in_gap(p):
-			Models.pier(m, Models.sub(f, Vector3(0, 0, -p)))
+			Models.pier(sc, Models.sub(f, Vector3(0, 0, -p)))
 		p += 14.0
 
 	# Pillars, torches and the jungle canopy on both flanks.
 	var k := 8.0
 	while k < seg.length - 4.0:
 		for side in [-1.0, 1.0]:
-			if _rng.randf() < 0.55:
-				Models.pillar(m, Models.sub(f, Vector3(side * (W / 2.0 + 1.3), 0, -k)), _rng.randf_range(2.6, 3.6), _rng.randf() < 0.3)
-			elif _rng.randf() < 0.6:
+			if seg.rng.randf() < 0.55:
+				Models.pillar(m, Models.sub(f, Vector3(side * (W / 2.0 + 1.3), 0, -k)), seg.rng.randf_range(2.6, 3.6), seg.rng.randf() < 0.3)
+			elif seg.rng.randf() < 0.6:
 				Models.torch(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.9), 0, -k)))
 			else:
-				Models.fern(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.9), 0, -k)), _rng.randi())
-		k += _rng.randf_range(7.0, 11.0)
+				Models.fern(sc, Models.sub(f, Vector3(side * (W / 2.0 + 0.9), 0, -k)), seg.rng.randi())
+		k += seg.rng.randf_range(7.0, 11.0)
 	var t := 0.0
 	while t < seg.end_s():
 		for side in [-1.0, 1.0]:
 			# Past the corner, the turn side is where the next stretch runs.
 			if t > seg.length - 3.0 and side == float(seg.turn):
 				continue
-			var off := _rng.randf_range(5.5, 14.0)
-			var size := _rng.randf_range(0.85, 1.3)
-			Models.tree(m, Models.sub(f, Vector3(side * (W / 2.0 + off), -9.5, -(t + _rng.randf_range(0.0, 4.0)))), size, _rng.randi_range(0, 99))
-		t += _rng.randf_range(3.5, 6.0)
+			var off := seg.rng.randf_range(5.5, 14.0)
+			var size := seg.rng.randf_range(0.85, 1.3)
+			Models.tree(sc, Models.sub(f, Vector3(side * (W / 2.0 + off), -9.5, -(t + seg.rng.randf_range(0.0, 4.0)))), size, seg.rng.randi_range(0, 99))
+		t += seg.rng.randf_range(3.5, 6.0)
 
 	# Obstacles.
 	for o in seg.obstacles:
@@ -232,21 +263,48 @@ func _build(seg: Segment, first: bool) -> void:
 	if first:
 		Models.start_temple(m, f)
 
+	seg.baked = [m.bake(), sc.bake()]
+
+## Main thread: turns the baked arrays into nodes.
+func _attach(seg: Segment) -> void:
 	var node := Node3D.new()
-	node.add_child(m.to_instance())
-	for c in seg.coins:
-		var coin := MeshInstance3D.new()
-		coin.mesh = _coin_mesh
-		coin.position = seg.point(c.s, c.x, c.y)
-		coin.rotation.y = c.s # desync spins
-		node.add_child(coin)
-		c.node = coin
+	var path := MeshInstance3D.new()
+	path.mesh = Mesher.from_arrays(seg.baked[0])
+	node.add_child(path)
+	var scenery := MeshInstance3D.new()
+	scenery.mesh = Mesher.from_arrays(seg.baked[1])
+	scenery.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.add_child(scenery)
+	seg.baked = []
+	if not seg.coins.is_empty():
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _coin_mesh
+		mm.instance_count = seg.coins.size()
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.add_child(mmi)
+		seg.coin_mm = mm
 	seg.node = node
 	add_child(node)
+	_spin(seg)
 
-## Spins every coin; called each frame.
+## Spins every coin and hides the collected ones; called each frame.
 func spin_coins(delta: float) -> void:
+	poll()
+	_coin_angle = fmod(_coin_angle + delta * 3.0, TAU)
 	for seg in _segments:
-		for c in seg.coins:
-			if not c.taken and c.node:
-				c.node.rotate_y(delta * 3.0)
+		_spin(seg)
+
+func _spin(seg: Segment) -> void:
+	if seg.coin_mm == null:
+		return
+	for i in seg.coins.size():
+		var c := seg.coins[i]
+		var pos := seg.point(c.s, c.x, c.y)
+		if c.taken:
+			seg.coin_mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), pos))
+		else:
+			# Offset by s so neighbouring coins don't spin in lockstep.
+			seg.coin_mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, _coin_angle + c.s), pos))

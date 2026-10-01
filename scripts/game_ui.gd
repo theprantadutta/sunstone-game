@@ -155,6 +155,9 @@ func set_run_numbers(metres: int, coin_count: int) -> void:
 func show_hint(text: String, dir: Vector2) -> void:
 	_hint.show_hint(text, dir)
 
+func dismiss_hint() -> void:
+	_hint.dismiss()
+
 func flash_danger() -> void:
 	_danger.flash()
 

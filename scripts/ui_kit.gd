@@ -386,6 +386,10 @@ class HintToast:
 		_life = 2.2
 		_t = 0.0
 
+	## Fades out now — the player already did what it asked.
+	func dismiss() -> void:
+		_life = minf(_life, 0.3)
+
 	func _process(delta: float) -> void:
 		if _life > 0.0:
 			_life -= delta

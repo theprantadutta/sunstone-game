@@ -57,7 +57,8 @@ func _part(parent: Node3D, build: Callable) -> void:
 
 ## Gallop: front and back legs move in pairs, the spine rocks, the tail lashes.
 func animate(delta: float, speed: float) -> void:
-	_phase += delta * (4.0 + speed * 0.45)
+	# Bounds of about 2.4 m, so the paws keep pace with the ground.
+	_phase += delta * TAU * clampf(speed / 4.8, 0.8, 3.0)
 	var s := sin(_phase)
 	_legs[0].rotation.x = s * 0.9
 	_legs[1].rotation.x = s * 0.7

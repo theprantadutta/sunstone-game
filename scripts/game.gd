@@ -5,15 +5,17 @@ extends Node3D
 
 enum State { TITLE, RUNNING, PAUSED, DYING, RESULTS }
 
-const START_SPEED := 11.0
-const MAX_SPEED := 25.0
+const START_SPEED := 12.5
+const MAX_SPEED := 27.0
 const SPEED_RAMP := 1800.0 ## metres to approach top speed
-const JUMP_VELOCITY := 7.6
-const GRAVITY := 21.0
-const SLAM_VELOCITY := -20.0
-const SLIDE_TIME := 0.72
-const LANE_SPEED := 13.0 ## sideways units per second
-const TURN_WINDOW := 10.0 ## swipe this far before a corner to turn
+const JUMP_VELOCITY := 9.2
+const GRAVITY := 30.0
+const FALL_GRAVITY := 1.35 ## heavier on the way down: snappy, not floaty
+const SLAM_VELOCITY := -22.0
+const SLIDE_TIME := 0.65
+const LANE_STIFFNESS := 24.0 ## lane-change spring; settles in ~0.2 s
+const TURN_WINDOW := 7.0 ## swipe this far before a corner to turn
+const JUMP_BUFFER := 0.14 ## a jump swiped just before landing still counts
 const START_S := 8.0
 const STUMBLE_MEMORY := 8.0 ## a second stumble inside this window = caught
 const SWIPE_DISTANCE := 42.0
@@ -34,6 +36,7 @@ var save := SaveData.new()
 var seg_index := 0
 var s := START_S
 var x := 0.0
+var x_vel := 0.0
 var lane_target := 0
 var lane_from := 0
 var y := 0.0
@@ -51,12 +54,23 @@ var _death_t := 0.0
 var _fell := false
 var _caught := false
 var _yaw := 0.0
+var _jump_buffer := 0.0
+var _vis_offset := Vector3.ZERO ## eases out any snap when the path changes under him
 var _title_t := 0.0
 var _intro_t := 0.0 ## 0→1 camera move from the title shot into the chase
 var _trail: Array[Dictionary] = [] ## {d, p, dir} — camera and jaguars follow it
 var _hints_shown := {}
 var _cam_pos := Vector3.ZERO
 var _cam_look := Vector3.ZERO
+var _cam_yaw := 0.0
+var _cam_off := Vector3.ZERO
+var _cam_lift := 0.0
+var _fps_t := 0.0
+var _prof_n := 0
+var _perf_nocoins := FileAccess.file_exists("user://perf_nocoins")
+var _prof_coins := 0
+var _prof_step := 0
+var _prof_max_dt := 0.0
 var _shake := 0.0
 
 # --- touch ---
@@ -97,6 +111,10 @@ func _ready() -> void:
 	ui.again_pressed.connect(_restart)
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.setup(save)
+	if FileAccess.file_exists("user://perf_noui"):
+		ui.visible = false
+	if FileAccess.file_exists("user://perf_noworld"):
+		world.visible = false
 	_go_title()
 	if _autopilot:
 		get_tree().create_timer(1.2).timeout.connect(_start_run)
@@ -108,6 +126,9 @@ func _reset_run() -> void:
 	seg_index = 0
 	s = START_S
 	x = 0.0
+	x_vel = 0.0
+	_vis_offset = Vector3.ZERO
+	_jump_buffer = 0.0
 	lane_target = 0
 	lane_from = 0
 	y = 0.0
@@ -126,6 +147,9 @@ func _reset_run() -> void:
 	_hints_shown.clear()
 	var seg := world.get_segment(0)
 	_yaw = _yaw_of(seg.dir)
+	_cam_yaw = _yaw
+	_cam_off = Vector3.ZERO
+	_cam_lift = 0.0
 	_trail.clear()
 	# Seed the trail behind the start so the chase camera has somewhere to sit.
 	for i in 12:
@@ -215,7 +239,32 @@ func _on_settings_changed() -> void:
 # -------------------------------------------------------------- frame ---
 
 func _process(delta: float) -> void:
-	world.spin_coins(delta)
+	var t0 := Time.get_ticks_usec()
+	if not _perf_nocoins:
+		world.spin_coins(delta)
+	var t1 := Time.get_ticks_usec()
+	if _autopilot:
+		_fps_t += delta
+		_prof_n += 1
+		_prof_max_dt = maxf(_prof_max_dt, delta)
+		if _fps_t > 2.0:
+			var vp := get_viewport().get_viewport_rid()
+			RenderingServer.viewport_set_measure_render_time(vp, true)
+			print("[sunstone] proc %.1fms fps %d cpu %.1fms gpu %.1fms coins %dus step %dus maxdt %.1fms draws %d prims %dk" % [
+				Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+				Engine.get_frames_per_second(),
+				RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu(),
+				RenderingServer.viewport_get_measured_render_time_gpu(vp),
+				_prof_coins / _prof_n, _prof_step / _prof_n,
+				_prof_max_dt * 1000.0,
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0])
+			_fps_t = 0.0
+			_prof_n = 0
+			_prof_coins = 0
+			_prof_step = 0
+			_prof_max_dt = 0.0
+	_prof_coins += t1 - t0
 	match state:
 		State.TITLE:
 			_title_t += delta
@@ -228,14 +277,16 @@ func _process(delta: float) -> void:
 		State.RESULTS:
 			runner.animate(delta, 0.0)
 	_apply_shake(delta)
+	_prof_step += Time.get_ticks_usec() - t1
 
 func _step_run(delta: float) -> void:
 	if _autopilot:
 		_drive(world.get_segment(seg_index))
 	_intro_t = minf(_intro_t + delta / 0.9, 1.0)
 	speed = START_SPEED + (MAX_SPEED - START_SPEED) * (1.0 - exp(-distance / SPEED_RAMP))
-	if stumble_t > STUMBLE_MEMORY - 0.8:
-		speed *= 0.75 # a stumble costs a beat
+	# A stumble costs a beat, then he recovers over a second.
+	var stagger := clampf(stumble_t - (STUMBLE_MEMORY - 1.0), 0.0, 1.0)
+	speed *= 1.0 - 0.3 * stagger
 	world.difficulty = clampf(distance / 2600.0, 0.0, 1.0)
 
 	var seg := world.get_segment(seg_index)
@@ -243,27 +294,31 @@ func _step_run(delta: float) -> void:
 	s += ds
 	distance += ds
 
-	# Corner: turn if a turn is queued, otherwise run off the edge.
-	if pending_turn != 0 and s >= seg.corner_s():
-		_do_turn(seg)
+	# Corner: turn the moment he reaches his pivot, otherwise run off the edge.
+	if pending_turn != 0 and s >= _pivot_s(seg):
+		_do_turn(seg, s - _pivot_s(seg))
 		seg = world.get_segment(seg_index)
 	elif s > seg.end_s() - 0.2:
 		_die("Ran off the causeway", true)
 		return
 
-	# Sideways, vertical, slide.
-	x = move_toward(x, lane_target * LW, LANE_SPEED * delta)
+	_step_lane(delta)
 	if y > 0.0 or vy > 0.0:
-		vy -= GRAVITY * delta
+		vy -= GRAVITY * (FALL_GRAVITY if vy < 0.0 else 1.0) * delta
 		y += vy * delta
 		if y <= 0.0:
 			y = 0.0
 			vy = 0.0
+			runner.land()
 			if slide_after_land:
 				slide_after_land = false
 				_begin_slide()
+			elif _jump_buffer > 0.0:
+				_jump()
+	_jump_buffer = maxf(_jump_buffer - delta, 0.0)
 	if slide_t > 0.0:
 		slide_t -= delta
+	_vis_offset *= exp(-14.0 * delta)
 
 	if y <= 0.01 and seg.in_gap(s):
 		_die("Fell into the jungle", true)
@@ -279,11 +334,25 @@ func _step_run(delta: float) -> void:
 
 	runner.pose = RunnerModel.Pose.SLIDE if slide_t > 0.0 else (RunnerModel.Pose.JUMP if y > 0.05 else RunnerModel.Pose.RUN)
 	runner.animate(delta, speed)
-	_place_runner()
+	_place_runner(delta)
 	_push_trail()
 	_place_jaguars(delta)
+	camera.fov = lerpf(66.0, 74.0, (speed - START_SPEED) / (MAX_SPEED - START_SPEED))
 	_update_chase_camera(delta)
 	ui.set_run_numbers(int(distance), coins)
+
+## Lane changes ride a critically damped spring: quick off the mark, eased
+## into the lane, never overshooting. Substepped so a slow frame stays stable.
+func _step_lane(delta: float) -> void:
+	var goal := lane_target * LW
+	var steps := maxi(ceili(delta * 120.0), 1)
+	var h := delta / steps
+	for i in steps:
+		x_vel += (LANE_STIFFNESS * LANE_STIFFNESS * (goal - x) - 2.0 * LANE_STIFFNESS * x_vel) * h
+		x += x_vel * h
+	if absf(goal - x) < 0.003 and absf(x_vel) < 0.05:
+		x = goal
+		x_vel = 0.0
 
 func _step_death(delta: float) -> void:
 	_death_t += delta
@@ -293,7 +362,7 @@ func _step_death(delta: float) -> void:
 		s += speed * 0.6 * delta
 		vy -= GRAVITY * delta
 		y += vy * delta
-		runner.position = seg.point(s, x, y)
+		runner.position = seg.point(s, x, y) + _vis_offset
 		runner.rotation.x = minf(runner.rotation.x + delta * 2.0, 1.2)
 		camera.look_at(runner.global_position + Vector3.UP * 0.5)
 	else:
@@ -307,17 +376,30 @@ func _step_death(delta: float) -> void:
 
 # ------------------------------------------------------------ mechanics ---
 
-func _do_turn(seg: World.Segment) -> void:
-	var world_pos := seg.point(s, x)
+## Where on the corner square he turns: each lane pivots exactly where it meets
+## the same lane of the next stretch, so a turn is a clean 90° with no sideways
+## jump — only the heading changes.
+func _pivot_s(seg: World.Segment) -> float:
+	return clampf(seg.corner_s() - x * seg.turn, seg.length + 0.2, seg.end_s() - 0.2)
+
+## [overshoot] is how far past the pivot this frame carried him; it is replayed
+## along the new heading so nothing jumps.
+func _do_turn(seg: World.Segment, overshoot: float) -> void:
+	var before := seg.point(s, x)
+	var pivot := seg.point(s - overshoot, x)
 	seg_index += 1
 	world.ensure_ahead(seg_index)
 	var next := world.get_segment(seg_index)
-	s = (world_pos - next.origin).dot(next.dir)
-	x = clampf((world_pos - next.origin).dot(next.right), -LW, LW)
-	lane_target = int(round(x / LW))
+	var rel := pivot - next.origin
+	s = rel.dot(next.dir) + overshoot
+	x = clampf(rel.dot(next.right), -LW, LW)
+	x_vel = 0.0
+	lane_target = clampi(roundi(x / LW), -1, 1)
 	lane_from = lane_target
 	pending_turn = 0
-	sfx.play(Sfx.TURN)
+	# Late swipes (or the clamp) can leave a small gap; ease it out visually.
+	# The overshoot itself is a real change of heading, not a gap.
+	_vis_offset += (before - seg.dir * overshoot) - (next.point(s, x) - next.dir * overshoot)
 
 func _begin_slide() -> void:
 	slide_t = SLIDE_TIME
@@ -325,6 +407,7 @@ func _begin_slide() -> void:
 
 func _jump() -> void:
 	if y > 0.01:
+		_jump_buffer = JUMP_BUFFER
 		return
 	slide_t = 0.0
 	vy = JUMP_VELOCITY
@@ -384,7 +467,6 @@ func _collect_coins(seg: World.Segment) -> void:
 			continue
 		if absf(c.s - s) < 0.75 and absf(c.x - x) < 0.85 and absf(c.y - head) < 1.0:
 			c.taken = true
-			c.node.visible = false
 			coins += 1
 			sfx.play(Sfx.COIN)
 
@@ -452,9 +534,12 @@ func _swipe(dir: Vector2) -> void:
 		_:
 			var side := int(dir.x)
 			if side == seg.turn and s >= seg.length - TURN_WINDOW:
+				if pending_turn == 0:
+					sfx.play(Sfx.TURN) # answer the swipe now, not at the pivot
+					ui.dismiss_hint()
 				pending_turn = side
-				if s >= seg.corner_s():
-					_do_turn(seg)
+				if s >= _pivot_s(seg):
+					_do_turn(seg, 0.0) # swiped late: turn on the spot
 				return
 			var target := clampi(lane_target + side, -1, 1)
 			if target == lane_target:
@@ -482,17 +567,19 @@ func _notification(what: int) -> void:
 func _yaw_of(dir: Vector3) -> float:
 	return atan2(-dir.x, -dir.z)
 
-func _place_runner() -> void:
+## [delta] < 0 snaps everything into place (title, restarts).
+func _place_runner(delta := -1.0) -> void:
 	var seg := world.get_segment(seg_index)
-	runner.position = seg.point(s, x, y)
-	var target_yaw := _yaw_of(seg.dir)
-	_yaw = lerp_angle(_yaw, target_yaw, 0.25)
-	var lean := (lane_target * LW - x) * -0.12
+	runner.position = seg.point(s, x, y) + _vis_offset
+	# A queued turn already shows: he twists toward it before the pivot.
+	var target_yaw := _yaw_of(seg.dir) - pending_turn * 0.35
+	_yaw = target_yaw if delta < 0.0 else lerp_angle(_yaw, target_yaw, 1.0 - exp(-20.0 * delta))
+	var lean := clampf(-x_vel * 0.028, -0.32, 0.32)
 	runner.rotation = Vector3(0, _yaw, lean)
 
 func _push_trail() -> void:
 	var seg := world.get_segment(seg_index)
-	_trail.append({"d": distance, "p": seg.point(s, x * 0.5), "dir": seg.dir})
+	_trail.append({"d": distance, "p": seg.point(s, x * 0.5) + _vis_offset, "dir": seg.dir})
 	while _trail.size() > 2 and _trail[1].d < distance - 60.0:
 		_trail.pop_front()
 
@@ -516,31 +603,41 @@ func _place_jaguars(delta: float) -> void:
 		# They flank the path so they never block the view of the runner.
 		var side := dir.cross(Vector3.UP) * (1.25 if i == 0 else -1.25)
 		j.position = at.p + side
-		j.rotation.y = _yaw_of(dir)
+		j.rotation.y = lerp_angle(j.rotation.y, _yaw_of(dir), 1.0 - exp(-10.0 * delta))
 		j.animate(delta, speed)
 		j.visible = back < 4.4 or state == State.DYING
 
 # ---------------------------------------------------------------- camera ---
 
 func _snap_camera() -> void:
-	_cam_pos = _chase_position()
-	_cam_look = _chase_look()
+	_chase_target(-1.0)
 	camera.position = _cam_pos
 	camera.look_at(_cam_look)
 
 ## Close behind and above — the runner owns the lower third of the screen.
-func _chase_position() -> Vector3:
-	var at := _trail_at(3.9)
-	return at.p + Vector3.UP * 2.6
-
-func _chase_look() -> Vector3:
+## The camera hangs off his position on a heading of its own that swings
+## round after him at corners (fast, but never a cut). [delta] < 0 snaps.
+func _chase_target(delta: float) -> void:
 	var seg := world.get_segment(seg_index)
-	return seg.point(s + 10.0, x * 0.5, 1.45)
+	var ground := seg.point(s, x) + _vis_offset
+	# Sit nearer the centre line than he does, so lane changes read as movement.
+	var want_off := -seg.right * (x * 0.45)
+	var want_yaw := _yaw_of(seg.dir) - pending_turn * 0.12
+	if delta < 0.0:
+		_cam_off = want_off
+		_cam_yaw = want_yaw
+		_cam_lift = y * 0.35
+	else:
+		_cam_off = _cam_off.lerp(want_off, 1.0 - exp(-10.0 * delta))
+		_cam_yaw = lerp_angle(_cam_yaw, want_yaw, 1.0 - exp(-9.0 * delta))
+		_cam_lift = lerpf(_cam_lift, y * 0.35, 1.0 - exp(-6.0 * delta))
+	var fwd := Vector3(-sin(_cam_yaw), 0.0, -cos(_cam_yaw))
+	var base := ground + _cam_off
+	_cam_pos = base - fwd * 4.3 + Vector3.UP * (2.6 + _cam_lift)
+	_cam_look = base + fwd * 10.0 + Vector3.UP * (1.45 + _cam_lift * 0.6)
 
 func _update_chase_camera(delta: float) -> void:
-	var k := 1.0 - exp(-12.0 * delta)
-	_cam_pos = _cam_pos.lerp(_chase_position(), k)
-	_cam_look = _cam_look.lerp(_chase_look(), minf(k * 1.4, 1.0))
+	_chase_target(delta)
 	if _intro_t < 1.0:
 		# Swing AROUND the runner from the title shot (in front of him) to the
 		# chase (behind) — never through him.
@@ -572,8 +669,7 @@ func _title_cam_look() -> Vector3:
 	return seg.point(START_S - 2.0, -0.3, 1.75)
 
 func _update_title_camera(_delta: float) -> void:
-	_cam_pos = _chase_position()
-	_cam_look = _chase_look()
+	_chase_target(-1.0)
 	camera.position = _title_cam_position()
 	camera.look_at(_title_cam_look())
 
@@ -605,7 +701,7 @@ func _make_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.75
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.1
+	env.tonemap_exposure = 1.0
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.1
 	env.adjustment_contrast = 1.06
@@ -628,8 +724,11 @@ func _make_environment() -> void:
 	sun.light_energy = 1.5
 	sun.rotation_degrees = Vector3(-16.0, 140.0, 0.0) # low, raking from the side
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 40.0
+	# One orthogonal map over the stretch around him is all a runner needs.
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_max_distance = 30.0
 	add_child(sun)
+	_dev_perf_flags(env, sun)
 
 	# The jungle floor far below, lost in mist.
 	var ground := MeshInstance3D.new()
@@ -684,3 +783,22 @@ func _drive(seg: World.Segment) -> void:
 		var ahead: float = g.x - s
 		if ahead > 0.0 and ahead < 2.2 and y <= 0.01:
 			_swipe(Vector2.UP)
+
+## Dev-only perf switches, read from user:// flag files so a device build can be
+## profiled without rebuilding: perf_noglow, perf_noshadow, perf_nomsaa,
+## perf_scale (file contents = 3D render scale, e.g. 0.8).
+func _dev_perf_flags(env: Environment, sun: DirectionalLight3D) -> void:
+	if FileAccess.file_exists("user://perf_noglow"):
+		env.glow_enabled = false
+	if FileAccess.file_exists("user://perf_noshadow"):
+		sun.shadow_enabled = false
+	if FileAccess.file_exists("user://perf_nomsaa"):
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+	if FileAccess.file_exists("user://perf_novsync"):
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	if FileAccess.file_exists("user://perf_nosky"):
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color("#C98A6A")
+		env.fog_enabled = false
+	if FileAccess.file_exists("user://perf_scale"):
+		get_viewport().scaling_3d_scale = clampf(FileAccess.get_file_as_string("user://perf_scale").to_float(), 0.5, 1.0)

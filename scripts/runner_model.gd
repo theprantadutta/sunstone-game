@@ -23,6 +23,10 @@ var pose := Pose.IDLE
 var _phase := 0.0
 var _fall_t := 0.0
 var _hold_up := 0.0 # idle: the Sunstone raised overhead
+var _last_pose := Pose.IDLE
+var _since_change := 1.0
+var _pose_now := PackedFloat32Array()
+var _squash := 0.0
 
 var _body: Node3D
 var _torso: Node3D
@@ -109,55 +113,84 @@ func start_fall() -> void:
 	pose = Pose.FALL
 	_fall_t = 0.0
 
+## A quick knee-bend when he touches down from a jump.
+func land() -> void:
+	_squash = 1.0
+
 ## Advances the animation. [run_speed] (units/s) sets the stride rate.
 func animate(delta: float, run_speed: float) -> void:
+	if pose != _last_pose:
+		_last_pose = pose
+		_since_change = 0.0
+	_since_change += delta
+	var t := _target(delta, run_speed)
+	# Pose changes blend over ~0.15 s; a settled pose tracks its target exactly,
+	# so the run cycle never lags or loses amplitude.
+	var k := lerpf(1.0 - exp(-22.0 * delta), 1.0, smoothstep(0.08, 0.28, _since_change))
+	if _pose_now.is_empty():
+		_pose_now = t
+	else:
+		for i in t.size():
+			_pose_now[i] = lerpf(_pose_now[i], t[i], k)
+	_apply(_pose_now)
+	if _squash > 0.0:
+		_squash = maxf(_squash - delta * 6.0, 0.0)
+		var dip := sin(_squash * PI) * 0.13
+		_body.position.y -= dip
+		_knee_l.rotation.x -= dip * 3.0
+		_knee_r.rotation.x -= dip * 3.0
+		_hip_l.rotation.x += dip * 1.5
+		_hip_r.rotation.x += dip * 1.5
+
+## The pose this frame wants, as [hip l, hip r, knee l, knee r, shoulder l,
+## shoulder r, elbow l, elbow r, body y, body pitch, torso pitch, torso twist].
+func _target(delta: float, run_speed: float) -> PackedFloat32Array:
 	match pose:
 		Pose.IDLE:
 			_phase += delta * 1.6
 			_hold_up = minf(_hold_up + delta * 1.5, 1.0)
-			_set_legs(0.0, 0.0, 0.04, 0.04)
 			# Left arm at ease, right arm lifting the Sunstone to the sky.
-			_set_arms(0.15, lerpf(0.2, 2.9, _hold_up), 0.2, lerpf(0.4, 0.1, _hold_up))
-			_body.position.y = 0.95 + sin(_phase) * 0.012
-			_body.rotation = Vector3.ZERO
-			_torso.rotation.x = 0.04
+			return PackedFloat32Array([0.0, 0.0, 0.04, 0.04,
+				0.15, lerpf(0.2, 2.9, _hold_up), 0.2, lerpf(0.4, 0.1, _hold_up),
+				0.95 + sin(_phase) * 0.012, 0.0, 0.04, 0.0])
 		Pose.RUN:
 			_hold_up = 0.0
-			_phase += delta * (5.5 + run_speed * 0.34)
+			# Stride matched to ground speed so the feet plant instead of skating:
+			# one full cycle (two steps) covers 2 × step metres.
+			var step := 1.6 + run_speed * 0.06
+			var hz := minf(run_speed / (2.0 * step), 3.3)
+			_phase += delta * TAU * maxf(hz, 1.2)
 			var s := sin(_phase)
 			var c := cos(_phase)
-			_set_legs(s * 0.9, -s * 0.9, maxf(0.0, -c) * 1.5 + 0.15, maxf(0.0, c) * 1.5 + 0.15)
-			_set_arms(-s * 0.95, s * 0.95, 1.15, 1.15)
-			_body.position.y = 0.95 + absf(c) * 0.09
-			_body.rotation = Vector3.ZERO
-			_torso.rotation.x = -0.2 # lean into the run
+			# Knees fold hardest as each leg swings through (recovery).
+			var kl := maxf(0.0, -c) * 1.7 + 0.18
+			var kr := maxf(0.0, c) * 1.7 + 0.18
+			return PackedFloat32Array([s * 0.85, -s * 0.85, kl, kr,
+				-s * 0.9, s * 0.9, 1.2, 1.2,
+				0.93 + absf(s) * 0.07, 0.0, -0.22, s * 0.13])
 		Pose.JUMP:
-			_set_legs(1.15, 0.65, 1.9, 1.4)
-			_set_arms(2.3, 2.0, 0.5, 0.5)
-			_body.position.y = 0.95
-			_body.rotation = Vector3.ZERO
-			_torso.rotation.x = -0.3
+			return PackedFloat32Array([1.2, 0.55, 1.95, 1.3,
+				2.2, 1.9, 0.5, 0.5,
+				0.95, 0.0, -0.28, 0.0])
 		Pose.SLIDE:
-			_body.position.y = 0.42
-			_body.rotation = Vector3(1.0, 0, 0) # lean far back
-			_set_legs(0.45, 0.25, 0.2, 0.55)
-			_set_arms(-0.7, 1.1, 0.4, 0.9)
-			_torso.rotation.x = 0.0
-		Pose.FALL:
+			return PackedFloat32Array([0.5, 0.25, 0.2, 0.6,
+				-0.7, 1.1, 0.4, 0.9,
+				0.42, 1.0, 0.0, 0.0])
+		_: # FALL
 			_fall_t += delta
-			_body.rotation.x = minf(_fall_t * 5.0, 1.45)
-			_body.position.y = maxf(0.25, 0.95 - _fall_t * 2.5)
-			_set_legs(0.4, -0.3, 0.6, 0.9)
-			_set_arms(-2.8, -2.5, 0.2, 0.3)
+			return PackedFloat32Array([0.4, -0.3, 0.6, 0.9,
+				-2.8, -2.5, 0.2, 0.3,
+				maxf(0.25, 0.95 - _fall_t * 2.5), minf(_fall_t * 5.0, 1.45), 0.0, 0.0])
 
-func _set_legs(hl: float, hr: float, kl: float, kr: float) -> void:
-	_hip_l.rotation.x = hl
-	_hip_r.rotation.x = hr
-	_knee_l.rotation.x = -kl
-	_knee_r.rotation.x = -kr
-
-func _set_arms(sl: float, sr: float, el: float, er: float) -> void:
-	_sh_l.rotation.x = sl
-	_sh_r.rotation.x = sr
-	_el_l.rotation.x = el
-	_el_r.rotation.x = er
+func _apply(p: PackedFloat32Array) -> void:
+	_hip_l.rotation.x = p[0]
+	_hip_r.rotation.x = p[1]
+	_knee_l.rotation.x = -p[2]
+	_knee_r.rotation.x = -p[3]
+	_sh_l.rotation.x = p[4]
+	_sh_r.rotation.x = p[5]
+	_el_l.rotation.x = p[6]
+	_el_r.rotation.x = p[7]
+	_body.position.y = p[8]
+	_body.rotation = Vector3(p[9], 0.0, 0.0)
+	_torso.rotation = Vector3(p[10], p[11], 0.0)

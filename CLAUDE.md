@@ -41,7 +41,11 @@ the causeway zig-zags forward and can never cross itself. Lanes are x = −1.6/0
 - Head-on hit = run over (specific cause shown). Clipping a statue mid lane-change
   = stumble (jaguars close in); a second stumble within 8 s = caught.
 - Missing the corner = "Ran off the causeway". Gaps = "Fell into the jungle".
-- Speed 11 → 25 u/s over ~1800 m; difficulty (density, gaps, double statues)
+- Turning: a swipe inside the window queues the turn; each lane pivots where it
+  meets the same lane of the next stretch (`_pivot_s`), so only the heading
+  changes. Camera and runner yaw are exp-damped; lanes ride a critically
+  damped spring.
+- Speed 12.5 → 27 u/s over ~1800 m; difficulty (density, gaps, double statues)
   ramps over ~2600 m. Swipe hints show during the first two runs.
 
 ## Building and testing — never open windows on the user's PC
@@ -60,6 +64,18 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
 
 - **Autopilot** (the game plays itself, for screenshots): `adb shell run-as
   com.pranta.sunstone touch files/autopilot`; remove the file to turn it off.
+- **Renderer:** Android uses the Compatibility renderer (`rendering_method.mobile`).
+  On the Tab A9 (Mali-G57) the Mobile renderer's fixed post-process cost alone
+  is ~9 ms; Compatibility holds a locked 60. Verify pacing with
+  `dumpsys SurfaceFlinger --latency '<SurfaceView layer>'` — every interval
+  should be one vsync.
+- **Perf switches** (dev): with autopilot on, logcat prints fps / frame-time /
+  draw calls every 2 s. Flag files in `files/` toggle features without a rebuild:
+  `perf_noglow`, `perf_noshadow`, `perf_nomsaa`, `perf_nosky`, `perf_noui`,
+  `perf_noworld`, `perf_nocoins`, `perf_novsync`, `perf_scale` (contents = 3D scale).
+- Segment geometry is baked on a WorkerThreadPool task (`World._bake`) and
+  attached on the main thread (`_attach`) — keep `_bake` free of scene-tree and
+  shared-RNG access, or turns will hitch again.
 - Keep devices **silent** while testing (the user is in an office): media volume 0.
 - Typed GDScript: values read from Dictionaries need explicit types
   (`var x: float = d.value`), not `:=`.

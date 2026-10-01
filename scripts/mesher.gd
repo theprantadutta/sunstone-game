@@ -126,6 +126,24 @@ func commit() -> ArrayMesh:
 		mesh.surface_set_material(mesh.get_surface_count() - 1, glow_material())
 	return mesh
 
+## The raw surface arrays, without touching the RenderingServer — safe to call
+## on a worker thread. Turn them into a mesh on the main thread with [from_arrays].
+func bake() -> Array:
+	return [
+		_lit.commit_to_arrays() if _lit_tris > 0 else [],
+		_glow.commit_to_arrays() if _glow_tris > 0 else [],
+	]
+
+static func from_arrays(baked: Array) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	if not baked[0].is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, baked[0])
+		mesh.surface_set_material(mesh.get_surface_count() - 1, lit_material())
+	if not baked[1].is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, baked[1])
+		mesh.surface_set_material(mesh.get_surface_count() - 1, glow_material())
+	return mesh
+
 func to_instance() -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = commit()
