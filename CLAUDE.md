@@ -34,7 +34,14 @@ scripts/
   jaguar_model.gd       the chasers
   ui_kit.gd             the Codex design system: palette, fonts, paper, glyph
                         blocks, pages, k'in sun glyph, sun meter, Maya numerals
-  game_ui.gd            screens (title, HUD, pause, settings, results), anchored
+  game_ui.gd            screens (title + menu, HUD, pause, settings, results, Daily
+                        dusk, Offerings, Glyphs, Market, Records, Second wind)
+  save_data.gd          versioned JSON save (+ .bak fallback): progress, records,
+                        daily, glyphs, offerings, charms, owned looks
+  maya_calendar.gd      tzolk'in day names, UTC/local day keys, daily seeds
+  glyphs.gd             the 20 glyphs (achievements) and when they're earned
+  market.gd             charms, garbs, hues, Second wind cost — effects mirrored
+                        in sunstone-api Runs/RunRules.cs
   sfx.gd / save_data.gd audio + vibration / ConfigFile at user://save.cfg
 tools/make_audio.py     synthesizes every sound + the music loop (pure Python)
 tools/make_icon.py      draws the app icon, adaptive layers and boot splash
@@ -60,6 +67,8 @@ the causeway zig-zags forward and can never cross itself. Lanes are x = −1.6/0
   meets the same lane of the next stretch (`_pivot_s`), so only the heading
   changes. Camera and runner yaw are exp-damped; lanes ride a critically
   damped spring.
+- Second wind: once per run, for sun-drops (Market.SECOND_WIND_COST): rise just
+  past what ended the run, jaguars driven off, 1.5 s shield.
 - Speed 12.5 → 27 u/s over ~1800 m; difficulty (density, gaps, double statues)
   ramps over ~2600 m. Swipe hints show during the first two runs.
 

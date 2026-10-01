@@ -34,18 +34,40 @@ var offering_last := "" ## the local day the last offering was taken
 
 const OFFERINGS := [25, 40, 60, 80, 110, 150, 300]
 
+# --- market ---
+var charms := {} ## charm id → tier bought (1..3)
+var owned: Array = ["explorer", "sun"] ## garbs and hues you own
+var garb := "explorer"
+var hue := "sun"
+
 # --- settings ---
 var music := true
 var sound := true
 var vibration := true
 
+const BACKUP := "user://save.json.bak"
+
+## Loads the save; if it's missing or unreadable (a phone died mid-write),
+## falls back to the previous good copy rather than starting from nothing.
 func load_from_disk() -> void:
-	if not FileAccess.file_exists(PATH):
-		return
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PATH))
-	if not parsed is Dictionary:
-		return
-	var d: Dictionary = parsed
+	var d := _read(PATH)
+	if d.is_empty():
+		d = _read(BACKUP)
+	if not d.is_empty():
+		_apply(d)
+
+static func _read(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var text := FileAccess.get_file_as_string(path)
+	if text.strip_edges().is_empty():
+		return {}
+	var json := JSON.new()
+	if json.parse(text) != OK or not json.data is Dictionary:
+		return {}
+	return json.data
+
+func _apply(d: Dictionary) -> void:
 	best = int(d.get("best", 0))
 	bank = int(d.get("bank", 0))
 	runs = int(d.get("runs", 0))
@@ -66,6 +88,12 @@ func load_from_disk() -> void:
 	glyphs = gl if gl is Dictionary else {}
 	offering_day = clampi(int(d.get("offering_day", 0)), 0, OFFERINGS.size() - 1)
 	offering_last = str(d.get("offering_last", ""))
+	var ch: Variant = d.get("charms", {})
+	charms = ch if ch is Dictionary else {}
+	var ow: Variant = d.get("owned", ["explorer", "sun"])
+	owned = ow if ow is Array else ["explorer", "sun"]
+	garb = str(d.get("garb", "explorer"))
+	hue = str(d.get("hue", "sun"))
 	music = bool(d.get("music", true))
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
@@ -79,15 +107,19 @@ func save_to_disk() -> void:
 		"deaths": deaths,
 		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
 		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
+		"charms": charms, "owned": owned, "garb": garb, "hue": hue,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
-	# Write beside, then swap in, so a crash mid-write never loses the save.
+	# Write beside, keep the last good save as a backup, then swap in — a crash
+	# at any point leaves at least one whole save on disk.
 	var tmp := PATH + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return
 	f.store_string(JSON.stringify(d, "\t"))
 	f.close()
+	if not _read(PATH).is_empty():
+		DirAccess.copy_absolute(ProjectSettings.globalize_path(PATH), ProjectSettings.globalize_path(BACKUP))
 	DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp), ProjectSettings.globalize_path(PATH))
 
 ## Folds one finished run into the records.
@@ -152,6 +184,30 @@ func take_offering(today: String) -> int:
 	offering_last = today
 	offering_day = (offering_day + 1) % OFFERINGS.size()
 	return reward
+
+func charm_tier(id: String) -> int:
+	return clampi(int(charms.get(id, 0)), 0, 3)
+
+## Buys the next tier of a charm; false if maxed out or too dear.
+func buy_charm(id: String) -> bool:
+	var tier := charm_tier(id)
+	var costs: Array = Market.find(Market.CHARMS, id).costs
+	if tier >= costs.size() or bank < int(costs[tier]):
+		return false
+	bank -= int(costs[tier])
+	charms[id] = tier + 1
+	return true
+
+func owns(id: String) -> bool:
+	return owned.has(id)
+
+## Buys a garb or hue; false if already owned or too dear.
+func buy_item(id: String, cost: int) -> bool:
+	if owns(id) or bank < cost:
+		return false
+	bank -= cost
+	owned.append(id)
+	return true
 
 ## The cause that has ended the most runs, or "".
 func most_common_death() -> String:

@@ -3,7 +3,7 @@ extends Node3D
 ## results), the runner's movement in path space, input, collisions, the
 ## jaguars, the camera, and hands numbers to the UI.
 
-enum State { TITLE, RUNNING, PAUSED, DYING, RESULTS }
+enum State { TITLE, RUNNING, PAUSED, DYING, OFFER, RESULTS }
 
 const START_SPEED := 12.5
 const MAX_SPEED := 27.0
@@ -64,6 +64,8 @@ var dusk := 0.0 ## 0 = sunset begins, 1 = full night
 var _freeze_t := 0.0
 var _run_flares := 0
 var _recovered := false ## survived a stumble this run (the "Close call" glyph)
+var _second_wind_used := false
+var _shield_t := 0.0 ## after a second wind: a moment where nothing can hit him
 var daily_key := "" ## set while running the daily dusk ("yyyy-mm-dd")
 var _run_time := 0.0
 var _push_back := 0.0
@@ -117,15 +119,7 @@ func _ready() -> void:
 	_make_environment()
 	world = World.new()
 	add_child(world)
-	runner = RunnerModel.new()
-	add_child(runner)
-	# The Sunstone's own light, held out in his right hand.
-	_stone_light = OmniLight3D.new()
-	_stone_light.light_color = Color("#FFC46A")
-	_stone_light.omni_attenuation = 1.3
-	_stone_light.shadow_enabled = false
-	_stone_light.position = Vector3(0.4, 1.2, -0.5)
-	runner.add_child(_stone_light)
+	_spawn_runner()
 	for i in 2:
 		var j := JaguarModel.new()
 		add_child(j)
@@ -142,6 +136,11 @@ func _ready() -> void:
 	add_child(ui)
 	ui.run_pressed.connect(_start_run)
 	ui.daily_pressed.connect(_start_daily)
+	ui.looks_changed.connect(_spawn_runner)
+	ui.second_wind_accepted.connect(_second_wind)
+	ui.second_wind_declined.connect(func():
+		if state == State.OFFER:
+			_finish_run())
 	ui.pause_pressed.connect(_pause)
 	ui.resume_pressed.connect(_resume)
 	ui.home_pressed.connect(_go_title)
@@ -184,6 +183,8 @@ func _reset_run() -> void:
 	_freeze_t = 0.0
 	_run_flares = 0
 	_recovered = false
+	_second_wind_used = false
+	_shield_t = 0.0
 	_run_time = 0.0
 	_push_back = 0.0
 	_flare_boost = 0.0
@@ -277,6 +278,52 @@ func _die(cause: String, fell := false, caught := false) -> void:
 	sfx.vibrate(save, 160)
 	ui.flash_danger()
 
+## Second wind: pay sun-drops and rise again just past what ended the run —
+## the jaguars driven off, the stone relit, a moment of safety.
+func _second_wind() -> void:
+	if state != State.OFFER or save.bank < Market.SECOND_WIND_COST:
+		return
+	save.bank -= Market.SECOND_WIND_COST
+	save.save_to_disk()
+	_second_wind_used = true
+	var seg := world.get_segment(seg_index)
+	if _fell and s > seg.length:
+		# Ran off the end: rise at the start of the next stretch.
+		seg_index += 1
+		world.ensure_ahead(seg_index)
+		s = 1.5
+		x = 0.0
+	elif _fell:
+		for g in seg.gaps:
+			if s >= g.x - 1.0 and s <= g.y + 4.0:
+				s = g.y + 1.5
+	else:
+		s += 1.5
+		for o in seg.obstacles:
+			if absf(o.s - s) < 3.0:
+				o["hit"] = true
+	lane_target = clampi(roundi(x / LW), -1, 1)
+	x = lane_target * LW
+	x_vel = 0.0
+	y = 0.0
+	vy = 0.0
+	slide_t = 0.0
+	pending_turn = 0
+	_vis_offset = Vector3.ZERO
+	light = maxf(light, 0.6)
+	chaser_gap = 24.0
+	_freeze_t = 2.0
+	stumble_t = 0.0
+	_shield_t = 1.5
+	_fell = false
+	_caught = false
+	runner.pose = RunnerModel.Pose.RUN
+	state = State.RUNNING
+	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
+	_snap_camera()
+	sfx.play(Sfx.FLARE)
+	_spawn_flare_ring()
+
 func _finish_run() -> void:
 	state = State.RESULTS
 	var metres := int(distance)
@@ -301,6 +348,29 @@ func _on_settings_changed() -> void:
 	sfx.apply_settings(save)
 
 # -------------------------------------------------------------- frame ---
+
+## Builds the explorer in his garb, the Sunstone in its hue, and its light.
+## Called again when the player changes either in the Market.
+func _spawn_runner() -> void:
+	var old_pose := RunnerModel.Pose.IDLE
+	if runner:
+		old_pose = runner.pose
+		runner.queue_free()
+	var hue := Market.find(Market.HUES, save.hue)
+	runner = RunnerModel.new()
+	runner.palette = Market.find(Market.GARBS, save.garb).palette.duplicate()
+	runner.palette["gem"] = hue.gem
+	runner.pose = old_pose
+	add_child(runner)
+	_stone_light = OmniLight3D.new()
+	_stone_light.light_color = hue.light
+	_stone_light.omni_attenuation = 1.3
+	_stone_light.shadow_enabled = false
+	_stone_light.position = Vector3(0.4, 1.2, -0.5)
+	runner.add_child(_stone_light)
+	if state == State.TITLE and world.get_segment(seg_index) != null:
+		_place_runner()
+	_apply_dusk(true)
 
 func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
@@ -386,11 +456,12 @@ func _step_run(delta: float) -> void:
 		slide_t -= delta
 	_vis_offset *= exp(-14.0 * delta)
 
-	if y <= 0.01 and seg.in_gap(s):
+	_shield_t = maxf(_shield_t - delta, 0.0)
+	if y <= 0.01 and seg.in_gap(s) and _shield_t <= 0.0:
 		_die("Fell into the jungle", true)
 		return
 
-	if _check_obstacles(seg):
+	if _shield_t <= 0.0 and _check_obstacles(seg):
 		return
 	_collect_coins(seg)
 	_maybe_hint(seg)
@@ -428,7 +499,7 @@ func _step_lane(delta: float) -> void:
 ## dark the stone jaguars wake and close in. Returns true when they catch him.
 func _step_dark(delta: float) -> bool:
 	dusk = maxf(clampf(distance / DUSK_DISTANCE, 0.0, 1.0), _dev_dusk)
-	light = clampf(light - lerpf(LIGHT_DRAIN_DAY, LIGHT_DRAIN_NIGHT, dusk) * delta, 0.0, 1.0)
+	light = clampf(light - lerpf(LIGHT_DRAIN_DAY, LIGHT_DRAIN_NIGHT, dusk) * Market.drain_scale(save) * delta, 0.0, 1.0)
 	_apply_dusk()
 	_flare_boost = maxf(_flare_boost - delta * 1.8, 0.0)
 	_growl_cd = maxf(_growl_cd - delta, 0.0)
@@ -463,7 +534,7 @@ func _flare() -> void:
 		return
 	light -= FLARE_COST
 	_run_flares += 1
-	_freeze_t = FLARE_FREEZE
+	_freeze_t = FLARE_FREEZE + Market.freeze_bonus(save)
 	_push_back = FLARE_PUSH
 	_flare_boost = 1.0
 	sfx.play(Sfx.FLARE)
@@ -484,7 +555,8 @@ func _spawn_flare_ring() -> void:
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.albedo_color = Color(1.0, 0.78, 0.4, 0.55)
+	var glow: Color = Market.find(Market.HUES, save.hue).light
+	mat.albedo_color = Color(glow, 0.55)
 	ring.material_override = mat
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ring)
@@ -547,7 +619,11 @@ func _step_death(delta: float) -> void:
 		chaser_gap = move_toward(chaser_gap, 0.9 if _caught else 3.0, 10.0 * delta)
 		_place_jaguars(delta)
 	if _death_t > 1.35:
-		_finish_run()
+		if not _second_wind_used and save.bank >= Market.SECOND_WIND_COST:
+			state = State.OFFER
+			ui.show_second_wind(Market.SECOND_WIND_COST, save.bank)
+		else:
+			_finish_run()
 
 # ------------------------------------------------------------ mechanics ---
 
@@ -643,7 +719,7 @@ func _collect_coins(seg: World.Segment) -> void:
 		if absf(c.s - s) < 0.75 and absf(c.x - x) < 0.85 and absf(c.y - head) < 1.0:
 			c.taken = true
 			coins += 1
-			light = minf(light + DROP_LIGHT, 1.0)
+			light = minf(light + DROP_LIGHT * Market.drop_scale(save), 1.0)
 			sfx.play(Sfx.COIN)
 
 ## First-runs coaching: name the move the moment it's needed.
@@ -753,6 +829,8 @@ func _on_back() -> void:
 	elif state == State.TITLE:
 		if not ui.close_modal():
 			get_tree().quit()
+	elif state == State.OFFER:
+		_finish_run() # back declines the second wind
 	elif state == State.RESULTS:
 		_go_title()
 

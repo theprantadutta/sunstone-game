@@ -625,6 +625,112 @@ class OfferingDay:
 		draw_string(font, Vector2((size.x - tw) / 2.0, size.y - 8), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24,
 			UiKit.CINNABAR if state == "today" else UiKit.INK)
 
+# ============================================================== swatch ===
+
+## A Market item on paper: a garb shown as a tiny explorer in its colours, or
+## a hue as the glowing stone. Marked when it's the one you wear.
+class Swatch:
+	extends Control
+	signal chosen
+	var kind := "garb" ## "garb" | "hue"
+	var item := {}
+	var owned := false
+	var worn := false
+	var selected := false:
+		set(v):
+			selected = v
+			queue_redraw()
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, Vector2(size.x, size.x))
+		var b := UiKit.glyph_block(r.grow(-4), int(size.x) + item.get("cost", 0))
+		UiKit.draw_paper(self, b, Color.WHITE if owned else Color(0.9, 0.86, 0.8))
+		UiKit.draw_ink(self, b, UiKit.CINNABAR if selected else UiKit.INK, 5.0 if selected else 3.5)
+		var c := r.get_center()
+		var u := r.size.x / 10.0
+		if kind == "garb":
+			var p: Dictionary = item.palette
+			var shirt: Color = p.get("shirt", Color("#2F6B5A"))
+			var scarf: Color = p.get("scarf", Color("#B8322A"))
+			var trousers: Color = p.get("trousers", Color("#C9B68E"))
+			var hat: Color = p.get("hat", Color("#8A5A34"))
+			var band: Color = p.get("band", Color("#3FA7B5"))
+			# legs, body, scarf, head, hat — a little standing figure
+			for lx in [-0.7, 0.3]:
+				draw_rect(Rect2(c + Vector2(lx * u, 0.9 * u), Vector2(0.8 * u, 2.3 * u)), trousers)
+			draw_rect(Rect2(c + Vector2(-1.5 * u, -1.6 * u), Vector2(3.0 * u, 2.7 * u)), shirt)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-1.2 * u, -1.6 * u), c + Vector2(1.2 * u, -1.6 * u), c + Vector2(0.2 * u, -0.2 * u)]), scarf)
+			draw_circle(c + Vector2(0, -2.3 * u), 0.75 * u, Color("#C98B62"), true, -1.0, true)
+			draw_rect(Rect2(c + Vector2(-1.6 * u, -3.0 * u), Vector2(3.2 * u, 0.35 * u)), hat)
+			draw_rect(Rect2(c + Vector2(-0.8 * u, -3.7 * u), Vector2(1.6 * u, 0.75 * u)), hat)
+			draw_rect(Rect2(c + Vector2(-0.8 * u, -3.15 * u), Vector2(1.6 * u, 0.2 * u)), band)
+		else:
+			var light: Color = item.light
+			for k in 4:
+				draw_circle(c, (3.6 - k * 0.6) * u, Color(light, 0.12 + k * 0.08), true, -1.0, true)
+			var gem := UiKit.ellipse(c, 1.5 * u, 1.9 * u, 0.0, 6)
+			draw_colored_polygon(gem, item.gem)
+			draw_polyline(UiKit.closed(gem), UiKit.INK, 3.0, true)
+			draw_line(c + Vector2(-0.6 * u, -0.9 * u), c + Vector2(0.2 * u, -1.4 * u), Color(1, 1, 1, 0.8), 2.5, true)
+		if worn:
+			UiKit.draw_kin(self, Vector2(r.end.x - 20, 20), 14.0, 1.0, 2.0, false)
+		var font := UiKit.text_font(900)
+		var t: String = item.title
+		var tw := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
+		draw_string(font, Vector2((size.x - tw) / 2.0, r.end.y + 26), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, UiKit.INK)
+
+	func _gui_input(event: InputEvent) -> void:
+		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
+			chosen.emit()
+			accept_event()
+
+## A charm's tier marks: three small glyph blocks, gold when bought.
+class TierMarks:
+	extends Control
+	var tier := 0
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	func _draw() -> void:
+		for i in 3:
+			var r := Rect2(Vector2(i * 40.0, 0), Vector2(32, 32))
+			var b := UiKit.glyph_block(r, 90 + i, 0.4)
+			if i < tier:
+				draw_colored_polygon(b, UiKit.OCHRE)
+				UiKit.draw_kin(self, r.get_center(), 9.0, 1.0, 1.5, false)
+			else:
+				UiKit.draw_paper(self, b, Color(0.88, 0.84, 0.78))
+			UiKit.draw_ink(self, b, UiKit.INK, 2.5)
+
+## The ring that counts down an offer: a cinnabar arc that empties.
+class Countdown:
+	extends Control
+	var seconds := 5.0
+	var left := 5.0
+	signal expired
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func _process(delta: float) -> void:
+		if left <= 0.0:
+			return
+		left = maxf(left - delta, 0.0)
+		queue_redraw()
+		if left <= 0.0:
+			expired.emit()
+	func _draw() -> void:
+		var c := size / 2.0
+		var r := minf(size.x, size.y) / 2.0 - 6.0
+		draw_arc(c, r, 0.0, TAU, 48, Color(UiKit.INK, 0.2), 8.0, true)
+		draw_arc(c, r, -PI / 2.0, -PI / 2.0 + TAU * left / seconds, 48, UiKit.CINNABAR, 8.0, true)
+		var font := UiKit.display_font()
+		var t := str(ceili(left))
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 40)
+		draw_string(font, c + Vector2(-ts.x / 2.0, 14), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, UiKit.INK)
+
 # ============================================================ wordmark ===
 
 ## The title, as a codex heading: a strip of bark paper ruled in cinnabar, the

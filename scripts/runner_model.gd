@@ -19,6 +19,14 @@ const STRAP := Color("#3B2618")
 
 enum Pose { IDLE, RUN, JUMP, SLIDE, FALL }
 
+## Set before adding to the tree to dress him: keys shirt, scarf, trousers,
+## hat, band, pack (garbs) and gem (the Sunstone's hue). Missing keys keep
+## the explorer's own colours.
+var palette := {}
+
+func _col(key: String, fallback: Color) -> Color:
+	return palette.get(key, fallback)
+
 var pose := Pose.IDLE
 var _phase := 0.0
 var _fall_t := 0.0
@@ -47,10 +55,10 @@ func _ready() -> void:
 	for side in [-1.0, 1.0]:
 		var hip := _joint(_body, Vector3(0.13 * side, 0, 0))
 		_part(hip, func(m: Mesher):
-			m.prism(Models.at(Vector3(0, -0.48, 0)), 0.09, 0.115, 0.5, 6, TROUSERS))
+			m.prism(Models.at(Vector3(0, -0.48, 0)), 0.09, 0.115, 0.5, 6, _col("trousers", TROUSERS)))
 		var knee := _joint(hip, Vector3(0, -0.47, 0))
 		_part(knee, func(m: Mesher):
-			m.prism(Models.at(Vector3(0, -0.4, 0)), 0.075, 0.09, 0.42, 6, TROUSERS)
+			m.prism(Models.at(Vector3(0, -0.4, 0)), 0.075, 0.09, 0.42, 6, _col("trousers", TROUSERS))
 			m.box(Models.at(Vector3(0, -0.43, -0.05)), Vector3(0.18, 0.13, 0.3), BOOT))
 		hips.append(hip)
 		knees.append(knee)
@@ -59,32 +67,32 @@ func _ready() -> void:
 
 	_torso = _joint(_body, Vector3.ZERO)
 	_part(_torso, func(m: Mesher):
-		m.box(Models.at(Vector3(0, 0.31, 0)), Vector3(0.46, 0.6, 0.27), SHIRT)
+		m.box(Models.at(Vector3(0, 0.31, 0)), Vector3(0.46, 0.6, 0.27), _col("shirt", SHIRT))
 		m.box(Models.at(Vector3(0, 0.03, 0)), Vector3(0.48, 0.09, 0.29), STRAP) # belt
 		m.box(Models.at(Vector3(0.12, 0.03, -0.15)), Vector3(0.1, 0.08, 0.02), Models.GOLD) # buckle
 		# Pack, bedroll and straps — what the camera sees most.
-		m.box(Models.at(Vector3(0, 0.34, 0.22)), Vector3(0.36, 0.44, 0.2), PACK)
-		m.box(Models.at(Vector3(0, 0.6, 0.22)), Vector3(0.38, 0.1, 0.22), PACK.darkened(0.3))
+		m.box(Models.at(Vector3(0, 0.34, 0.22)), Vector3(0.36, 0.44, 0.2), _col("pack", PACK))
+		m.box(Models.at(Vector3(0, 0.6, 0.22)), Vector3(0.38, 0.1, 0.22), _col("pack", PACK).darkened(0.3))
 		m.prism(Models.at(Vector3(-0.22, 0.12, 0.27), Basis(Vector3.FORWARD, PI / 2.0)), 0.08, 0.08, 0.44, 6, Color("#4C6B3A"))
 		for x in [-0.14, 0.14]:
 			m.box(Models.at(Vector3(x, 0.38, -0.14)), Vector3(0.06, 0.55, 0.02), STRAP)
 		# Scarf knot at the neck, tails flying behind.
-		m.prism(Models.at(Vector3(0, 0.6, 0)), 0.17, 0.15, 0.1, 8, SCARF)
-		m.box(Models.at(Vector3(0.06, 0.55, 0.2), Basis(Vector3.RIGHT, 0.5)), Vector3(0.1, 0.04, 0.28), SCARF))
+		m.prism(Models.at(Vector3(0, 0.6, 0)), 0.17, 0.15, 0.1, 8, _col("scarf", SCARF))
+		m.box(Models.at(Vector3(0.06, 0.55, 0.2), Basis(Vector3.RIGHT, 0.5)), Vector3(0.1, 0.04, 0.28), _col("scarf", SCARF)))
 
 	var head := _joint(_torso, Vector3(0, 0.72, 0))
 	_part(head, func(m: Mesher):
 		m.blob(Models.at(Vector3(0, 0.08, 0)), 0.15, SKIN, 0.05, 7)
-		m.prism(Models.at(Vector3(0, 0.15, 0)), 0.32, 0.3, 0.03, 10, HAT)
-		m.prism(Models.at(Vector3(0, 0.17, 0)), 0.17, 0.14, 0.17, 8, HAT)
-		m.prism(Models.at(Vector3(0, 0.18, 0)), 0.175, 0.17, 0.045, 8, HAT_BAND))
+		m.prism(Models.at(Vector3(0, 0.15, 0)), 0.32, 0.3, 0.03, 10, _col("hat", HAT))
+		m.prism(Models.at(Vector3(0, 0.17, 0)), 0.17, 0.14, 0.17, 8, _col("hat", HAT))
+		m.prism(Models.at(Vector3(0, 0.18, 0)), 0.175, 0.17, 0.045, 8, _col("band", HAT_BAND)))
 
 	var shoulders: Array[Node3D] = []
 	var elbows: Array[Node3D] = []
 	for side in [-1.0, 1.0]:
 		var sh := _joint(_torso, Vector3(0.3 * side, 0.56, 0))
 		_part(sh, func(m: Mesher):
-			m.prism(Models.at(Vector3(0, -0.32, 0)), 0.06, 0.075, 0.34, 6, SHIRT))
+			m.prism(Models.at(Vector3(0, -0.32, 0)), 0.06, 0.075, 0.34, 6, _col("shirt", SHIRT)))
 		var el := _joint(sh, Vector3(0, -0.3, 0))
 		var holds_stone: bool = side > 0
 		_part(el, func(m: Mesher):
@@ -92,7 +100,7 @@ func _ready() -> void:
 			m.blob(Models.at(Vector3(0, -0.33, 0)), 0.065, SKIN, 0.0, 2)
 			if holds_stone:
 				# The Sunstone: a glowing faceted gem in his right hand.
-				m.blob(Models.at(Vector3(0, -0.42, -0.04)), 0.12, Models.GOLD, 0.1, 11, true))
+				m.blob(Models.at(Vector3(0, -0.42, -0.04)), 0.12, _col("gem", Models.GOLD), 0.1, 11, true))
 		shoulders.append(sh)
 		elbows.append(el)
 	_sh_l = shoulders[0]; _sh_r = shoulders[1]

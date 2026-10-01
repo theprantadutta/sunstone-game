@@ -34,7 +34,7 @@ crashes go through our own server and Sentry.
       in codex style (Run · Daily dusk · Market · Glyphs · Records), Records page (stats)
 - [x] 1b. **Daily dusk**: one seeded causeway per UTC day, the same for everyone; its own best
 - [x] 1c. **Glyphs** (achievements, ~20, paying sun-drops) and **Offerings** (7-day login calendar)
-- [ ] 1d. **Market**: charms (permanent perks: slower drain, longer freeze, brighter drops — 3 tiers
+- [x] 1d. **Market**: charms (permanent perks: slower drain, longer freeze, brighter drops — 3 tiers
       each), explorer garbs and stone hues (cosmetics); **Second wind** (one continue per run)
 
 ### 2. Android platform layer

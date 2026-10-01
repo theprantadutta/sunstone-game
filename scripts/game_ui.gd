@@ -15,6 +15,9 @@ signal home_pressed
 signal again_pressed
 signal settings_changed
 signal back_requested
+signal looks_changed
+signal second_wind_accepted
+signal second_wind_declined
 
 var _save: SaveData
 var _top := 28.0 ## below the status bar / camera cutout
@@ -37,6 +40,10 @@ var _glyphs: Control
 var _offerings: Control
 var _bank: UiKit.PaperSlip
 var _menu_icons := {} ## page name → GlyphIcon, for badges
+var _market: Control
+var _market_body: Control
+var _market_tab := 0
+var _offer: Control
 var _day_tag: Label
 var _dark: TextureRect
 var _flare_rect: ColorRect
@@ -95,7 +102,7 @@ func _back() -> void:
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_settings, _records, _daily, _glyphs, _offerings]:
+	for page in [_settings, _records, _daily, _glyphs, _offerings, _market]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -179,7 +186,7 @@ const BOTTOM_CENTER := Rect2(0.5, 1, 0, 0)
 const CENTER := Rect2(0.5, 0.5, 0, 0)
 
 func _hide_all() -> void:
-	for c in [_title, _hud, _pause, _settings, _results]:
+	for c in [_title, _hud, _pause, _settings, _results, _offer]:
 		if c:
 			c.visible = false
 
@@ -205,10 +212,11 @@ func _build_title() -> void:
 	var menu := [
 		[UiKit.GlyphIcon.Icon.DAILY, "Daily dusk", _open_daily],
 		[UiKit.GlyphIcon.Icon.OFFERINGS, "Offerings", _open_offerings],
+		[UiKit.GlyphIcon.Icon.MARKET, "Market", _open_market],
 		[UiKit.GlyphIcon.Icon.GLYPHS, "Glyphs", _open_glyphs],
 		[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records],
 	]
-	var gap := 128.0
+	var gap := 124.0
 	var x0 := -gap * (menu.size() - 1) / 2.0
 	for i in menu.size():
 		var item: Array = menu[i]
@@ -217,10 +225,10 @@ func _build_title() -> void:
 		_pin(b, BOTTOM_CENTER, Rect2(x0 + gap * i - 42, -158, 84, 84))
 		b.pressed.connect(item[2])
 		_menu_icons[item[1]] = b
-		var l := UiKit.label(item[1], UiKit.text_font(900), 24, UiKit.STUCCO, 8)
+		var l := UiKit.label(item[1], UiKit.text_font(900), 22, UiKit.STUCCO, 8)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_title.add_child(l)
-		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 70, -70, 140, 34))
+		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 62, -70, 124, 34))
 
 	# The sun-drops you hold, on a paper slip top-left.
 	_bank = UiKit.PaperSlip.new()
@@ -615,6 +623,196 @@ func _open_offerings() -> void:
 		take.get_child(0).text = "+%d sun-drops" % got
 		_refresh_title()
 		get_tree().create_timer(0.9).timeout.connect(func(): _offerings.visible = false))
+	page.open()
+
+# ---------------------------------------------------------------- market ---
+
+const MARKET_TABS := ["Charms", "Garbs", "Hues"]
+
+## The market: charms (permanent upgrades), garbs and stone hues, paid for
+## in sun-drops. Tabs switch the register; the body rebuilds in place.
+func _open_market() -> void:
+	if _market:
+		_market.queue_free()
+	var m := _modal(1080)
+	_market = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 71
+	_headline(page, "Market")
+	_market_body = Control.new()
+	_market_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_market_body.size = Vector2(600, 1080)
+	page.add_child(_market_body)
+	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	close.font_size = 28
+	close.position = Vector2(56, 970)
+	close.size = Vector2(488, 84)
+	close.pressed.connect(func(): _market.visible = false)
+	page.add_child(close)
+	_fill_market()
+	page.open()
+
+func _fill_market() -> void:
+	for c in _market_body.get_children():
+		c.queue_free()
+	var body := _market_body
+	var held := UiKit.label(UiKit.thousands(_save.bank), UiKit.display_font(), 30, UiKit.INK)
+	held.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	held.position = Vector2(300, 52)
+	held.size = Vector2(200, 44)
+	body.add_child(held)
+	var drop := UiKit.DropGlyph.new(32)
+	drop.position = Vector2(508, 58)
+	body.add_child(drop)
+	for i in MARKET_TABS.size():
+		var tab := UiKit.GlyphButton.new(MARKET_TABS[i],
+			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
+		tab.font_size = 24
+		tab.position = Vector2(56 + i * 166, 138)
+		tab.size = Vector2(156, 78)
+		tab.pressed.connect(func():
+			_market_tab = i
+			_fill_market())
+		body.add_child(tab)
+	match _market_tab:
+		0: _fill_charms(body)
+		1: _fill_looks(body, "garb", Market.GARBS)
+		2: _fill_looks(body, "hue", Market.HUES)
+
+func _fill_charms(body: Control) -> void:
+	var y := 238.0
+	for ch in Market.CHARMS:
+		var tier := _save.charm_tier(ch.id)
+		var t := UiKit.label(ch.title, UiKit.display_font(), 28, UiKit.INK)
+		t.position = Vector2(58, y)
+		body.add_child(t)
+		body.add_child(UiKit.wrapped(ch.text, UiKit.text_font(800), 24, UiKit.INK, Vector2(58, y + 42), 486, 60))
+		var marks := UiKit.TierMarks.new()
+		marks.tier = tier
+		marks.position = Vector2(58, y + 124)
+		marks.size = Vector2(120, 32)
+		body.add_child(marks)
+		var now := UiKit.label(ch.effects[tier - 1] if tier > 0 else "Not yet", UiKit.text_font(900), 22, UiKit.CINNABAR)
+		now.position = Vector2(184, y + 126)
+		body.add_child(now)
+		var costs: Array = ch.costs
+		var btn: UiKit.GlyphButton
+		if tier >= costs.size():
+			btn = UiKit.GlyphButton.new("Complete", UiKit.GlyphButton.Kind.SECONDARY)
+		else:
+			var cost: int = costs[tier]
+			btn = UiKit.GlyphButton.new(UiKit.thousands(cost),
+				UiKit.GlyphButton.Kind.PRIMARY if _save.bank >= cost else UiKit.GlyphButton.Kind.SECONDARY)
+			var id: String = ch.id
+			btn.pressed.connect(func():
+				if _save.buy_charm(id):
+					_save.save_to_disk()
+					_fill_market()
+					_refresh_title())
+		btn.font_size = 26
+		btn.position = Vector2(384, y + 110)
+		btn.size = Vector2(160, 72)
+		body.add_child(btn)
+		y += 236.0
+
+func _fill_looks(body: Control, kind: String, list: Array) -> void:
+	var worn := _save.garb if kind == "garb" else _save.hue
+	var action := UiKit.GlyphButton.new("", UiKit.GlyphButton.Kind.PRIMARY)
+	var swatches: Array[UiKit.Swatch] = []
+	var choose := func(sw: UiKit.Swatch) -> void:
+		for o in swatches:
+			o.selected = o == sw
+		var id: String = sw.item.id
+		var cost: int = sw.item.cost
+		var label: Label = action.get_child(0)
+		if id == worn:
+			label.text = "Wearing" if kind == "garb" else "In the stone"
+		elif _save.owns(id):
+			label.text = "Wear" if kind == "garb" else "Use this hue"
+		elif _save.bank >= cost:
+			label.text = "Buy for %s" % UiKit.thousands(cost)
+		else:
+			label.text = "%s sun-drops" % UiKit.thousands(cost)
+	for i in list.size():
+		var sw := UiKit.Swatch.new()
+		sw.kind = kind
+		sw.item = list[i]
+		sw.owned = _save.owns(list[i].id)
+		sw.worn = list[i].id == worn
+		sw.position = Vector2(76 + (i % 2) * 254, 238 + (i / 2) * 312)
+		sw.size = Vector2(196, 240)
+		sw.chosen.connect(func(): choose.call(sw))
+		body.add_child(sw)
+		swatches.append(sw)
+	action.font_size = 28
+	action.position = Vector2(56, 862)
+	action.size = Vector2(488, 92)
+	body.add_child(action)
+	action.pressed.connect(func():
+		for sw in swatches:
+			if not sw.selected:
+				continue
+			var id: String = sw.item.id
+			if not _save.owns(id) and not _save.buy_item(id, sw.item.cost):
+				return
+			if kind == "garb":
+				_save.garb = id
+			else:
+				_save.hue = id
+			_save.save_to_disk()
+			looks_changed.emit()
+			_fill_market()
+			_refresh_title()
+			return)
+	# Start on what you wear.
+	for sw in swatches:
+		if sw.worn:
+			choose.call(sw)
+
+# ----------------------------------------------------------- second wind ---
+
+## After a fall or a crash: rise again for sun-drops, while the ring counts down.
+func show_second_wind(cost: int, held: int) -> void:
+	_hide_all()
+	if _offer:
+		_offer.queue_free()
+	var m := _modal(560, 0.35)
+	_offer = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 83
+	_headline(page, "Second wind")
+	page.add_child(UiKit.wrapped("Rise again where you fell, with the jaguars driven off and the stone relit.",
+		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 140), 330, 140))
+	var ring := UiKit.Countdown.new()
+	ring.position = Vector2(410, 140)
+	ring.size = Vector2(130, 130)
+	page.add_child(ring)
+	var held_l := UiKit.label("You hold %s" % UiKit.thousands(held), UiKit.text_font(900), 24, UiKit.CINNABAR)
+	held_l.position = Vector2(58, 296)
+	page.add_child(held_l)
+	var rise := UiKit.GlyphButton.new("Rise for %d" % cost, UiKit.GlyphButton.Kind.PRIMARY)
+	rise.font_size = 32
+	rise.position = Vector2(56, 342)
+	rise.size = Vector2(488, 108)
+	page.add_child(rise)
+	var no := UiKit.GlyphButton.new("Let it end", UiKit.GlyphButton.Kind.SECONDARY)
+	no.font_size = 26
+	no.position = Vector2(56, 460)
+	no.size = Vector2(488, 80)
+	page.add_child(no)
+	var done := [false]
+	var finish := func(accepted: bool) -> void:
+		if done[0]:
+			return
+		done[0] = true
+		_offer.visible = false
+		if accepted:
+			second_wind_accepted.emit()
+		else:
+			second_wind_declined.emit()
+	rise.pressed.connect(func(): finish.call(true))
+	no.pressed.connect(func(): finish.call(false))
+	ring.expired.connect(func(): finish.call(false))
 	page.open()
 
 # -------------------------------------------------------------- records ---
