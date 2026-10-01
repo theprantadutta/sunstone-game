@@ -22,6 +22,11 @@ const PROD_BASE := "https://sunstone.pranta.dev"
 const STATE_PATH := "user://online.json"
 const OUTBOX_PATH := "user://outbox.json"
 const ANDROID_PACKAGE := "com.pranta.sunstone"
+## The Firebase project's OAuth *web* client — public, and what Google
+## sign-in on Android asks for to mint a token Firebase accepts.
+const GOOGLE_WEB_CLIENT_ID := "865615140000-9jk5kbkrjg2ip2lmckib1oohokvaiten.apps.googleusercontent.com"
+
+signal _google_result(ok: bool, value: String, email: String)
 
 var base_url := DEV_BASE if OS.is_debug_build() else PROD_BASE
 var player := {} ## {id, name, isAnonymous} once signed in
@@ -184,6 +189,63 @@ func delete_account() -> bool:
 	_write_state()
 	_write_json(OUTBOX_PATH, _outbox)
 	return true
+
+# ------------------------------------------------------------ google link
+
+## The Google account this phone's progress is kept with, or "".
+func google_email() -> String:
+	return str(_state.get("google_email", ""))
+
+## Signs in with Google and links it to this player, so progress survives a
+## new phone or a reinstall. If that Google account already has a Sunstone
+## account, this phone switches to it and the cloud save merges both.
+## Returns "" on success, otherwise a sentence for the player.
+func link_google() -> String:
+	if not Engine.has_singleton("SunstoneGoogleSignIn"):
+		return "Google sign-in isn't available on this device."
+	var plugin := Engine.get_singleton("SunstoneGoogleSignIn")
+	var on_ok := func(token: String, email: String): _google_result.emit(true, token, email)
+	var on_fail := func(reason: String): _google_result.emit(false, reason, "")
+	plugin.connect("signed_in", on_ok)
+	plugin.connect("sign_in_failed", on_fail)
+	plugin.signIn(GOOGLE_WEB_CLIENT_ID)
+	var got: Array = await _google_result
+	plugin.disconnect("signed_in", on_ok)
+	plugin.disconnect("sign_in_failed", on_fail)
+	if not got[0]:
+		return "" if got[1] == "cancelled" else "Google sign-in didn't work: %s" % got[1]
+	var google_token: String = got[1]
+	var email: String = got[2]
+
+	var body := {
+		"postBody": "id_token=%s&providerId=google.com" % google_token,
+		"requestUri": "http://localhost", "returnSecureToken": true, "returnIdpCredential": true,
+	}
+	var current := await _firebase_id_token()
+	if current != "":
+		body["idToken"] = current # link to this guest instead of making a new account
+	var r := await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + _api_key,
+		body, _android_headers())
+	var switched := false
+	if r.code != 200:
+		var message := str(r.body.get("error", {}).get("message", "")) if r.body is Dictionary else ""
+		if message.begins_with("FEDERATED_USER_ID_ALREADY_LINKED") or message.begins_with("EMAIL_EXISTS"):
+			# This Google account already has a Sunstone account: sign in to it.
+			body.erase("idToken")
+			r = await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + _api_key,
+				body, _android_headers())
+			switched = true
+		if r.code != 200:
+			return "Couldn't reach Google right now. Try again in a moment." if r.code == 0 else "Google sign-in was refused (%s)." % message
+	_state.refresh_token = r.body.get("refreshToken", _state.get("refresh_token", ""))
+	_state.google_email = email
+	_state.jwt = "" # re-exchange: the server records the new provider
+	_write_state()
+	if not await ensure_session():
+		return "Linked with Google, but the temple can't be reached right now."
+	print("[online] %s Google account %s" % ["switched to" if switched else "linked", email])
+	await sync_save()
+	return ""
 
 # -------------------------------------------------------------- cloud save
 

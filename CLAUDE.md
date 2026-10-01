@@ -131,6 +131,17 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
 - Dev API base URL (LAN, the dev PC): `http://192.168.0.141:8395`. Hosted later at
   `https://sunstone.pranta.dev`. Anonymous + Google sign-in are enabled and verified.
 
+## Android plugins
+
+- `android-plugins/google-signin/` — Kotlin source of the Google sign-in plugin
+  (Credential Manager → Google ID token). Build: from that folder,
+  `JAVA_HOME="C:/Program Files/Java/jdk-17.0.2" ./gradlew --no-daemon copyAar`
+  (needs a `local.properties` with `sdk.dir=C:/Users/pranta/AppData/Local/Android/Sdk`).
+  The AAR lands in `addons/sunstone_google_signin/bin/` (committed so exports work
+  without rebuilding it); the editor plugin there adds it and its Maven deps to
+  the Gradle export.
+- Exports use the Gradle build (`android/build`, regenerated, gitignored).
+
 ## Assets
 
 All generated: models in code, audio by `tools/make_audio.py`, icon by

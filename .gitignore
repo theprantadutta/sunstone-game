@@ -7,3 +7,6 @@ tools/out/
 *.idsig
 google-services.json
 android/build/
+android-plugins/*/build/
+android-plugins/*/.gradle/
+android-plugins/*/local.properties

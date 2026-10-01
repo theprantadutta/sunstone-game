@@ -1,0 +1,41 @@
+// Sunstone's Google sign-in: a Godot Android plugin (v2) around Android's
+// Credential Manager. Builds an AAR into addons/sunstone_google_signin/bin,
+// which the export plugin there hands to Godot's Gradle build. Versions follow
+// the Godot 4.7.2 Android build template (AGP 8.6.1, Kotlin 2.1.21, SDK 36).
+//
+//   gradlew assembleRelease copyAar
+plugins {
+    id 'com.android.library' version '8.6.1'
+    id 'org.jetbrains.kotlin.android' version '2.1.21'
+}
+
+android {
+    namespace 'com.pranta.sunstone.signin'
+    compileSdk 36
+    defaultConfig {
+        minSdk 24
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+// Runtime dependencies are added to the game by the export plugin, so the
+// AAR only compiles against them.
+dependencies {
+    compileOnly 'org.godotengine:godot:4.7.2.stable'
+    compileOnly 'androidx.credentials:credentials:1.3.0'
+    compileOnly 'androidx.credentials:credentials-play-services-auth:1.3.0'
+    compileOnly 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
+    compileOnly 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+}
+
+tasks.register('copyAar', Copy) {
+    dependsOn 'assembleRelease'
+    from 'build/outputs/aar/sunstone-google-signin-release.aar'
+    into '../../addons/sunstone_google_signin/bin'
+}

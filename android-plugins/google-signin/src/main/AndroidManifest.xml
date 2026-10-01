@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Godot finds v2 plugins by this meta-data: name = plugin name, value = class. -->
+        <meta-data
+            android:name="org.godotengine.plugin.v2.SunstoneGoogleSignIn"
+            android:value="com.pranta.sunstone.signin.GoogleSignInPlugin" />
+    </application>
+</manifest>

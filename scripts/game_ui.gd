@@ -760,7 +760,7 @@ func _rank_row(body: Control, row: Dictionary, y: float) -> void:
 func _open_account() -> void:
 	if _account:
 		_account.queue_free()
-	var m := _modal(740)
+	var m := _modal(890)
 	_account = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 103
@@ -783,17 +783,40 @@ func _open_account() -> void:
 		var err := await _online.rename(field.text.strip_edges())
 		status.text = err if err != "" else "Saved.")
 	page.add_child(save_name)
-	_rule(page, 430, 107)
+	_rule(page, 426, 107)
+	# Keeping progress with Google: survives a new phone or a reinstall.
+	var email := _online.google_email()
+	var kept := UiKit.wrapped(
+		"Kept with Google: %s" % email if email != "" else "Your progress lives on this phone. Sign in with Google to keep it on any phone.",
+		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 440), 486, 64)
+	page.add_child(kept)
+	if email == "":
+		var google := UiKit.GlyphButton.new("Sign in with Google", UiKit.GlyphButton.Kind.PRIMARY)
+		google.font_size = 26
+		google.position = Vector2(56, 510)
+		google.size = Vector2(488, 88)
+		google.pressed.connect(func():
+			kept.text = "Asking Google…"
+			var err := await _online.link_google()
+			if err == "" and _online.google_email() != "":
+				kept.text = "Kept with Google: %s" % _online.google_email()
+				google.visible = false
+				field.text = str(_online.player.get("name", ""))
+				_refresh_title()
+			else:
+				kept.text = err if err != "" else "Your progress lives on this phone. Sign in with Google to keep it on any phone.")
+		page.add_child(google)
+	_rule(page, 616, 109)
 	page.add_child(UiKit.wrapped("Deleting your account removes your runs, ranks and cloud save from the server and starts this phone fresh.",
-		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 448), 486, 90))
+		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 632), 486, 90))
 	var delete := UiKit.GlyphButton.new("Delete account", UiKit.GlyphButton.Kind.SECONDARY)
 	delete.font_size = 23
-	delete.position = Vector2(56, 590)
+	delete.position = Vector2(56, 750)
 	delete.size = Vector2(300, 84)
 	page.add_child(delete)
 	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 26
-	close.position = Vector2(370, 590)
+	close.position = Vector2(370, 750)
 	close.size = Vector2(174, 84)
 	close.pressed.connect(func(): _account.visible = false)
 	page.add_child(close)
