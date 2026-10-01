@@ -27,6 +27,13 @@ var daily := {} ## "yyyy-mm-dd" → best metres that day
 var daily_streak := 0 ## consecutive days with a daily run
 var daily_last := "" ## the last day a daily run was finished
 
+# --- glyphs and offerings ---
+var glyphs := {} ## glyph id → "earned" | "claimed"
+var offering_day := 0 ## which of the seven offerings is next (0..6)
+var offering_last := "" ## the local day the last offering was taken
+
+const OFFERINGS := [25, 40, 60, 80, 110, 150, 300]
+
 # --- settings ---
 var music := true
 var sound := true
@@ -55,6 +62,10 @@ func load_from_disk() -> void:
 	daily = dl if dl is Dictionary else {}
 	daily_streak = int(d.get("daily_streak", 0))
 	daily_last = str(d.get("daily_last", ""))
+	var gl: Variant = d.get("glyphs", {})
+	glyphs = gl if gl is Dictionary else {}
+	offering_day = clampi(int(d.get("offering_day", 0)), 0, OFFERINGS.size() - 1)
+	offering_last = str(d.get("offering_last", ""))
 	music = bool(d.get("music", true))
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
@@ -67,6 +78,7 @@ func save_to_disk() -> void:
 		"flares": flares, "deepest_dusk": deepest_dusk, "play_seconds": play_seconds,
 		"deaths": deaths,
 		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
+		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
 	# Write beside, then swap in, so a crash mid-write never loses the save.
@@ -116,6 +128,30 @@ func live_streak(today: String) -> int:
 	if daily_last == today or daily_last == MayaCalendar.day_before(today):
 		return daily_streak
 	return 0
+
+## Pays out a glyph's reward; returns the sun-drops added (0 if not claimable).
+func claim_glyph(id: String) -> int:
+	if glyphs.get(id, "") != "earned":
+		return 0
+	var reward: int = Glyphs.def(id).get("reward", 0)
+	glyphs[id] = "claimed"
+	bank += reward
+	return reward
+
+## True when today's offering hasn't been taken yet.
+func offering_ready(today: String) -> bool:
+	return offering_last != today
+
+## Takes today's offering; returns the sun-drops added (0 if already taken).
+## Missing days never resets the cycle — it simply waits for you.
+func take_offering(today: String) -> int:
+	if not offering_ready(today):
+		return 0
+	var reward: int = OFFERINGS[offering_day]
+	bank += reward
+	offering_last = today
+	offering_day = (offering_day + 1) % OFFERINGS.size()
+	return reward
 
 ## The cause that has ended the most runs, or "".
 func most_common_death() -> String:

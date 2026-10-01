@@ -32,6 +32,12 @@ static func today_utc() -> String:
 	var t := Time.get_datetime_dict_from_system(true)
 	return "%04d-%02d-%02d" % [t.year, t.month, t.day]
 
+## Today on the player's own clock, "yyyy-mm-dd" — for things that follow
+## their day (offerings), not the shared one (the daily dusk).
+static func today_local() -> String:
+	var t := Time.get_datetime_dict_from_system(false)
+	return "%04d-%02d-%02d" % [t.year, t.month, t.day]
+
 ## The key of the day before [date_key].
 static func day_before(date_key: String) -> String:
 	var unix := Time.get_unix_time_from_datetime_string(date_key + "T12:00:00") - 86400

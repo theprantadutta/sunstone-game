@@ -33,6 +33,10 @@ var _settings: Control
 var _results: Control
 var _records: Control
 var _daily: Control
+var _glyphs: Control
+var _offerings: Control
+var _bank: UiKit.PaperSlip
+var _menu_icons := {} ## page name → GlyphIcon, for badges
 var _day_tag: Label
 var _dark: TextureRect
 var _flare_rect: ColorRect
@@ -91,7 +95,7 @@ func _back() -> void:
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_settings, _records, _daily]:
+	for page in [_settings, _records, _daily, _glyphs, _offerings]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -200,6 +204,8 @@ func _build_title() -> void:
 	# The menu: one glyph per page of the codex, labelled underneath.
 	var menu := [
 		[UiKit.GlyphIcon.Icon.DAILY, "Daily dusk", _open_daily],
+		[UiKit.GlyphIcon.Icon.OFFERINGS, "Offerings", _open_offerings],
+		[UiKit.GlyphIcon.Icon.GLYPHS, "Glyphs", _open_glyphs],
 		[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records],
 	]
 	var gap := 128.0
@@ -210,10 +216,19 @@ func _build_title() -> void:
 		_title.add_child(b)
 		_pin(b, BOTTOM_CENTER, Rect2(x0 + gap * i - 42, -158, 84, 84))
 		b.pressed.connect(item[2])
+		_menu_icons[item[1]] = b
 		var l := UiKit.label(item[1], UiKit.text_font(900), 24, UiKit.STUCCO, 8)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_title.add_child(l)
 		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 70, -70, 140, 34))
+
+	# The sun-drops you hold, on a paper slip top-left.
+	_bank = UiKit.PaperSlip.new()
+	_title.add_child(_bank)
+	_pin(_bank, TOP_LEFT, Rect2(24, _top + 8, 200, 64))
+	var bank_glyph := UiKit.DropGlyph.new(30)
+	_bank.add_child(bank_glyph)
+	bank_glyph.position = Vector2(18, 17)
 
 	var gear := UiKit.GlyphIcon.new(UiKit.GlyphIcon.Icon.SETTINGS)
 	_title.add_child(gear)
@@ -228,6 +243,15 @@ func show_title(save: SaveData) -> void:
 		_best.set_text("Outrun the stone jaguars")
 	_title.visible = true
 	_wordmark.replay()
+	_refresh_title()
+
+## Bank and menu badges: what's waiting since you last looked.
+func _refresh_title() -> void:
+	_bank.set_text("      %s" % UiKit.thousands(_save.bank))
+	_menu_icons["Offerings"].badge = _save.offering_ready(MayaCalendar.today_local())
+	_menu_icons["Glyphs"].badge = Glyphs.unclaimed(_save) > 0
+	var today := MayaCalendar.today_utc()
+	_menu_icons["Daily dusk"].badge = _save.daily_best(today) < 0
 
 # ------------------------------------------------------------------ hud ---
 
@@ -460,6 +484,139 @@ class DayBlock:
 		var h := UiKit.maya_height(number, u)
 		UiKit.draw_maya_number(self, Vector2(size.x / 2.0 - u * 2.0, (size.y - h) / 2.0), number, u, UiKit.INK)
 
+# ---------------------------------------------------------------- glyphs ---
+
+## The collection: twenty glyphs in a grid; tap one to read it, and take its
+## sun-drops once it's earned.
+func _open_glyphs() -> void:
+	if _glyphs:
+		_glyphs.queue_free()
+	var m := _modal(1070)
+	_glyphs = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 53
+	_headline(page, "Glyphs")
+	var count := UiKit.label("%d of %d" % [_save.glyphs.size(), Glyphs.DEFS.size()], UiKit.text_font(900), 26, UiKit.CINNABAR)
+	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	count.position = Vector2(344, 62)
+	count.size = Vector2(200, 36)
+	page.add_child(count)
+
+	var title := UiKit.label("", UiKit.display_font(), 30, UiKit.INK)
+	title.position = Vector2(58, 806)
+	page.add_child(title)
+	var text := UiKit.wrapped("", UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 848), 486, 70)
+	page.add_child(text)
+	var take := UiKit.GlyphButton.new("Take", UiKit.GlyphButton.Kind.PRIMARY)
+	take.font_size = 30
+	take.position = Vector2(56, 940)
+	take.size = Vector2(300, 100)
+	page.add_child(take)
+	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	close.font_size = 28
+	close.position = Vector2(370, 940)
+	close.size = Vector2(174, 100)
+	close.pressed.connect(func(): _glyphs.visible = false)
+	page.add_child(close)
+	_rule(page, 790, 59)
+
+	var tiles: Array[UiKit.GlyphTile] = []
+	var show := func(i: int) -> void:
+		var d: Dictionary = Glyphs.DEFS[i]
+		var st: String = _save.glyphs.get(d.id, "")
+		for t in tiles:
+			t.selected = t.index == i
+		title.text = d.title
+		text.text = "%s  Pays %d sun-drops." % [d.text, d.reward] if st != "claimed" else "%s  Taken." % d.text
+		take.visible = st == "earned"
+		take.text = "Take %d" % d.reward
+		take.get_child(0).text = take.text
+	for i in Glyphs.DEFS.size():
+		var d: Dictionary = Glyphs.DEFS[i]
+		var tile := UiKit.GlyphTile.new()
+		tile.index = i
+		tile.state = _save.glyphs.get(d.id, "")
+		tile.position = Vector2(58 + (i % 4) * 124, 140 + (i / 4) * 126)
+		tile.size = Vector2(114, 114)
+		tile.chosen.connect(func(): show.call(i))
+		page.add_child(tile)
+		tiles.append(tile)
+	take.pressed.connect(func():
+		for t in tiles:
+			if t.selected:
+				var id: String = Glyphs.DEFS[t.index].id
+				if _save.claim_glyph(id) > 0:
+					_save.save_to_disk()
+					t.state = "claimed"
+					t.queue_redraw()
+					show.call(t.index)
+					_refresh_title()
+				return)
+	# Open on the first glyph waiting to be taken, else the first not yet earned.
+	var start := 0
+	for i in Glyphs.DEFS.size():
+		if _save.glyphs.get(Glyphs.DEFS[i].id, "") == "earned":
+			start = i
+			break
+	show.call(start)
+	page.open()
+
+# ------------------------------------------------------------- offerings ---
+
+## The temple's gifts: seven days, one each day you come back; the cycle waits
+## for you rather than starting over if you miss a day.
+func _open_offerings() -> void:
+	if _offerings:
+		_offerings.queue_free()
+	var today := MayaCalendar.today_local()
+	var ready := _save.offering_ready(today)
+	var m := _modal(760)
+	_offerings = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 61
+	_headline(page, "Offerings")
+	page.add_child(UiKit.wrapped("The temple leaves a gift each day you return. Miss a day and it waits for you.",
+		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 136), 486, 70))
+	var days: Array[UiKit.OfferingDay] = []
+	for i in SaveData.OFFERINGS.size():
+		var d := UiKit.OfferingDay.new()
+		d.day = i + 1
+		d.reward = SaveData.OFFERINGS[i]
+		var cycle_pos := _save.offering_day
+		if i < cycle_pos:
+			d.state = "taken"
+		elif i == cycle_pos and ready:
+			d.state = "today"
+		var row := 0 if i < 4 else 1
+		var col := i if i < 4 else i - 4
+		var x0 := 58.0 if row == 0 else 58.0 + 62.0
+		d.position = Vector2(x0 + col * 124, 226 + row * 172)
+		d.size = Vector2(110, 150)
+		page.add_child(d)
+		days.append(d)
+	_rule(page, 572, 67)
+	var take := UiKit.GlyphButton.new(
+		"Take today's gift" if ready else "Come back tomorrow",
+		UiKit.GlyphButton.Kind.PRIMARY if ready else UiKit.GlyphButton.Kind.SECONDARY)
+	take.font_size = 30
+	take.position = Vector2(56, 596)
+	take.size = Vector2(488, 112)
+	page.add_child(take)
+	take.pressed.connect(func():
+		if not _save.offering_ready(today):
+			_offerings.visible = false
+			return
+		var got := _save.take_offering(today)
+		_save.save_to_disk()
+		for d in days:
+			if d.state == "today":
+				d.state = "taken"
+				d.queue_redraw()
+		take.get_child(0).text = "+%d sun-drops" % got
+		_refresh_title()
+		get_tree().create_timer(0.9).timeout.connect(func(): _offerings.visible = false))
+	page.open()
+
 # -------------------------------------------------------------- records ---
 
 ## How deep into the night a run reached, in words.
@@ -527,7 +684,7 @@ func _open_records() -> void:
 ## The run, recorded as a codex entry: what ended it, the distance in our
 ## numerals and in Maya ones, the sun-drops gathered, and the way back in.
 ## [daily] is {name, best, is_best} after a daily dusk, empty otherwise.
-func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool, daily := {}) -> void:
+func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool, daily := {}, new_glyphs: Array[String] = []) -> void:
 	_hide_all()
 	if _results:
 		_results.queue_free()
@@ -541,7 +698,7 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var page := UiKit.Page.new()
 	page.seed = 19
 	_results.add_child(page)
-	_pin(page, BOTTOM_CENTER, Rect2(-310, -760, 620, 700))
+	_pin(page, BOTTOM_CENTER, Rect2(-310, -780, 620, 724))
 
 	var head := UiKit.wrapped(cause, UiKit.display_font(), 38, UiKit.INK, Vector2(56, 44), 508, 100)
 	page.add_child(head)
@@ -571,16 +728,21 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 		UiKit.display_font() if highlight else UiKit.text_font(900), 30, UiKit.CINNABAR if highlight else UiKit.INK)
 	best_l.position = Vector2(58, 352)
 	page.add_child(best_l)
-	_rule(page, 420, 23)
+	if not new_glyphs.is_empty():
+		var g_text := "New glyph: %s" % Glyphs.def(new_glyphs[0]).title if new_glyphs.size() == 1 else "%d new glyphs" % new_glyphs.size()
+		var g := UiKit.label(g_text, UiKit.display_font(), 24, UiKit.CINNABAR)
+		g.position = Vector2(58, 394)
+		page.add_child(g)
+	_rule(page, 440, 23)
 
 	var again := UiKit.GlyphButton.new("Run again", UiKit.GlyphButton.Kind.PRIMARY)
-	again.position = Vector2(56, 444)
+	again.position = Vector2(56, 464)
 	again.size = Vector2(508, 116)
 	again.pressed.connect(func(): again_pressed.emit())
 	page.add_child(again)
 	var home := UiKit.GlyphButton.new("Home", UiKit.GlyphButton.Kind.SECONDARY)
 	home.font_size = 30
-	home.position = Vector2(56, 574)
+	home.position = Vector2(56, 594)
 	home.size = Vector2(508, 96)
 	home.pressed.connect(func(): home_pressed.emit())
 	page.add_child(home)

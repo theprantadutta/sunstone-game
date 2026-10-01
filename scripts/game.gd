@@ -63,6 +63,7 @@ var light := 1.0 ## the Sunstone's charge, 0..1
 var dusk := 0.0 ## 0 = sunset begins, 1 = full night
 var _freeze_t := 0.0
 var _run_flares := 0
+var _recovered := false ## survived a stumble this run (the "Close call" glyph)
 var daily_key := "" ## set while running the daily dusk ("yyyy-mm-dd")
 var _run_time := 0.0
 var _push_back := 0.0
@@ -182,6 +183,7 @@ func _reset_run() -> void:
 	dusk = _dev_dusk
 	_freeze_t = 0.0
 	_run_flares = 0
+	_recovered = false
 	_run_time = 0.0
 	_push_back = 0.0
 	_flare_boost = 0.0
@@ -286,8 +288,12 @@ func _finish_run() -> void:
 	if daily_key != "":
 		var day_best := save.record_daily(daily_key, metres)
 		daily_info = {"name": MayaCalendar.tzolkin_name(daily_key), "best": save.daily_best(daily_key), "is_best": day_best}
+	var new_glyphs := Glyphs.evaluate(save, {
+		"distance": metres, "drops": coins, "flares": _run_flares, "dusk": dusk,
+		"daily": daily_key != "", "recovered": _recovered,
+	})
 	save.save_to_disk()
-	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info)
+	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info, new_glyphs)
 	sfx.play(Sfx.RESULTS)
 
 func _on_settings_changed() -> void:
@@ -389,6 +395,8 @@ func _step_run(delta: float) -> void:
 	_collect_coins(seg)
 	_maybe_hint(seg)
 
+	if stumble_t > 0.0 and stumble_t - delta <= 0.0:
+		_recovered = true # outlasted the stumble's memory
 	stumble_t = maxf(stumble_t - delta, 0.0)
 	if _step_dark(delta):
 		return

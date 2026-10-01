@@ -376,9 +376,13 @@ class GlyphIcon:
 	extends Control
 	signal pressed
 
-	enum Icon { PAUSE, SETTINGS, CLOSE, RECORDS, DAILY, MARKET, GLYPHS }
+	enum Icon { PAUSE, SETTINGS, CLOSE, RECORDS, DAILY, MARKET, GLYPHS, OFFERINGS }
 
 	var icon := Icon.PAUSE
+	var badge := false: ## a cinnabar dot: something waits on that page
+		set(v):
+			badge = v
+			queue_redraw()
 	var _down := false
 	const DEPTH := 6.0
 
@@ -439,6 +443,21 @@ class GlyphIcon:
 				draw_colored_polygon(jar, UiKit.CINNABAR)
 				draw_polyline(UiKit.closed(jar), UiKit.INK, 3.0, true)
 				draw_line(c + Vector2(-14, 2), c + Vector2(14, 2), UiKit.STUCCO, 3.0, true)
+			Icon.OFFERINGS:
+				# An offering bowl with three curls of copal smoke rising.
+				var bowl := PackedVector2Array()
+				for i in 13:
+					var a := PI * i / 12.0
+					bowl.append(c + Vector2(cos(a) * 18.0, 4.0 + sin(a) * 12.0))
+				draw_colored_polygon(bowl, UiKit.CINNABAR)
+				draw_polyline(UiKit.closed(bowl), UiKit.INK, 3.0, true)
+				for k in 3:
+					var x := (k - 1) * 9.0
+					var smoke := PackedVector2Array()
+					for j in 7:
+						var t := j / 6.0
+						smoke.append(c + Vector2(x + sin(t * TAU + k) * 3.0, 0.0 - t * 18.0))
+					draw_polyline(smoke, UiKit.INK, 2.5, true)
 			Icon.GLYPHS:
 				# Four small glyph blocks: the collection.
 				for gx in [-1.0, 1.0]:
@@ -447,6 +466,11 @@ class GlyphIcon:
 						draw_colored_polygon(b, UiKit.OCHRE if gx * gy > 0.0 else UiKit.STUCCO)
 						draw_polyline(UiKit.closed(b), UiKit.INK, 2.5, true)
 
+		if badge:
+			var bc := Vector2(r.end.x - 10, r.position.y + 10)
+			draw_circle(bc, 11.0, UiKit.INK, true, -1.0, true)
+			draw_circle(bc, 8.0, UiKit.CINNABAR, true, -1.0, true)
+
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
 			_down = event.pressed
@@ -454,6 +478,152 @@ class GlyphIcon:
 			if not event.pressed and Rect2(Vector2.ZERO, size).has_point(event.position):
 				pressed.emit()
 			accept_event()
+
+# =============================================================== signs ===
+
+## A glyph's sign, composed from its seed the way scribes built glyphs: one
+## main sign, with dot-and-bar affixes and a crest. Every glyph gets its own.
+static func draw_sign(ci: CanvasItem, rect: Rect2, seed: int, ink: Color, fill: Color) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed * 7919 + 13
+	var c := rect.get_center() + Vector2(4, 4)
+	var r := minf(rect.size.x, rect.size.y) * 0.3
+	var w := maxf(r * 0.12, 2.0)
+	match seed % 7:
+		0: # k'in flower
+			for k in 4:
+				var a := PI / 4.0 + k * PI / 2.0
+				var e := ellipse(c + Vector2(cos(a), sin(a)) * r * 0.42, r * 0.38, r * 0.22, a, 14)
+				ci.draw_colored_polygon(e, fill)
+				ci.draw_polyline(closed(e), ink, w, true)
+			ci.draw_circle(c, r * 0.18, ink, true, -1.0, true)
+		1: # an eye
+			var eye := ellipse(c, r, r * 0.5, 0.0, 22)
+			ci.draw_colored_polygon(eye, fill)
+			ci.draw_polyline(closed(eye), ink, w, true)
+			ci.draw_circle(c, r * 0.28, ink, true, -1.0, true)
+		2: # a spiral
+			var sp := PackedVector2Array()
+			for i in 40:
+				var t := i / 39.0
+				var a := t * TAU * 2.2
+				sp.append(c + Vector2(cos(a), sin(a)) * r * (0.12 + 0.88 * t))
+			ci.draw_polyline(sp, ink, w * 1.3, true)
+			ci.draw_circle(c, r * 0.16, fill, true, -1.0, true)
+		3: # a step-fret
+			var steps := PackedVector2Array([
+				c + Vector2(-r, r * 0.6), c + Vector2(-r * 0.4, r * 0.6), c + Vector2(-r * 0.4, 0), c + Vector2(r * 0.2, 0),
+				c + Vector2(r * 0.2, -r * 0.6), c + Vector2(r, -r * 0.6), c + Vector2(r, r * 0.6), c + Vector2(r * 0.55, r * 0.6),
+				c + Vector2(r * 0.55, r * 0.15)])
+			ci.draw_polyline(steps, ink, w * 1.3, true)
+			ci.draw_rect(Rect2(c + Vector2(-r * 0.3, r * 0.15), Vector2(r * 0.4, r * 0.4)), fill)
+		4: # jaguar rosettes
+			for k in rng.randi_range(3, 5):
+				var p := c + Vector2(rng.randf_range(-0.7, 0.7), rng.randf_range(-0.7, 0.7)) * r
+				ci.draw_circle(p, r * 0.3, fill, true, -1.0, true)
+				ci.draw_arc(p, r * 0.3, 0.0, TAU, 16, ink, w, true)
+				ci.draw_circle(p, r * 0.09, ink, true, -1.0, true)
+		5: # water
+			for k in 3:
+				var wave := PackedVector2Array()
+				for i in 13:
+					var t := i / 12.0
+					wave.append(c + Vector2((t - 0.5) * 2.0 * r, (k - 1) * r * 0.55 + sin(t * TAU * 1.5 + k) * r * 0.18))
+				ci.draw_polyline(wave, ink if k != 1 else fill.darkened(0.2), w * 1.2, true)
+		_: # maize
+			for k in 3:
+				var a := -PI / 2.0 + (k - 1) * 0.55
+				var leaf := ellipse(c + Vector2(cos(a), sin(a)) * r * 0.5, r * 0.55, r * 0.2, a, 14)
+				ci.draw_colored_polygon(leaf, fill)
+				ci.draw_polyline(closed(leaf), ink, w, true)
+			ci.draw_circle(c + Vector2(0, r * 0.45), r * 0.22, ink, true, -1.0, true)
+	# Affixes: a column of dots or a bar to the left, a crest on top.
+	var left := rect.position + Vector2(rect.size.x * 0.17, rect.size.y * 0.3)
+	if rng.randf() < 0.5:
+		for i in rng.randi_range(1, 3):
+			ci.draw_circle(left + Vector2(0, i * r * 0.42), r * 0.1, ink, true, -1.0, true)
+	else:
+		ci.draw_rect(Rect2(left + Vector2(-r * 0.08, 0), Vector2(r * 0.16, r * 0.9)), ink)
+	for i in rng.randi_range(2, 4):
+		var x := c.x - r * 0.45 + i * r * 0.3
+		ci.draw_line(Vector2(x, rect.position.y + rect.size.y * 0.16), Vector2(x, rect.position.y + rect.size.y * 0.24), ink, w, true)
+
+## A glyph in the collection: a paper glyph block with its sign — inked in
+## gold once earned, faint until then, with a cinnabar dot while it waits to
+## be claimed.
+class GlyphTile:
+	extends Control
+	signal chosen
+	var index := 0
+	var state := "" ## "", "earned", "claimed"
+	var selected := false:
+		set(v):
+			selected = v
+			queue_redraw()
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(100, 100)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		var b := UiKit.glyph_block(r.grow(-4), index + 101)
+		var known := state != ""
+		UiKit.draw_paper(self, b, Color(1.0, 0.94, 0.8) if known else Color(0.86, 0.82, 0.76))
+		UiKit.draw_ink(self, b, UiKit.CINNABAR if selected else (UiKit.INK if known else Color(UiKit.INK, 0.45)), 5.0 if selected else 3.5)
+		var ink := UiKit.INK if known else Color(UiKit.INK, 0.28)
+		var fill := UiKit.OCHRE if known else Color(UiKit.STUCCO_SHADE, 0.6)
+		UiKit.draw_sign(self, r.grow(-10), index, ink, fill)
+		if state == "earned":
+			var bc := Vector2(size.x - 12, 12)
+			draw_circle(bc, 11.0, UiKit.INK, true, -1.0, true)
+			draw_circle(bc, 8.0, UiKit.CINNABAR, true, -1.0, true)
+
+	func _gui_input(event: InputEvent) -> void:
+		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
+			chosen.emit()
+			accept_event()
+
+## One day of the offering cycle: the day in Maya numerals and its gift.
+class OfferingDay:
+	extends Control
+	var day := 1
+	var reward := 25
+	var state := "later" ## "taken", "today", "later"
+	var _t := 0.0
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(110, 150)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+	func _process(delta: float) -> void:
+		if state == "today":
+			_t += delta
+			queue_redraw()
+
+	func _draw() -> void:
+		var r := Rect2(Vector2(0, 0), Vector2(size.x, size.x))
+		var b := UiKit.glyph_block(r.grow(-4), day * 17)
+		var tint := Color(1.0, 0.92, 0.72) if state == "taken" else (Color.WHITE if state == "today" else Color(0.88, 0.84, 0.78))
+		UiKit.draw_paper(self, b, tint)
+		var edge := UiKit.INK
+		if state == "today":
+			edge = UiKit.CINNABAR.lerp(UiKit.INK, 0.5 + 0.5 * sin(_t * 4.0))
+		UiKit.draw_ink(self, b, edge, 5.0 if state == "today" else 3.5)
+		if state == "taken":
+			UiKit.draw_kin(self, r.get_center(), r.size.x * 0.28, 1.0, 2.5, false)
+		else:
+			var u := 7.0
+			var h := UiKit.maya_height(day, u)
+			UiKit.draw_maya_number(self, Vector2(r.get_center().x - u * 2.0, r.get_center().y - h / 2.0), day, u,
+				UiKit.INK if state == "today" else Color(UiKit.INK, 0.5))
+		var font := UiKit.text_font(900)
+		var txt := "+%d" % reward
+		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
+		draw_string(font, Vector2((size.x - tw) / 2.0, size.y - 8), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24,
+			UiKit.CINNABAR if state == "today" else UiKit.INK)
 
 # ============================================================ wordmark ===
 
