@@ -96,6 +96,12 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
 - Keep devices **silent** while testing (the user is in an office): media volume 0.
 - Typed GDScript: values read from Dictionaries need explicit types
   (`var x: float = d.value`), not `:=`.
+- Wrapping labels: use `UiKit.wrapped(...)`. Setting a Label's position before
+  enabling autowrap locks it to the unwrapped width.
+- After adding a new `class_name` script, run `--import` once so the class
+  registers, or other scripts fail to parse.
+- `dev/check_calendar.gd` checks the tzolk'in math: `"$G" --headless --path . -s dev/check_calendar.gd`
+  (2012-12-21 must be 4 Ajaw).
 
 ## Assets
 

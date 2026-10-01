@@ -22,6 +22,11 @@ var deepest_dusk := 0.0 ## 0 = sunset … 1 = deep night
 var play_seconds := 0.0
 var deaths := {} ## cause → count
 
+# --- daily dusk ---
+var daily := {} ## "yyyy-mm-dd" → best metres that day
+var daily_streak := 0 ## consecutive days with a daily run
+var daily_last := "" ## the last day a daily run was finished
+
 # --- settings ---
 var music := true
 var sound := true
@@ -46,6 +51,10 @@ func load_from_disk() -> void:
 	play_seconds = float(d.get("play_seconds", 0.0))
 	var dd: Variant = d.get("deaths", {})
 	deaths = dd if dd is Dictionary else {}
+	var dl: Variant = d.get("daily", {})
+	daily = dl if dl is Dictionary else {}
+	daily_streak = int(d.get("daily_streak", 0))
+	daily_last = str(d.get("daily_last", ""))
 	music = bool(d.get("music", true))
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
@@ -57,6 +66,7 @@ func save_to_disk() -> void:
 		"total_distance": total_distance, "total_drops": total_drops, "best_drops": best_drops,
 		"flares": flares, "deepest_dusk": deepest_dusk, "play_seconds": play_seconds,
 		"deaths": deaths,
+		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
 	# Write beside, then swap in, so a crash mid-write never loses the save.
@@ -81,6 +91,31 @@ func record_run(metres: int, drops: int, run_flares: int, dusk: float, seconds: 
 	deaths[cause] = int(deaths.get(cause, 0)) + 1
 	if tutorial_runs < 2:
 		tutorial_runs += 1
+
+## Records a daily dusk run; returns true when it beat that day's best.
+func record_daily(date_key: String, metres: int) -> bool:
+	if daily_last != date_key:
+		daily_streak = daily_streak + 1 if daily_last == MayaCalendar.day_before(date_key) else 1
+		daily_last = date_key
+	var prev := int(daily.get(date_key, -1))
+	if metres > prev:
+		daily[date_key] = metres
+	# Keep a few weeks of history; the server holds the rest.
+	if daily.size() > 60:
+		var keys := daily.keys()
+		keys.sort()
+		for k in keys.slice(0, keys.size() - 60):
+			daily.erase(k)
+	return metres > prev
+
+func daily_best(date_key: String) -> int:
+	return int(daily.get(date_key, -1))
+
+## The streak as it stands today (broken if yesterday was missed).
+func live_streak(today: String) -> int:
+	if daily_last == today or daily_last == MayaCalendar.day_before(today):
+		return daily_streak
+	return 0
 
 ## The cause that has ended the most runs, or "".
 func most_common_death() -> String:

@@ -63,6 +63,7 @@ var light := 1.0 ## the Sunstone's charge, 0..1
 var dusk := 0.0 ## 0 = sunset begins, 1 = full night
 var _freeze_t := 0.0
 var _run_flares := 0
+var daily_key := "" ## set while running the daily dusk ("yyyy-mm-dd")
 var _run_time := 0.0
 var _push_back := 0.0
 var _flare_boost := 0.0
@@ -139,6 +140,7 @@ func _ready() -> void:
 	ui = GameUI.new()
 	add_child(ui)
 	ui.run_pressed.connect(_start_run)
+	ui.daily_pressed.connect(_start_daily)
 	ui.pause_pressed.connect(_pause)
 	ui.resume_pressed.connect(_resume)
 	ui.home_pressed.connect(_go_title)
@@ -157,7 +159,7 @@ func _ready() -> void:
 # ------------------------------------------------------------- states ---
 
 func _reset_run() -> void:
-	world.reset(randi())
+	world.reset(MayaCalendar.seed_for(daily_key) if daily_key != "" else randi())
 	seg_index = 0
 	s = START_S
 	x = 0.0
@@ -204,6 +206,7 @@ func _reset_run() -> void:
 
 func _go_title() -> void:
 	get_tree().paused = false
+	daily_key = ""
 	_reset_run()
 	state = State.TITLE
 	_title_t = 0.0
@@ -220,8 +223,18 @@ func _start_run() -> void:
 	runner.pose = RunnerModel.Pose.RUN
 	for j in jaguars:
 		j.visible = true
-	ui.show_hud()
+	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 	sfx.play(Sfx.ROAR)
+
+## Today's dusk: the same causeway for everyone, fixed for the whole run even
+## if the date turns while running.
+func _start_daily() -> void:
+	if state != State.TITLE:
+		return
+	daily_key = MayaCalendar.today_utc()
+	_reset_run()
+	_place_runner()
+	_start_run()
 
 func _restart() -> void:
 	get_tree().paused = false
@@ -269,8 +282,12 @@ func _finish_run() -> void:
 	if is_best:
 		save.best = metres
 	save.record_run(metres, coins, _run_flares, dusk, _run_time, death_cause)
+	var daily_info := {}
+	if daily_key != "":
+		var day_best := save.record_daily(daily_key, metres)
+		daily_info = {"name": MayaCalendar.tzolkin_name(daily_key), "best": save.daily_best(daily_key), "is_best": day_best}
 	save.save_to_disk()
-	ui.show_results(death_cause, metres, coins, save.best, is_best)
+	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info)
 	sfx.play(Sfx.RESULTS)
 
 func _on_settings_changed() -> void:
@@ -331,7 +348,6 @@ func _step_run(delta: float) -> void:
 	# A stumble costs a beat, then he recovers over a second.
 	var stagger := clampf(stumble_t - (STUMBLE_MEMORY - 1.0), 0.0, 1.0)
 	speed *= 1.0 - 0.3 * stagger
-	world.difficulty = clampf(distance / 2600.0, 0.0, 1.0)
 
 	var seg := world.get_segment(seg_index)
 	var ds := speed * delta

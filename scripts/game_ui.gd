@@ -8,6 +8,7 @@ extends CanvasLayer
 ## 20:9 phones included) and re-flows if the window changes size.
 
 signal run_pressed
+signal daily_pressed
 signal pause_pressed
 signal resume_pressed
 signal home_pressed
@@ -31,6 +32,8 @@ var _pause: Control
 var _settings: Control
 var _results: Control
 var _records: Control
+var _daily: Control
+var _day_tag: Label
 var _dark: TextureRect
 var _flare_rect: ColorRect
 
@@ -88,7 +91,7 @@ func _back() -> void:
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_settings, _records]:
+	for page in [_settings, _records, _daily]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -195,7 +198,10 @@ func _build_title() -> void:
 	_pin(_best, BOTTOM_CENTER, Rect2(-200, -254, 400, 70))
 
 	# The menu: one glyph per page of the codex, labelled underneath.
-	var menu := [[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records]]
+	var menu := [
+		[UiKit.GlyphIcon.Icon.DAILY, "Daily dusk", _open_daily],
+		[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records],
+	]
 	var gap := 128.0
 	var x0 := -gap * (menu.size() - 1) / 2.0
 	for i in menu.size():
@@ -238,6 +244,11 @@ func _build_hud() -> void:
 	_hud.add_child(_drops)
 	_pin(_drops, TOP_LEFT, Rect2(76, _top + 70, 200, 50))
 
+	# During a daily dusk, the day's name sits under the sun-drops.
+	_day_tag = UiKit.label("", UiKit.text_font(900), 26, UiKit.OCHRE_LIGHT, 8)
+	_hud.add_child(_day_tag)
+	_pin(_day_tag, TOP_LEFT, Rect2(32, _top + 122, 300, 40))
+
 	_meter = UiKit.SunMeter.new()
 	_hud.add_child(_meter)
 	_pin(_meter, TOP_CENTER, Rect2(-75, _top - 10, 150, 190))
@@ -251,8 +262,10 @@ func _build_hud() -> void:
 	_hud.add_child(_hint)
 	_pin(_hint, Rect2(0.5, 0.62, 0, 0), Rect2(-270, 0, 540, 112))
 
-func show_hud() -> void:
+## [day_name] is the tzolk'in day during a daily dusk, "" otherwise.
+func show_hud(day_name := "") -> void:
 	_hide_all()
+	_day_tag.text = "Daily dusk: %s" % day_name if day_name != "" else ""
 	_hud.visible = true
 
 func set_run_numbers(metres: int, drop_count: int) -> void:
@@ -362,6 +375,91 @@ func _open_settings() -> void:
 	page.add_child(done)
 	page.open()
 
+# ---------------------------------------------------------------- daily ---
+
+## Today's dusk: the day named in the Maya count, today's best, the streak.
+func _open_daily() -> void:
+	if _daily:
+		_daily.queue_free()
+	var today := MayaCalendar.today_utc()
+	var day := MayaCalendar.tzolkin(today)
+	var m := _modal(760)
+	_daily = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 37
+	_headline(page, "Daily dusk")
+
+	# The day, as a scribe would write it: its number in Maya numerals beside
+	# its name, in a glyph block.
+	var block := DayBlock.new()
+	block.number = day[0]
+	block.position = Vector2(56, 150)
+	block.size = Vector2(150, 150)
+	page.add_child(block)
+	var name_l := UiKit.label("%d %s" % [day[0], day[1]], UiKit.display_font(), 54, UiKit.INK)
+	name_l.position = Vector2(232, 160)
+	page.add_child(name_l)
+	var date_l := UiKit.label(_friendly_date(today), UiKit.text_font(900), 26, UiKit.CINNABAR)
+	date_l.position = Vector2(236, 238)
+	page.add_child(date_l)
+
+	var note := UiKit.wrapped("One causeway for everyone, all day. A new one at midnight UTC.",
+		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 320), 486, 80)
+	page.add_child(note)
+	_rule(page, 418, 41)
+
+	var best := _save.daily_best(today)
+	var best_l := UiKit.label("Today's best: %s m" % UiKit.thousands(best) if best >= 0 else "Not run yet today",
+		UiKit.text_font(900), 30, UiKit.INK)
+	best_l.position = Vector2(58, 438)
+	page.add_child(best_l)
+	var streak := _save.live_streak(today)
+	if streak > 1:
+		var st := UiKit.label("%d days in a row" % streak, UiKit.display_font(), 26, UiKit.CINNABAR)
+		st.position = Vector2(58, 482)
+		page.add_child(st)
+
+	var run := UiKit.GlyphButton.new("Run today's dusk", UiKit.GlyphButton.Kind.PRIMARY)
+	run.font_size = 32
+	run.position = Vector2(56, 540)
+	run.size = Vector2(488, 112)
+	run.pressed.connect(func():
+		_daily.visible = false
+		daily_pressed.emit())
+	page.add_child(run)
+	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	close.font_size = 28
+	close.position = Vector2(56, 662)
+	close.size = Vector2(488, 76)
+	close.pressed.connect(func(): _daily.visible = false)
+	page.add_child(close)
+	page.open()
+
+const MONTHS := ["January", "February", "March", "April", "May", "June", "July",
+	"August", "September", "October", "November", "December"]
+
+## "2026-10-01" → "1 October 2026".
+static func _friendly_date(key: String) -> String:
+	var p := key.split("-")
+	return "%d %s %s" % [p[2].to_int(), MONTHS[p[1].to_int() - 1], p[0]]
+
+## A day's number in a glyph block, written in Maya numerals.
+class DayBlock:
+	extends Control
+	var number := 1
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		var b := UiKit.glyph_block(r, 43)
+		UiKit.draw_paper(self, b, Color(1.0, 0.93, 0.78))
+		UiKit.draw_ink(self, b, UiKit.INK, 5.0)
+		UiKit.draw_ink(self, UiKit.glyph_block(r.grow(-11), 45, 0.6), UiKit.CINNABAR, 2.0)
+		var u := 11.0
+		var h := UiKit.maya_height(number, u)
+		UiKit.draw_maya_number(self, Vector2(size.x / 2.0 - u * 2.0, (size.y - h) / 2.0), number, u, UiKit.INK)
+
 # -------------------------------------------------------------- records ---
 
 ## How deep into the night a run reached, in words.
@@ -414,10 +512,7 @@ func _open_records() -> void:
 		y += 64.0
 	if top != "":
 		_rule(page, y + 4, 31)
-		var t := UiKit.label("Most runs end: %s" % top.to_lower(), UiKit.text_font(900), 26, UiKit.INK)
-		t.position = Vector2(58, y + 24)
-		t.size = Vector2(486, 60)
-		t.autowrap_mode = TextServer.AUTOWRAP_WORD
+		var t := UiKit.wrapped("Most runs end: %s" % top.to_lower(), UiKit.text_font(900), 26, UiKit.INK, Vector2(58, y + 24), 486, 60)
 		page.add_child(t)
 		y += 96.0
 	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
@@ -431,7 +526,8 @@ func _open_records() -> void:
 
 ## The run, recorded as a codex entry: what ended it, the distance in our
 ## numerals and in Maya ones, the sun-drops gathered, and the way back in.
-func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool) -> void:
+## [daily] is {name, best, is_best} after a daily dusk, empty otherwise.
+func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool, daily := {}) -> void:
 	_hide_all()
 	if _results:
 		_results.queue_free()
@@ -447,10 +543,7 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	_results.add_child(page)
 	_pin(page, BOTTOM_CENTER, Rect2(-310, -760, 620, 700))
 
-	var head := UiKit.label(cause, UiKit.display_font(), 38, UiKit.INK)
-	head.position = Vector2(56, 44)
-	head.size = Vector2(508, 100)
-	head.autowrap_mode = TextServer.AUTOWRAP_WORD
+	var head := UiKit.wrapped(cause, UiKit.display_font(), 38, UiKit.INK, Vector2(56, 44), 508, 100)
 	page.add_child(head)
 	_rule(page, 150, 21)
 
@@ -469,8 +562,13 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	drops.position = Vector2(106, 298)
 	page.add_child(drops)
 
-	var best_l := UiKit.label("New best" if is_best else "Best %s m" % UiKit.thousands(best),
-		UiKit.display_font() if is_best else UiKit.text_font(900), 30, UiKit.CINNABAR if is_best else UiKit.INK)
+	var best_text := "New best" if is_best else "Best %s m" % UiKit.thousands(best)
+	var highlight := is_best
+	if not daily.is_empty():
+		highlight = daily.is_best
+		best_text = ("New best for %s" % daily.name) if daily.is_best else ("Best for %s: %s m" % [daily.name, UiKit.thousands(daily.best)])
+	var best_l := UiKit.label(best_text,
+		UiKit.display_font() if highlight else UiKit.text_font(900), 30, UiKit.CINNABAR if highlight else UiKit.INK)
 	best_l.position = Vector2(58, 352)
 	page.add_child(best_l)
 	_rule(page, 420, 23)

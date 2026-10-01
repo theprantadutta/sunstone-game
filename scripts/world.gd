@@ -23,6 +23,7 @@ class Segment:
 	var length := 60.0
 	var turn := 1 ## -1 = corner turns left, +1 = right
 	var prev_turn := 0 ## the corner we came out of (0 for the first stretch)
+	var path_start := 0.0 ## metres along the causeway where this stretch begins
 	var heading := 0 ## -1/0/+1: net quarter-turns from the start direction
 	var obstacles: Array[Dictionary] = [] ## {s, lane, kind}
 	var gaps: Array[Vector2] = [] ## floor missing across all lanes, (s0, s1)
@@ -55,7 +56,11 @@ class Segment:
 				return true
 		return false
 
-var difficulty := 0.0 ## 0..1, set by the game from distance run
+## 0..1 while a stretch is generated. It comes from how far along the path the
+## stretch lies — never from how the player ran — so a seed always builds the
+## same causeway (the daily dusk depends on it).
+var difficulty := 0.0
+const DIFFICULTY_RAMP := 2600.0 ## metres of path to reach full difficulty
 var _segments: Array[Segment] = []
 var _rng := RandomNumberGenerator.new()
 var _coin_mesh: ArrayMesh
@@ -109,6 +114,8 @@ func _next_after(prev: Segment) -> Segment:
 	seg.heading = prev.heading + prev.turn
 	seg.prev_turn = prev.turn
 	seg.origin = prev.point(prev.corner_s()) + seg.dir * (W / 2.0)
+	seg.path_start = prev.path_start + prev.corner_s() + W / 2.0
+	difficulty = clampf(seg.path_start / DIFFICULTY_RAMP, 0.0, 1.0)
 	seg.length = _rng.randf_range(lerpf(70.0, 46.0, difficulty), lerpf(110.0, 72.0, difficulty))
 	# Stay within ±90° of the starting heading: the causeway zig-zags forward
 	# and can never curl back across itself.

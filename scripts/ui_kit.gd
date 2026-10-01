@@ -52,6 +52,16 @@ static func label(text: String, font: Font, size: int, color: Color, outline := 
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
+## A label that wraps within [width] at [pos]. Order matters: wrapping must be
+## on before the label is sized or placed, or it locks to the unwrapped width.
+static func wrapped(text: String, font: Font, size: int, color: Color, pos: Vector2, width: float, height := 0.0) -> Label:
+	var l := label(text, font, size, color)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD
+	l.custom_minimum_size = Vector2(width, 0)
+	l.size = Vector2(width, height)
+	l.position = pos
+	return l
+
 ## "1240" → "1,240".
 static func thousands(n: int) -> String:
 	var digits := str(absi(n))
@@ -709,11 +719,8 @@ class HintStrip:
 		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _ready() -> void:
-		_label = UiKit.label("", UiKit.text_font(900), 30, UiKit.INK)
-		_label.position = Vector2(116, 0)
-		_label.size = Vector2(size.x - 134, size.y)
+		_label = UiKit.wrapped("", UiKit.text_font(900), 30, UiKit.INK, Vector2(116, 0), size.x - 134, size.y)
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 		add_child(_label)
 
 	func show_hint(text: String, dir: Vector2) -> void:
