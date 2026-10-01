@@ -4,7 +4,7 @@ Store title **Sunstone: Dusk Run**, package `com.pranta.sunstone`, a brand-new P
 listing. Two repos under `G:\Personal\MyProjects\Sunstone\`: **`sunstone-game`**
 (this one, Godot) and **`sunstone-api`** (.NET). Everything a finished mobile game
 needs — accounts, leaderboards, a currency and shop, achievements, daily rewards, a
-daily challenge, ads, purchases, cloud save, crash reporting, analytics, legal — is
+daily challenge, ads, purchases, cloud save, analytics, legal — is
 built new for this game and its Codex identity. Nothing ships that looks like any
 other mobile game.
 
@@ -20,12 +20,12 @@ Work goes one phase at a time, each tested on the tablet and committed.
 | Leaderboards | own server, shown as codex pages | Google's UI would break the identity; server-side validation |
 | Purchases | official Godot Play Billing plugin + server verification | grants only after Google confirms the token |
 | Ads | AdMob (Poing Studios plugin) + UMP consent + server-side reward verification | |
-| Crashes | Sentry (official Godot SDK) | Firebase has no Godot SDK |
+| Crashes | none for now (user decision) — revisit before release | |
 | Analytics | a small batched events endpoint on our server | no Firebase; we own the funnel |
 | Kill switches | server `/config`: ads on/off, interstitial pacing, store open | change behaviour without a release |
 
 Firebase is used for sign-in only (the user is creating the project); analytics and
-crashes go through our own server and Sentry.
+analytics go through our own server.
 
 ## Phases
 
@@ -38,7 +38,7 @@ crashes go through our own server and Sentry.
       each), explorer garbs and stone hues (cosmetics); **Second wind** (one continue per run)
 
 ### 2. Android platform layer
-- [ ] Gradle build template; Sentry; Firebase Auth sign-in (guest, then Google)
+- [ ] Gradle build template; Firebase Auth sign-in (guest done; Google needs a native plugin)
 - [ ] Release signing (new upload keystore), AAB export, version scheme
 
 ### 3. Server (`sunstone-api`)
@@ -73,5 +73,4 @@ crashes go through our own server and Sentry.
 - **Firebase project** for Sunstone with Authentication (anonymous + Google) — you offered to
   set this up together; then `FIREBASE_PROJECT_ID` goes in `sunstone-api/.env`
 - Play Console: create the app; check whether the closed-test rule applies to your account
-- Sentry: a project DSN · AdMob: app + ad units · server: deploy access + DNS for
-  `sunstone.pranta.dev`
+- AdMob: app + ad units (ask before creating anything) · server hosting later (user)

@@ -6,3 +6,4 @@ tools/out/
 *.aab
 *.idsig
 google-services.json
+android/build/
