@@ -108,7 +108,7 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
 No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
 - Firebase project **`sunstone-95fce`** (Auth: anonymous + Google). The game talks
   to Firebase Auth over its REST API; the web API key comes from the Android app's
-  `google-services.json` (place it in this repo's root; it is not a secret).
+  `google-services.json` in this repo's root — **gitignored, never commit it**.
 - Google sign-in web client id (public):
   `865615140000-9jk5kbkrjg2ip2lmckib1oohokvaiten.apps.googleusercontent.com`
 - Debug keystore SHA-1 (register in Firebase for Google sign-in on test builds):
