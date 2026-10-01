@@ -10,3 +10,5 @@ android/build/
 android-plugins/*/build/
 android-plugins/*/.gradle/
 android-plugins/*/local.properties
+ads_config.json
+override.cfg

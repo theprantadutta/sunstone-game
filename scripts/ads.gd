@@ -16,9 +16,16 @@ signal rewarded_ready_changed(ready: bool)
 ## Google's public test units — safe to load as often as you like.
 const TEST_REWARDED := "ca-app-pub-3940256099942544/5224354917"
 const TEST_INTERSTITIAL := "ca-app-pub-3940256099942544/1033173712"
-## Real units: filled in when the AdMob app exists (release builds only).
-const LIVE_REWARDED := ""
-const LIVE_INTERSTITIAL := ""
+## Real units live in res://ads_config.json — gitignored, shipped with release
+## builds: {"rewarded": "ca-app-pub-…/…", "interstitial": "ca-app-pub-…/…"}.
+## Without it, release builds simply show no ads.
+const LIVE_CONFIG := "res://ads_config.json"
+var _live := {}
+
+func _ready() -> void:
+	if FileAccess.file_exists(LIVE_CONFIG):
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(LIVE_CONFIG))
+		_live = parsed if parsed is Dictionary else {}
 
 const FIRST_RUNS_FREE := 3 ## no interstitials during a player's first runs
 const MIN_GAP_SECONDS := 180.0
@@ -37,10 +44,10 @@ var _runs_since := 0
 var _last_shown := -1000.0
 
 func _rewarded_unit() -> String:
-	return TEST_REWARDED if OS.is_debug_build() else LIVE_REWARDED
+	return TEST_REWARDED if OS.is_debug_build() else str(_live.get("rewarded", ""))
 
 func _interstitial_unit() -> String:
-	return TEST_INTERSTITIAL if OS.is_debug_build() else LIVE_INTERSTITIAL
+	return TEST_INTERSTITIAL if OS.is_debug_build() else str(_live.get("interstitial", ""))
 
 ## Called once the server config is known. Asks for consent, then starts ads.
 func configure(ads_enabled: bool, every: int, removed: bool) -> void:

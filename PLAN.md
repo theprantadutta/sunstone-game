@@ -39,7 +39,7 @@ analytics go through our own server.
 
 ### 2. Android platform layer
 - [ ] Gradle build template; Firebase Auth sign-in (guest done; Google needs a native plugin)
-- [ ] Release signing (new upload keystore), AAB export, version scheme
+- [x] Release signing (new upload keystore), AAB export (Android Play preset), version 1.0.0 (1)
 
 ### 3. Server (`sunstone-api`)
 - [x] Database `sunstone` created on the production Postgres server; schema migrated
@@ -64,8 +64,8 @@ analytics go through our own server.
 - [x] Purchases: remove ads, patron pack, sun-drop packs; restore — code + server verification (needs Play Console products)
 
 ### 6. Release
-- [ ] Privacy policy + terms (hosted), Data safety form answers, content rating answers
-- [ ] Store listing: icon, feature graphic, screenshots (from the tablet), copy
+- [x] Privacy policy + terms (in game; hosting pending), Data safety + content rating answers (store/LISTING.md)
+- [x] Store listing: feature graphic, 6 phone screenshots, copy (store/)
 - [ ] In-app review prompt, in-app update
 - [ ] Closed test → production
 

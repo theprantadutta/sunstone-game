@@ -147,6 +147,22 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   `scripts/ads.gd` (consent → init → rewarded/interstitial, paced),
   `scripts/store.gd` (Play Billing; every purchase verified by the server).
   The server's `/config` switches ads and the store on/off.
+- **Live ad ids (never committed):** `ads_config.json` in the repo root
+  (`{"rewarded": "...", "interstitial": "..."}`, shipped with exports) and the
+  AdMob App ID in `override.cfg` (`[admob]` / `general/android/app_id="ca-app-pub-…~…"`).
+  Both gitignored. Without them, release builds show no ads.
+
+## Release
+
+- `--export-release "Android Play" build/sunstone.aab` → signed AAB. Upload key:
+  `C:ndroid-keys\sunstone\` (outside the repo; password in
+  `.godot/export_credentials.cfg`, gitignored). Upload SHA-1
+  `61:D9:FE:78:02:71:C8:1E:9C:4E:3A:1B:12:0C:A1:A0:2C:6D:32:96`.
+- Release builds call `https://sunstone.pranta.dev` (debug: the LAN dev API).
+- Store copy, Data safety / content rating answers, IAP product table and the
+  release checklist: **`store/LISTING.md`**. Art: `store/` — regenerate with
+  `python tools/make_store_art.py <folder of raw phone screenshots>`.
+- Privacy policy and terms: `legal/*.md` (shown in-game; host them for Play).
 
 ## Assets
 
