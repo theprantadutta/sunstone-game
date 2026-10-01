@@ -1,4 +1,4 @@
-# Sunstone — 3D endless runner (Godot 4.7)
+# Sunstone: Dusk Run — the game (Godot 4.7)
 
 An explorer takes the glowing Sunstone from a painted Maya temple at dusk; stone
 jaguar guardians chase him along an endless causeway. Temple-Run-style controls:
@@ -7,8 +7,13 @@ slide — plus our own twist, the **dusk run**: the sun sets over each run, the
 Sunstone is the only light (drains; sun-drops refill it), the jaguars move only
 in the dark, and a tap flares the stone to freeze and push them back. The UI is
 the **Codex** (Maya codex pages, glyph-block buttons). Keep both original.
-"Sunstone" is a working title. Visual identity and rules: **`DESIGN.md`** — read it
-before touching any UI. Nothing from the old Deadbounce app is reused here.
+Store title **Sunstone: Dusk Run** (launcher label "Sunstone"), package
+`com.pranta.sunstone`. Visual identity and rules: **`DESIGN.md`** — read it before
+touching any UI. The roadmap to release is **`PLAN.md`**.
+
+This repo is `sunstone-game`; its backend is the sibling repo `../sunstone-api`
+(`G:\Personal\MyProjects\Sunstone\`). The game is a clean break from any
+earlier project: no names, ids or assets carry over.
 
 ## Layout
 
