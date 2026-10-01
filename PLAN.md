@@ -38,7 +38,7 @@ analytics go through our own server.
       each), explorer garbs and stone hues (cosmetics); **Second wind** (one continue per run)
 
 ### 2. Android platform layer
-- [ ] Gradle build template; Firebase Auth sign-in (guest done; Google needs a native plugin)
+- [x] Gradle build template; Firebase Auth sign-in (guest + Google, native Credential Manager plugin)
 - [x] Release signing (new upload keystore), AAB export (Android Play preset), version 1.0.0 (1)
 
 ### 3. Server (`sunstone-api`)
@@ -47,16 +47,16 @@ analytics go through our own server.
 - [x] Runs + validation (top speed, drop spacing, flare budget, daily-key window); idempotent
 - [x] Leaderboards: daily dusk, day, week, all-time — top N + your place
 - [x] Cloud save (optimistic revisions), events (analytics), `/config` (kill switches)
-- [x] Account deletion (cascades everywhere), rename; 27 tests
+- [x] Account deletion (cascades everywhere), rename; 32 tests
 - [ ] Deploy with Docker + compose at `sunstone.pranta.dev` (needs server access + DNS)
-- [ ] Purchases verify, ad reward verification (SSV) — with phase 5
+- [x] Purchases verify (Play Developer API, granted once). Ad SSV skipped: ad rewards are client-side
 
 ### 4. Online in the game
 - [x] Silent guest sign-in (Firebase REST) → our JWT; run outbox (offline-safe)
 - [x] Ranks page: daily dusk, today, week, all time — top 10 + your place
 - [x] Cloud save merge (earned/spent totals, unions, max records); analytics events
 - [x] Account page: rename, delete account (server + Firebase + fresh phone)
-- [ ] Link Google to keep progress across reinstalls (needs phase 2's native sign-in)
+- [x] Link Google to keep progress across reinstalls (switches to an existing account if linked)
 
 ### 5. Monetization
 - [x] Rewarded: second wind, double sun-drops on results, double offering (test ads)
