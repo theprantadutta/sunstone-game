@@ -111,6 +111,7 @@ func _ready() -> void:
 	ui.home_pressed.connect(_go_title)
 	ui.again_pressed.connect(_restart)
 	ui.settings_changed.connect(_on_settings_changed)
+	ui.back_requested.connect(_on_back)
 	ui.setup(save)
 	if FileAccess.file_exists("user://perf_noui"):
 		ui.visible = false
@@ -554,15 +555,19 @@ func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
 			_pause()
-		NOTIFICATION_WM_GO_BACK_REQUEST:
-			if state == State.RUNNING:
-				_pause()
-			elif state == State.PAUSED:
-				_resume()
-			elif state == State.TITLE:
-				get_tree().quit()
-			else:
-				_go_title()
+
+## Android back (routed through the UI layer, which keeps listening while the
+## tree is paused): pause, resume, close a modal, or leave.
+func _on_back() -> void:
+	if state == State.RUNNING:
+		_pause()
+	elif state == State.PAUSED:
+		_resume()
+	elif state == State.TITLE:
+		if not ui.close_modal():
+			get_tree().quit()
+	elif state == State.RESULTS:
+		_go_title()
 
 # --------------------------------------------------------------- placing ---
 

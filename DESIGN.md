@@ -26,12 +26,16 @@ without covering it, and make the end of a run land.
 
 ## Shape
 
-Stepped corners on every panel and button — temple steps. No plain rounded cards,
-no neon glow. Primary buttons are gold slabs with a darker lip that presses down.
+Polished stone: smooth, generous curves with chunky depth. Buttons are pills
+standing on a darker lip they press into, with a soft sheen across the top; icon
+buttons are round on the same lip. Panels are deep jade slabs with big soft
+corners, a thin Maya-blue rim and a soft shadow. Toggles are pills with a round
+knob; the coin is round. No hard notches or cut corners, no neon glow. All
+curves are anti-aliased styleboxes (`UiKit.round_box`).
 
 ## Layout
 
-The live 3D world is always the background; UI sits on it as carved slabs.
+The live 3D world is always the background; UI sits on it as polished slabs.
 
 - **Title:** wordmark in the upper third, the explorer on the temple steps, a single
   "Run" slab low on the screen with the best distance under it, settings top-right.

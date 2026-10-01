@@ -1,9 +1,10 @@
 class_name UiKit
-## The Sunstone design system in code: palette, type, and the stepped-corner
-## components every screen is built from. See DESIGN.md.
+## The Sunstone design system in code: palette, type, and the components every
+## screen is built from. See DESIGN.md.
 ##
-## Stepped corners (temple steps) are the signature shape — no plain rounded
-## rectangles anywhere. Everything is drawn, nothing is a stock widget skin.
+## Shape: polished stone — generous, smooth curves, chunky depth. Buttons are
+## pills standing on a darker lip they press into, with a soft sheen on top;
+## panels are deep rounded slabs. All curves are anti-aliased styleboxes.
 
 const MAYA_BLUE := Color("#3FA7B5")
 const CINNABAR := Color("#B8322A")
@@ -55,33 +56,43 @@ static func thousands(n: int) -> String:
 		digits = digits.substr(0, digits.length() - 3)
 	return ("-" if n < 0 else "") + digits + out
 
-## The stepped outline of [rect]: two steps of [step] at every corner.
-static func stepped(rect: Rect2, step: float) -> PackedVector2Array:
-	var x := rect.position.x
-	var y := rect.position.y
-	var w := rect.size.x
-	var h := rect.size.y
-	var s := step
-	return PackedVector2Array([
-		Vector2(x, y + 2 * s), Vector2(x + s, y + 2 * s), Vector2(x + s, y + s), Vector2(x + 2 * s, y + s), Vector2(x + 2 * s, y),
-		Vector2(x + w - 2 * s, y), Vector2(x + w - 2 * s, y + s), Vector2(x + w - s, y + s), Vector2(x + w - s, y + 2 * s), Vector2(x + w, y + 2 * s),
-		Vector2(x + w, y + h - 2 * s), Vector2(x + w - s, y + h - 2 * s), Vector2(x + w - s, y + h - s), Vector2(x + w - 2 * s, y + h - s), Vector2(x + w - 2 * s, y + h),
-		Vector2(x + 2 * s, y + h), Vector2(x + 2 * s, y + h - s), Vector2(x + s, y + h - s), Vector2(x + s, y + h - 2 * s), Vector2(x, y + h - 2 * s),
-	])
+## A rounded box: [fill] with corner [radius], optional [border], optional
+## soft [shadow] (alpha) dropped [shadow_y] below. Anti-aliased.
+static func round_box(fill: Color, radius: float, border := Color(0, 0, 0, 0), border_w := 0, shadow := 0.0, shadow_y := 0.0) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = fill
+	sb.set_corner_radius_all(int(radius))
+	sb.corner_detail = 12
+	sb.anti_aliasing = true
+	sb.anti_aliasing_size = 1.2
+	if border_w > 0:
+		sb.border_color = border
+		sb.set_border_width_all(border_w)
+	if shadow > 0.0:
+		sb.shadow_color = Color(0, 0, 0, shadow)
+		sb.shadow_size = 18
+		sb.shadow_offset = Vector2(0, shadow_y)
+	return sb
 
-static func draw_stepped(ci: CanvasItem, rect: Rect2, step: float, fill: Color, trim := Color(0, 0, 0, 0), trim_inset := 6.0, trim_width := 2.0) -> void:
-	ci.draw_colored_polygon(stepped(rect, step), fill)
-	if trim.a > 0.0:
-		var inner := stepped(rect.grow(-trim_inset), maxf(step - trim_inset * 0.35, 2.0))
-		inner.append(inner[0])
-		ci.draw_polyline(inner, trim, trim_width, true)
+## A rim line just inside [rect] — the polished edge of a slab.
+static func draw_rim(ci: CanvasItem, rect: Rect2, radius: float, color: Color, inset := 7.0, width := 2) -> void:
+	var sb := round_box(Color(0, 0, 0, 0), maxf(radius - inset, 4.0), color, width)
+	sb.draw_center = false
+	ci.draw_style_box(sb, rect.grow(-inset))
+
+## The sheen across the upper part of a face: light catching polished stone.
+static func draw_sheen(ci: CanvasItem, rect: Rect2, radius: float, alpha := 0.2) -> void:
+	var r := Rect2(rect.position + Vector2(6, 5), Vector2(rect.size.x - 12, rect.size.y * 0.42))
+	var sb := round_box(Color(1, 1, 1, alpha), minf(radius - 4.0, r.size.y / 2.0))
+	ci.draw_style_box(sb, r)
 
 # ================================================================ slab ===
 
-## A carved panel: deep jade face with a Maya-blue inset trim line.
+## A polished panel: deep jade, big soft corners, a Maya-blue rim, and a soft
+## shadow that lifts it off the scene.
 class Slab:
 	extends Control
-	var step := 14.0
+	var radius := 40.0
 	var fill := UiKit.JADE
 	var trim := UiKit.MAYA_BLUE
 
@@ -89,13 +100,14 @@ class Slab:
 		mouse_filter = Control.MOUSE_FILTER_STOP # panels swallow taps
 
 	func _draw() -> void:
-		# A soft drop "shadow" one step down grounds the slab on the scene.
-		UiKit.draw_stepped(self, Rect2(Vector2(0, 8), size), step, Color(0, 0, 0, 0.28))
-		UiKit.draw_stepped(self, Rect2(Vector2.ZERO, size), step, fill, trim, 9.0, 2.0)
+		var r := Rect2(Vector2.ZERO, size)
+		draw_style_box(UiKit.round_box(fill, radius, Color(0, 0, 0, 0), 0, 0.4, 12.0), r)
+		UiKit.draw_rim(self, r, radius, Color(trim, 0.75), 9.0, 2)
 
 # ============================================================== button ===
 
-## A slab button that presses down into its lip. GOLD is the primary action.
+## A pill button standing on a darker lip; pressing sinks it into the lip.
+## GOLD is the primary action.
 class SlabButton:
 	extends Control
 	signal pressed
@@ -107,7 +119,7 @@ class SlabButton:
 	var font_size := 34
 	var _down := false
 	var _label: Label
-	const LIP := 7.0
+	const LIP := 9.0
 
 	func _init(t := "", k := Kind.GOLD) -> void:
 		text = t
@@ -126,21 +138,22 @@ class SlabButton:
 		_layout()
 
 	func _layout() -> void:
-		var drop := LIP if _down else 0.0
+		var drop := LIP - 2.0 if _down else 0.0
 		_label.position = Vector2(0, drop)
 		_label.size = Vector2(size.x, size.y - LIP)
 
 	func _draw() -> void:
 		var face := UiKit.GOLD if kind == Kind.GOLD else UiKit.JADE_LIGHT
 		var lip := UiKit.GOLD_DEEP if kind == Kind.GOLD else UiKit.JADE
-		var face_rect := Rect2(Vector2(0, LIP if _down else 0.0), Vector2(size.x, size.y - LIP))
-		if not _down:
-			UiKit.draw_stepped(self, Rect2(Vector2(0, LIP), Vector2(size.x, size.y - LIP)), 10.0, lip)
-		UiKit.draw_stepped(self, face_rect, 10.0, face)
+		var h := size.y - LIP
+		var radius := h / 2.0
+		# Lip (with the drop shadow under it), then the face sitting on top.
+		draw_style_box(UiKit.round_box(lip, radius, Color(0, 0, 0, 0), 0, 0.3, 6.0), Rect2(Vector2(0, LIP), Vector2(size.x, h)))
+		var face_rect := Rect2(Vector2(0, LIP - 2.0 if _down else 0.0), Vector2(size.x, h))
+		draw_style_box(UiKit.round_box(face, radius), face_rect)
+		UiKit.draw_sheen(self, face_rect, radius, 0.28 if kind == Kind.GOLD else 0.1)
 		if kind == Kind.JADE:
-			var inner := UiKit.stepped(face_rect.grow(-5), 7.0)
-			inner.append(inner[0])
-			draw_polyline(inner, UiKit.MAYA_BLUE, 2.0, true)
+			UiKit.draw_rim(self, face_rect, radius, Color(UiKit.MAYA_BLUE, 0.8), 5.0, 2)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
@@ -162,7 +175,7 @@ class SlabButton:
 
 # ========================================================= icon button ===
 
-## A square stepped button with a drawn pictogram.
+## A round button with a drawn pictogram, on the same lip as the pills.
 class IconButton:
 	extends Control
 	signal pressed
@@ -171,6 +184,7 @@ class IconButton:
 
 	var icon := Icon.PAUSE
 	var _down := false
+	const LIP := 6.0
 
 	func _init(i := Icon.PAUSE) -> void:
 		icon = i
@@ -179,28 +193,30 @@ class IconButton:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 
 	func _draw() -> void:
-		var off := 4.0 if _down else 0.0
-		UiKit.draw_stepped(self, Rect2(Vector2(0, 5), size - Vector2(0, 5)), 9.0, Color(0, 0, 0, 0.3))
-		var r := Rect2(Vector2(0, off), size - Vector2(0, 5))
-		UiKit.draw_stepped(self, r, 9.0, UiKit.JADE, UiKit.MAYA_BLUE, 5.0, 2.0)
+		var d := size.y - LIP
+		var radius := d / 2.0
+		draw_style_box(UiKit.round_box(UiKit.JADE.darkened(0.35), radius, Color(0, 0, 0, 0), 0, 0.3, 5.0), Rect2(Vector2(0, LIP), Vector2(size.x, d)))
+		var r := Rect2(Vector2(0, LIP - 1.0 if _down else 0.0), Vector2(size.x, d))
+		draw_style_box(UiKit.round_box(UiKit.JADE, radius), r)
+		UiKit.draw_sheen(self, r, radius, 0.08)
+		UiKit.draw_rim(self, r, radius, Color(UiKit.MAYA_BLUE, 0.85), 5.0, 2)
 		var c := r.get_center()
 		match icon:
 			Icon.PAUSE:
-				for dx in [-10.0, 10.0]:
-					draw_rect(Rect2(c + Vector2(dx - 5, -15), Vector2(10, 30)), UiKit.LIMESTONE)
+				for dx in [-9.0, 9.0]:
+					draw_style_box(UiKit.round_box(UiKit.LIMESTONE, 4.0), Rect2(c + Vector2(dx - 5, -14), Vector2(10, 28)))
 			Icon.GEAR:
-				# A sun-wheel: stepped rays around a hub (doubles as the brand sun).
+				# A sun-wheel: tapered rays around a hub (doubles as the brand sun).
 				for k in 8:
 					var a := TAU * k / 8.0
-					var d := Vector2(cos(a), sin(a))
-					var p := Vector2(-d.y, d.x)
-					draw_colored_polygon(PackedVector2Array([
-						c + d * 12 + p * 5, c + d * 22 + p * 4, c + d * 22 - p * 4, c + d * 12 - p * 5]), UiKit.LIMESTONE)
-				draw_circle(c, 13.0, UiKit.LIMESTONE)
-				draw_circle(c, 6.0, UiKit.JADE)
+					var dir := Vector2(cos(a), sin(a))
+					var p := Vector2(-dir.y, dir.x)
+					draw_colored_polygon(PackedVector2Array([c + dir * 11 + p * 5.5, c + dir * 23, c + dir * 11 - p * 5.5]), UiKit.LIMESTONE)
+				draw_circle(c, 13.0, UiKit.LIMESTONE, true, -1.0, true)
+				draw_circle(c, 6.0, UiKit.JADE, true, -1.0, true)
 			Icon.CLOSE:
-				draw_line(c + Vector2(-13, -13), c + Vector2(13, 13), UiKit.LIMESTONE, 6.0)
-				draw_line(c + Vector2(13, -13), c + Vector2(-13, 13), UiKit.LIMESTONE, 6.0)
+				draw_line(c + Vector2(-12, -12), c + Vector2(12, 12), UiKit.LIMESTONE, 6.0, true)
+				draw_line(c + Vector2(12, -12), c + Vector2(-12, 12), UiKit.LIMESTONE, 6.0, true)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
@@ -212,7 +228,7 @@ class IconButton:
 
 # ============================================================ wordmark ===
 
-## SUNSTONE, carved: a stepped extrusion in deep gold under an idol-gold face,
+## SUNSTONE, carved: a deep jade extrusion under a limestone face,
 ## with the sun glyph rising behind it. Settles into place once.
 class Wordmark:
 	extends Control
@@ -234,20 +250,19 @@ class Wordmark:
 	func _draw() -> void:
 		var e := 1.0 - pow(1.0 - _t, 3.0) # ease out
 		var center := Vector2(size.x / 2.0, 92)
-		# The sun glyph: a disc with eight stepped rays, behind the letters.
+		# The sun glyph: a disc with twelve tapered rays, behind the letters.
 		var sun_r := 70.0 * (0.85 + 0.15 * e)
 		var a := e
-		for k in 8:
-			var ang := TAU * k / 8.0 + PI / 8.0
+		for k in 12:
+			var ang := TAU * k / 12.0 + PI / 12.0
 			var d := Vector2(cos(ang), sin(ang))
 			var p := Vector2(-d.y, d.x)
-			var base := center + d * (sun_r - 4)
-			draw_colored_polygon(PackedVector2Array([
-				base + p * 16, base + d * 26 + p * 16, base + d * 26 + p * 8, base + d * 44 + p * 8,
-				base + d * 44 - p * 8, base + d * 26 - p * 8, base + d * 26 - p * 16, base - p * 16]),
-				Color(UiKit.CINNABAR, 0.9 * a))
-		draw_circle(center, sun_r, Color(UiKit.GOLD_DEEP, a))
-		draw_circle(center, sun_r - 12, Color(UiKit.GOLD, a))
+			var base := center + d * (sun_r - 6)
+			var reach := 40.0 if k % 2 == 0 else 26.0
+			draw_colored_polygon(PackedVector2Array([base + p * 13, base + d * reach, base - p * 13]), Color(UiKit.CINNABAR, 0.9 * a))
+		draw_circle(center, sun_r, Color(UiKit.GOLD_DEEP, a), true, -1.0, true)
+		draw_circle(center, sun_r - 12, Color(UiKit.GOLD, a), true, -1.0, true)
+		draw_circle(center + Vector2(-sun_r * 0.25, -sun_r * 0.3), sun_r * 0.35, Color(1, 1, 1, 0.16 * a), true, -1.0, true)
 
 		var font := UiKit.display_font()
 		var fs := 84
@@ -260,12 +275,12 @@ class Wordmark:
 		draw_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color(UiKit.INK, a))
 		draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiKit.LIMESTONE, a))
 		# Maya-blue band under the name, like a painted lintel.
-		var band := Rect2(Vector2((size.x - w) / 2.0, pos.y + 26), Vector2(w * e, 10))
-		draw_rect(band, Color(UiKit.MAYA_BLUE, a))
+		var band := Rect2(Vector2((size.x - w) / 2.0, pos.y + 26), Vector2(maxf(w * e, 10.0), 10))
+		draw_style_box(UiKit.round_box(Color(UiKit.MAYA_BLUE, a), 5.0), band)
 
 # ============================================================ coin glyph ===
 
-## The coin as a flat glyph: a faceted gold octagon with a bright heart.
+## The coin as a flat glyph: a round gold coin with a rim and a bright heart.
 class CoinGlyph:
 	extends Control
 	func _init(px := 34.0) -> void:
@@ -276,17 +291,9 @@ class CoinGlyph:
 	func _draw() -> void:
 		var c := size / 2.0
 		var r := size.x / 2.0
-		var pts := PackedVector2Array()
-		for k in 8:
-			var a := TAU * k / 8.0 + PI / 8.0
-			pts.append(c + Vector2(cos(a), sin(a)) * r)
-		draw_colored_polygon(pts, UiKit.GOLD_DEEP)
-		var inner := PackedVector2Array()
-		for k in 8:
-			var a := TAU * k / 8.0 + PI / 8.0
-			inner.append(c + Vector2(cos(a), sin(a)) * r * 0.78)
-		draw_colored_polygon(inner, UiKit.GOLD)
-		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.32), c + Vector2(r * 0.32, 0), c + Vector2(0, r * 0.32), c + Vector2(-r * 0.32, 0)]), Color("#FFF2C4"))
+		draw_circle(c, r, UiKit.GOLD_DEEP, true, -1.0, true)
+		draw_circle(c - Vector2(0, r * 0.06), r * 0.8, UiKit.GOLD, true, -1.0, true)
+		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.34), c + Vector2(r * 0.3, 0), c + Vector2(0, r * 0.34), c + Vector2(-r * 0.3, 0)]), Color("#FFF2C4"))
 
 # =============================================================== toggle ===
 
@@ -309,10 +316,10 @@ class Toggle:
 		add_child(l)
 
 	func _draw() -> void:
-		var track := Rect2(Vector2(size.x - 112, 16), Vector2(108, 46))
-		UiKit.draw_stepped(self, track, 7.0, UiKit.MAYA_BLUE if on else Color(UiKit.JADE_LIGHT, 1.0))
-		var knob_x := track.position.x + (track.size.x - 46 if on else 0.0)
-		UiKit.draw_stepped(self, Rect2(Vector2(knob_x, track.position.y), Vector2(46, 46)), 7.0, UiKit.LIMESTONE)
+		var track := Rect2(Vector2(size.x - 112, 16), Vector2(108, 48))
+		draw_style_box(UiKit.round_box(UiKit.MAYA_BLUE if on else UiKit.JADE.darkened(0.3), 24.0, Color(0, 0, 0, 0.25), 2), track)
+		var knob := Rect2(Vector2(track.position.x + (track.size.x - 44 if on else 4.0), track.position.y + 4), Vector2(40, 40))
+		draw_style_box(UiKit.round_box(UiKit.LIMESTONE, 20.0, Color(0, 0, 0, 0), 0, 0.35, 3.0), knob)
 
 	func _gui_input(event: InputEvent) -> void:
 		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
@@ -359,7 +366,7 @@ class DangerFlash:
 
 # =========================================================== hint toast ===
 
-## "Swipe up to jump", with an animated stepped chevron showing the swipe.
+## "Swipe up to jump", with an animated chevron showing the swipe.
 class HintToast:
 	extends Control
 	var _dir := Vector2.UP
@@ -400,7 +407,9 @@ class HintToast:
 			modulate.a = 0.0
 
 	func _draw() -> void:
-		UiKit.draw_stepped(self, Rect2(Vector2.ZERO, size - Vector2(0, 8)), 10.0, Color(UiKit.JADE, 0.92), UiKit.MAYA_BLUE, 6.0, 2.0)
+		var r := Rect2(Vector2.ZERO, size - Vector2(0, 8))
+		draw_style_box(UiKit.round_box(Color(UiKit.JADE, 0.92), r.size.y / 2.0, Color(0, 0, 0, 0), 0, 0.3, 6.0), r)
+		UiKit.draw_rim(self, r, r.size.y / 2.0, Color(UiKit.MAYA_BLUE, 0.8), 6.0, 2)
 		# A chevron travelling in the swipe direction, repeating.
 		var c := Vector2(56, (size.y - 8) / 2.0)
 		var travel := fmod(_t * 1.6, 1.0)
@@ -408,4 +417,5 @@ class HintToast:
 		var p := Vector2(-d.y, d.x)
 		var tip := c + d * (-12.0 + 24.0 * travel)
 		var col := Color(UiKit.GOLD, 1.0 - travel * 0.6)
-		draw_colored_polygon(PackedVector2Array([tip + d * 14, tip - d * 2 + p * 18, tip - d * 10 + p * 18, tip + d * 4, tip - d * 10 - p * 18, tip - d * 2 - p * 18]), col)
+		draw_polyline(PackedVector2Array([tip - d * 8 + p * 16, tip + d * 8, tip - d * 8 - p * 16]), col, 9.0, true)
+		draw_circle(tip + d * 8, 4.5, col, true, -1.0, true)

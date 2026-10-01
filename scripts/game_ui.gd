@@ -12,6 +12,23 @@ signal resume_pressed
 signal home_pressed
 signal again_pressed
 signal settings_changed
+signal back_requested
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		back_requested.emit()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_BACK:
+		back_requested.emit()
+		get_viewport().set_input_as_handled()
+
+## Closes the settings modal if it is open; true when it was.
+func close_modal() -> bool:
+	if _settings and _settings.visible:
+		_settings.visible = false
+		return true
+	return false
 
 var _save: SaveData
 var _top := 28.0 ## below the status bar / camera cutout
