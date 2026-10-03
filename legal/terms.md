@@ -2,7 +2,7 @@
 
 These terms apply to Sunstone: Dusk Run ("the game"), made by Pranta Dutta. By playing, you agree to them.
 
-Last updated: 1 October 2026.
+Last updated: 3 October 2026.
 
 ## Playing fair
 
@@ -14,7 +14,7 @@ Choose a name that isn't offensive, hateful or impersonating someone. We may cha
 
 ## Sun-drops and purchases
 
-Sun-drops and everything bought with them only exist inside the game. They have no value outside it and can't be exchanged for money. Purchases are made through Google Play and follow Google Play's refund rules. If something you paid for doesn't arrive, use Restore purchases in the Market, or contact us.
+Sun-drops and everything bought with them only exist inside the game. They have no value outside it and can't be exchanged for money. Purchases are made through Google Play or Apple's App Store, and refunds follow our refund policy (in the game under Privacy & terms, Refunds) and the store's own rules. If something you paid for doesn't arrive, use Restore purchases in the Market, or contact us.
 
 ## The game as it is
 

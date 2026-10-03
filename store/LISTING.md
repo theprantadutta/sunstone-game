@@ -99,7 +99,8 @@ Must match `sunstone-api/src/Sunstone.Api/Purchases/Products.cs` and
 ## Release checklist
 
 1. Host the API at `https://sunstone.pranta.dev` (release builds talk to it).
-2. Host `legal/privacy.md` and the account-deletion page; paste the URLs above.
+2. Host `legal/privacy.md`, `legal/terms.md`, `legal/refund.md` and the account-deletion
+   page; paste the URLs above.
 3. Create the app in Play Console (package `com.pranta.sunstone`), upload
    `build/sunstone.aab` (`--export-release "Android Play"`) to **closed testing**.
 4. After the first upload: copy the **app signing key SHA-1** from Play Console →

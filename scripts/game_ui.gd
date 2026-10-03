@@ -893,7 +893,7 @@ func _open_account() -> void:
 
 # ----------------------------------------------------------------- legal ---
 
-## The privacy policy and terms, read from legal/*.md (shipped with the game).
+## The privacy policy, terms and refund policy, read from legal/*.md (shipped with the game).
 func _open_legal() -> void:
 	if _legal:
 		_legal.queue_free()
@@ -901,7 +901,7 @@ func _open_legal() -> void:
 	_legal = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 113
-	var docs := [["privacy", "Privacy"], ["terms", "Terms"]]
+	var docs := [["privacy", "Privacy"], ["terms", "Terms"], ["refund", "Refunds"]]
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(48, 150)
 	scroll.size = Vector2(504, 800)
@@ -925,40 +925,39 @@ func _open_legal() -> void:
 	for i in docs.size():
 		var d: Array = docs[i]
 		var tab := UiKit.GlyphButton.new(d[1], UiKit.GlyphButton.Kind.SECONDARY)
-		tab.font_size = 22
-		tab.position = Vector2(56 + i * 132, 52)
-		tab.size = Vector2(124, 70)
+		tab.font_size = 18
+		tab.position = Vector2(56 + i * 120, 52)
+		tab.size = Vector2(114, 70)
 		tab.pressed.connect(func(): show.call(d[0]))
 		page.add_child(tab)
 	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.PRIMARY)
 	close.font_size = 24
-	close.position = Vector2(384, 52)
-	close.size = Vector2(160, 70)
+	close.position = Vector2(420, 52)
+	close.size = Vector2(124, 70)
 	close.pressed.connect(func(): _legal.visible = false)
 	page.add_child(close)
 	_rule(page, 136, 117)
 	show.call(_legal_doc)
 	page.open()
 
-## Just enough Markdown for our legal pages: headings, bold, paragraphs.
+## Just enough Markdown for our legal pages: headings, bold, bullets, paragraphs.
 static func _markdown_to_bbcode(md: String) -> String:
 	var out := PackedStringArray()
-	for line in md.split("
-"):
+	for line in md.split("\n"):
 		var l := line.strip_edges()
 		if l.begins_with("# "):
 			out.append("[font_size=34][b]%s[/b][/font_size]" % l.substr(2))
 		elif l.begins_with("## "):
-			out.append("
-[font_size=26][b][color=#B8322A]%s[/color][/b][/font_size]" % l.substr(3))
+			out.append("\n[font_size=26][b][color=#B8322A]%s[/color][/b][/font_size]" % l.substr(3))
 		else:
+			if l.begins_with("- "):
+				l = "•  " + l.substr(2)
 			var parts := l.split("**")
 			var b := ""
 			for i in parts.size():
 				b += ("[b]%s[/b]" % parts[i]) if i % 2 == 1 else parts[i]
 			out.append(b)
-	return "
-".join(out)
+	return "\n".join(out)
 
 # ---------------------------------------------------------------- market ---
 

@@ -176,7 +176,8 @@ them **untyped via ClassDB**; never name them as types.
 - Store copy, Data safety / content rating answers, IAP product table and the
   release checklist: **`store/LISTING.md`**. Art: `store/` — regenerate with
   `python tools/make_store_art.py <folder of raw phone screenshots>`.
-- Privacy policy and terms: `legal/*.md` (shown in-game; host them for Play).
+- Privacy policy, terms and refund policy: `legal/{privacy,terms,refund}.md` (shown in-game
+  under Settings → Privacy & terms; host the same files for the stores).
 
 ## Assets
 
