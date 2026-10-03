@@ -158,6 +158,14 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   page with the reward, a countdown and "No thanks" (AdMob policy), or falls back
   to a plain interstitial. `files/dev_ads_eager` skips the pacing for testing.
 
+## iOS
+
+Prepared on Windows and finished on a Mac: **`IOS.md`** is the handoff (what's
+done, what to ask the owner, the steps). iOS uses StoreKit 2 and Sign in with
+Apple through GodotApplePlugins (installed on the Mac, gitignored). Its classes
+don't exist on Android, so `apple_store.gd` and `online.gd` `link_apple()` use
+them **untyped via ClassDB**; never name them as types.
+
 ## Release
 
 - `--export-release "Android Play" build/sunstone.aab` → signed AAB. Upload key:

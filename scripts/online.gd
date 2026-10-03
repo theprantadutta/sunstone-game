@@ -23,11 +23,13 @@ const PROD_BASE := "https://sunstone.pranta.dev"
 const STATE_PATH := "user://online.json"
 const OUTBOX_PATH := "user://outbox.json"
 const ANDROID_PACKAGE := "com.pranta.sunstone"
+const IOS_BUNDLE_ID := "com.pranta.sunstone"
 ## The Firebase project's OAuth *web* client — public, and what Google
 ## sign-in on Android asks for to mint a token Firebase accepts.
 const GOOGLE_WEB_CLIENT_ID := "865615140000-9jk5kbkrjg2ip2lmckib1oohokvaiten.apps.googleusercontent.com"
 
 signal _google_result(ok: bool, value: String, email: String)
+signal _apple_result(ok: bool, value: String, email: String)
 
 var base_url := DEV_BASE if OS.is_debug_build() else PROD_BASE
 var player := {} ## {id, name, isAnonymous} once signed in
@@ -42,6 +44,7 @@ var _busy_session := false
 var _save: SaveData
 var _sync_pending := false
 var _sync_running := false
+var _apple_auth = null ## ASAuthorizationController (GodotApplePlugins), kept alive while it asks
 
 func _ready() -> void:
 	if FileAccess.file_exists("user://api_base"):
@@ -110,21 +113,24 @@ func _firebase_id_token() -> String:
 	var refresh: String = _state.get("refresh_token", "")
 	if refresh != "":
 		var r := await _http(HTTPClient.METHOD_POST, "https://securetoken.googleapis.com/v1/token?key=" + _api_key,
-			{"grant_type": "refresh_token", "refresh_token": refresh}, _android_headers())
+			{"grant_type": "refresh_token", "refresh_token": refresh}, _firebase_headers())
 		if r.code == 200:
 			_state.refresh_token = r.body.get("refresh_token", refresh)
 			return str(r.body.get("id_token", ""))
 		if r.code == 0:
 			return "" # offline: keep the account, try later
 	var s := await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + _api_key,
-		{"returnSecureToken": true}, _android_headers())
+		{"returnSecureToken": true}, _firebase_headers())
 	if s.code != 200:
 		return ""
 	_state.refresh_token = s.body.get("refreshToken", "")
 	_write_state()
 	return str(s.body.get("idToken", ""))
 
-func _android_headers() -> PackedStringArray:
+## Firebase API keys can be restricted to our apps; say which app is asking.
+func _firebase_headers() -> PackedStringArray:
+	if OS.get_name() == "iOS":
+		return PackedStringArray(["X-Ios-Bundle-Identifier: " + IOS_BUNDLE_ID])
 	return PackedStringArray(["X-Android-Package: " + ANDROID_PACKAGE])
 
 ## An authorized call to our API; retries once with a fresh session on 401.
@@ -188,7 +194,7 @@ func delete_account() -> bool:
 	var token := await _firebase_id_token()
 	if token != "":
 		await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:delete?key=" + _api_key,
-			{"idToken": token}, _android_headers())
+			{"idToken": token}, _firebase_headers())
 	_state = {}
 	player = {}
 	_outbox.clear()
@@ -200,19 +206,68 @@ func delete_account() -> bool:
 
 ## {code, body}: 200 with {granted, drops, consume, entitlements}; 202 pending;
 ## 400/409 refused; 503/0 try later.
-func verify_purchase(product_id: String, token: String) -> Dictionary:
-	return await api(HTTPClient.METHOD_POST, "/purchases/verify", {"productId": product_id, "purchaseToken": token})
+## store: "play" (token = Play purchase token) or "apple" (token = the
+## StoreKit 2 signed transaction).
+func verify_purchase(product_id: String, token: String, store := "play") -> Dictionary:
+	return await api(HTTPClient.METHOD_POST, "/purchases/verify", {"productId": product_id, "purchaseToken": token, "store": store})
 
 ## What this player owns on the server, or null when it can't be reached.
 func entitlements() -> Variant:
 	var r := await api(HTTPClient.METHOD_GET, "/purchases/entitlements")
 	return r.body.get("entitlements", []) if r.code == 200 and r.body is Dictionary else null
 
-# ------------------------------------------------------------ google link
+# ----------------------------------------------------------- account link
+
+## Who players keep their progress with here: Apple on iOS (App Store rule
+## 4.8 — and the natural choice there), Google everywhere else.
+func provider_name() -> String:
+	return "Apple" if OS.get_name() == "iOS" else "Google"
+
+## What this phone's progress is kept with ("" = only this phone): the
+## Google email, or the Apple ID's email (or "your Apple ID" if hidden).
+func linked_as() -> String:
+	return str(_state.get("apple_label", "")) if OS.get_name() == "iOS" else google_email()
+
+## Signs in with this platform's provider and links it to this player.
+## Returns "" on success (or a cancel), otherwise a sentence for the player.
+func link_account() -> String:
+	return await link_apple() if OS.get_name() == "iOS" else await link_google()
 
 ## The Google account this phone's progress is kept with, or "".
 func google_email() -> String:
 	return str(_state.get("google_email", ""))
+
+## Sign in with Apple (GodotApplePlugins' AuthenticationServices addon, iOS
+## only — untyped so this script still parses where it doesn't exist), then
+## link that Apple ID like a Google account. The plugin sets no nonce, so the
+## token carries none and Firebase gets none.
+func link_apple() -> String:
+	if not ClassDB.class_exists("ASAuthorizationController"):
+		return "Sign in with Apple isn't available on this device."
+	_apple_auth = ClassDB.instantiate("ASAuthorizationController")
+	var on_ok := func(credential) -> void:
+		if credential == null or not ("identity_token" in credential):
+			_apple_result.emit(false, "no Apple ID came back", "")
+			return
+		var token: String = (credential.identity_token as PackedByteArray).get_string_from_utf8()
+		_apple_result.emit(token != "", token if token != "" else "no identity token", str(credential.email))
+	var on_fail := func(error: String) -> void: _apple_result.emit(false, error, "")
+	_apple_auth.connect("authorization_completed", on_ok)
+	_apple_auth.connect("authorization_failed", on_fail)
+	_apple_auth.signin_with_scopes(["email"])
+	var got: Array = await _apple_result
+	_apple_auth = null
+	if not got[0]:
+		# Apple reports a dismissed sheet as error 1001 ("canceled").
+		var reason := str(got[1])
+		return "" if "1001" in reason or "cancel" in reason.to_lower() else "Sign in with Apple didn't work: %s" % reason
+	var err := await _link_idp("id_token=%s&providerId=apple.com" % got[1], "Apple")
+	if err == "":
+		# Apple shares the email only the first time; keep what we were told.
+		var label := str(got[2]) if str(got[2]) != "" else str(_state.get("apple_label", ""))
+		_state.apple_label = label if label != "" else "your Apple ID"
+		_write_state()
+	return err
 
 ## Signs in with Google and links it to this player, so progress survives a
 ## new phone or a reinstall. If that Google account already has a Sunstone
@@ -232,36 +287,44 @@ func link_google() -> String:
 	plugin.disconnect("sign_in_failed", on_fail)
 	if not got[0]:
 		return "" if got[1] == "cancelled" else "Google sign-in didn't work: %s" % got[1]
-	var google_token: String = got[1]
-	var email: String = got[2]
+	var err := await _link_idp("id_token=%s&providerId=google.com" % got[1], "Google")
+	if err == "":
+		_state.google_email = got[2]
+		_write_state()
+		print("[online] Google account %s" % got[2])
+	return err
 
+## Links (or switches to) a Firebase account from another provider's token:
+## postBody is the signInWithIdp body for it. Returns "" or a sentence.
+func _link_idp(post_body: String, provider: String) -> String:
 	var body := {
-		"postBody": "id_token=%s&providerId=google.com" % google_token,
+		"postBody": post_body,
 		"requestUri": "http://localhost", "returnSecureToken": true, "returnIdpCredential": true,
 	}
 	var current := await _firebase_id_token()
 	if current != "":
 		body["idToken"] = current # link to this guest instead of making a new account
 	var r := await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + _api_key,
-		body, _android_headers())
+		body, _firebase_headers())
 	var switched := false
 	if r.code != 200:
 		var message := str(r.body.get("error", {}).get("message", "")) if r.body is Dictionary else ""
 		if message.begins_with("FEDERATED_USER_ID_ALREADY_LINKED") or message.begins_with("EMAIL_EXISTS"):
-			# This Google account already has a Sunstone account: sign in to it.
+			# This account already has a Sunstone account: sign in to it.
 			body.erase("idToken")
 			r = await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + _api_key,
-				body, _android_headers())
+				body, _firebase_headers())
 			switched = true
 		if r.code != 200:
-			return "Couldn't reach Google right now. Try again in a moment." if r.code == 0 else "Google sign-in was refused (%s)." % message
+			if r.code == 0:
+				return "Couldn't reach %s right now. Try again in a moment." % provider
+			return "%s sign-in was refused (%s)." % [provider, message]
 	_state.refresh_token = r.body.get("refreshToken", _state.get("refresh_token", ""))
-	_state.google_email = email
 	_state.jwt = "" # re-exchange: the server records the new provider
 	_write_state()
 	if not await ensure_session():
-		return "Linked with Google, but the temple can't be reached right now."
-	print("[online] %s Google account %s" % ["switched to" if switched else "linked", email])
+		return "Linked with %s, but the temple can't be reached right now." % provider
+	print("[online] %s %s" % ["switched to" if switched else "linked", provider])
 	await sync_save()
 	return ""
 
@@ -344,7 +407,16 @@ func _http(method: int, url: String, body: Variant, headers: Array) -> Dictionar
 	var parsed: Variant = JSON.parse_string(text) if text.length() > 0 else {}
 	return {"code": code, "body": parsed if parsed != null else {}}
 
+## The Firebase web API key: on iOS from GoogleService-Info.plist (the iOS
+## app's config), otherwise — or if that's missing — from google-services.json.
+## Both are gitignored and shipped with exports.
 func _read_api_key() -> String:
+	if OS.get_name() == "iOS" and FileAccess.file_exists("res://GoogleService-Info.plist"):
+		var plist := FileAccess.get_file_as_string("res://GoogleService-Info.plist")
+		var re := RegEx.create_from_string("<key>API_KEY</key>\\s*<string>([^<]+)</string>")
+		var m := re.search(plist)
+		if m:
+			return m.get_string(1)
 	var d: Variant = _read_json("res://google-services.json", {})
 	if d is Dictionary and d.has("client"):
 		for c in d.client:

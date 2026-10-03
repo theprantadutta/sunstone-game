@@ -1,12 +1,14 @@
 class_name Store
 extends Node
-## In-app purchases through Google Play Billing. Nothing is granted on the
-## phone's word: every purchase goes to our server, which checks it with
-## Google and grants it once; only then is it consumed (sun-drop packs) or
-## acknowledged (remove ads, patron) on Play. Unfinished purchases are picked
-## up again at launch, so a paid purchase is never lost.
+## In-app purchases: Google Play Billing on Android, StoreKit 2 on iOS
+## (apple_store.gd). Nothing is granted on the phone's word: every purchase
+## goes to our server, which checks it (with Google, or Apple's signature) and
+## grants it once; only then is it consumed / acknowledged on Play, or
+## finished on the App Store. Unfinished purchases come back at launch, so a
+## paid purchase is never lost.
 ##
-## Product ids must match sunstone-api Purchases/Products.cs and Play Console.
+## Product ids must match sunstone-api Purchases/Products.cs, Play Console and
+## App Store Connect.
 
 signal products_changed ## prices arrived (or the store closed)
 signal purchase_finished(product_id: String, message: String)
@@ -20,14 +22,29 @@ const PRODUCTS := [
 ]
 
 var open := false ## the server's switch (GAME_STORE_OPEN)
-var prices := {} ## product id → formatted price from Play
+var prices := {} ## product id → formatted price from the store
 var _billing: BillingClient
+var _apple: Node ## apple_store.gd, on iOS
 var _online: Online
 var _save: SaveData
 
 func setup(online: Online, save: SaveData) -> void:
 	_online = online
 	_save = save
+	if OS.get_name() == "iOS":
+		_apple = preload("res://scripts/apple_store.gd").new()
+		add_child(_apple)
+		_apple.prices_changed.connect(func():
+			prices = _apple.prices
+			products_changed.emit())
+		_apple.transaction.connect(_finish_apple)
+		_apple.purchase_failed.connect(func(id: String, message: String): purchase_finished.emit(id, message))
+		var ids := PackedStringArray()
+		for p in PRODUCTS:
+			ids.append(p.id)
+		if _apple.start(ids):
+			restore_owned()
+		return
 	if not Engine.has_singleton("GodotGooglePlayBilling"):
 		return
 	_billing = BillingClient.new()
@@ -39,11 +56,16 @@ func setup(online: Online, save: SaveData) -> void:
 
 ## The store can sell right now.
 func ready_to_sell() -> bool:
+	if _apple != null:
+		return open and _apple.ready_to_sell()
 	return open and _billing != null and _billing.is_ready() and not prices.is_empty()
 
 func buy(product_id: String) -> void:
 	if not ready_to_sell():
 		purchase_finished.emit(product_id, "The treasury is closed right now.")
+		return
+	if _apple != null:
+		_apple.buy(product_id)
 		return
 	var r: Dictionary = _billing.purchase(product_id)
 	if int(r.get("response_code", 0)) != BillingClient.BillingResponseCode.OK:
@@ -54,6 +76,17 @@ func buy(product_id: String) -> void:
 func restore() -> void:
 	if _billing and _billing.is_ready():
 		_billing.query_purchases(BillingClient.ProductType.INAPP)
+	if _apple != null:
+		_apple.restore()
+	restore_owned()
+
+## The App Store's rating sheet (iOS only; Android uses InappReview).
+func request_review() -> void:
+	if _apple != null:
+		_apple.request_review()
+
+## What the server says this player owns (no store involved).
+func restore_owned() -> void:
 	if _online:
 		var owned: Variant = await _online.entitlements()
 		if owned != null and _save.set_entitlements(owned):
@@ -95,22 +128,45 @@ func _finish(p: Dictionary) -> void:
 	if ids.is_empty() or token == "":
 		return
 	var product_id := str(ids[0])
-	var res := await _online.verify_purchase(product_id, token)
+	var r := await _verify(product_id, token, "play")
+	if r.code != 200:
+		return
+	var body: Dictionary = r.body
+	if body.get("consume", false):
+		_billing.consume_purchase(token)
+	elif not p.get("is_acknowledged", false):
+		_billing.acknowledge_purchase(token)
+	_granted(product_id, body)
+
+## The App Store's version of _finish: verify the signed transaction, grant,
+## then finish it so StoreKit stops handing it back.
+func _finish_apple(product_id: String, jws: String, handle: Object) -> void:
+	var r := await _verify(product_id, jws, "apple")
+	# Refused for good (already granted to another account, or not genuine):
+	# finish it too, or StoreKit replays it — and the error — every launch.
+	if r.code == 200 or r.code == 400 or r.code == 409:
+		_apple.finish(handle)
+	if r.code == 200:
+		_granted(product_id, r.body)
+
+## Asks the server and applies the grant; returns {code, body}. Anything but
+## 200 leaves the purchase to come back later (202 pending, 503 unavailable,
+## 0 offline) or refused (400 not genuine, 409 someone else's).
+func _verify(product_id: String, token: String, store_name: String) -> Dictionary:
+	var res := await _online.verify_purchase(product_id, token, store_name)
 	if res.code != 200:
-		# 202 pending, 503 unavailable, offline: Play will hand it back later.
 		if res.code == 400 or res.code == 409:
 			purchase_finished.emit(product_id, "That purchase couldn't be verified.")
-		return
+		return res
 	var body: Dictionary = res.body
 	if body.get("granted", false):
 		_save.bank += int(body.get("drops", 0))
 	_save.set_entitlements(body.get("entitlements", []))
 	_save.save_to_disk()
 	_online.queue_sync()
-	if body.get("consume", false):
-		_billing.consume_purchase(token)
-	elif not p.get("is_acknowledged", false):
-		_billing.acknowledge_purchase(token)
+	return res
+
+func _granted(product_id: String, body: Dictionary) -> void:
 	_online.track("purchase", {"product": product_id, "granted": body.get("granted", false)})
 	products_changed.emit()
 	purchase_finished.emit(product_id, "Thank you, patron." if product_id == "sunstone_patron" else "Received.")

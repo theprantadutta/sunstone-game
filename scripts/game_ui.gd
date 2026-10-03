@@ -163,12 +163,12 @@ func setup(save: SaveData, online: Online, ads: Ads, store: Store) -> void:
 	_root().add_child(_flare_rect)
 	_flare_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-## The camera-cutout inset, in UI units.
+## The camera-cutout (notch, Dynamic Island) inset, in UI units.
 func _safe_top() -> float:
 	var safe := DisplayServer.get_display_safe_area()
 	var screen := DisplayServer.screen_get_size()
 	var vp := get_viewport().get_visible_rect().size
-	if screen.y <= 0 or OS.get_name() != "Android":
+	if screen.y <= 0 or OS.get_name() not in ["Android", "iOS"]:
 		return 0.0
 	return safe.position.y * vp.y / float(screen.y)
 
@@ -827,28 +827,34 @@ func _open_account() -> void:
 		status.text = err if err != "" else "Saved.")
 	page.add_child(save_name)
 	_rule(page, 426, 107)
-	# Keeping progress with Google: survives a new phone or a reinstall.
-	var email := _online.google_email()
-	var kept := UiKit.wrapped(
-		"Kept with Google: %s" % email if email != "" else "Your progress lives on this phone. Sign in with Google to keep it on any phone.",
+	# Keeping progress with Google (Apple on iOS): survives a new phone or a reinstall.
+	var provider := _online.provider_name()
+	var alone := "Your progress lives on this phone. Sign in with %s to keep it on any phone." % provider
+	var linked := _online.linked_as()
+	var kept := UiKit.wrapped("Kept with %s: %s" % [provider, linked] if linked != "" else alone,
 		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 440), 486, 64)
 	page.add_child(kept)
-	if email == "":
-		var google := UiKit.GlyphButton.new("Sign in with Google", UiKit.GlyphButton.Kind.PRIMARY)
-		google.font_size = 26
-		google.position = Vector2(56, 510)
-		google.size = Vector2(488, 88)
-		google.pressed.connect(func():
-			kept.text = "Asking Google…"
-			var err := await _online.link_google()
-			if err == "" and _online.google_email() != "":
-				kept.text = "Kept with Google: %s" % _online.google_email()
-				google.visible = false
+	if linked == "":
+		var link: Control # a GlyphButton, or Apple's own button on iOS; both emit `pressed`
+		if provider == "Apple":
+			link = _apple_button()
+		else:
+			var google := UiKit.GlyphButton.new("Sign in with Google", UiKit.GlyphButton.Kind.PRIMARY)
+			google.font_size = 26
+			link = google
+		link.position = Vector2(56, 510)
+		link.size = Vector2(488, 88)
+		link.connect("pressed", func():
+			kept.text = "Asking %s…" % provider
+			var err := await _online.link_account()
+			if err == "" and _online.linked_as() != "":
+				kept.text = "Kept with %s: %s" % [provider, _online.linked_as()]
+				link.visible = false
 				field.text = str(_online.player.get("name", ""))
 				_refresh_title()
 			else:
-				kept.text = err if err != "" else "Your progress lives on this phone. Sign in with Google to keep it on any phone.")
-		page.add_child(google)
+				kept.text = err if err != "" else alone)
+		page.add_child(link)
 	_rule(page, 616, 109)
 	page.add_child(UiKit.wrapped("Deleting your account removes your runs, ranks and cloud save from the server and starts this phone fresh.",
 		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 632), 486, 90))
@@ -1144,6 +1150,25 @@ func _fill_looks(body: Control, kind: String, list: Array) -> void:
 	for sw in swatches:
 		if sw.worn:
 			choose.call(sw)
+
+## Apple's own look for its button (App Review checks it): black, rounded,
+## the Apple logo and "Sign in with Apple" in the system font. The logo is
+## U+F8FF, which only Apple's system font draws — fine, this is iOS only.
+func _apple_button() -> Button:
+	var b := Button.new()
+	b.text = "  Sign in with Apple"
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray([".AppleSystemUIFont", "SF Pro Text", "Helvetica Neue"])
+	b.add_theme_font_override("font", font)
+	b.add_theme_font_size_override("font_size", 30)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color.BLACK if state != "pressed" else Color(0.18, 0.18, 0.18)
+		box.set_corner_radius_all(14)
+		b.add_theme_stylebox_override(state, box)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(c, Color.WHITE)
+	return b
 
 # ------------------------------------------------------------- gift offer ---
 

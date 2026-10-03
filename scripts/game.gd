@@ -393,11 +393,12 @@ func _finish_run() -> void:
 	online.queue_sync()
 	sfx.play(Sfx.RESULTS)
 
-## Asks Google Play for its rating sheet right after a proud moment — a new
-## best of 500 m or more, once the player knows the game — at most once a
-## month and three times ever. Google decides whether it actually shows.
+## Asks for the store's rating sheet (Google Play, or the App Store) right
+## after a proud moment — a new best of 500 m or more, once the player knows
+## the game — at most once a month and three times ever. The store decides
+## whether it actually shows.
 func _maybe_ask_review(is_best: bool, metres: int) -> void:
-	if not is_best or metres < 500 or save.runs < 5 or save.review_asks >= 3 or OS.get_name() != "Android":
+	if not is_best or metres < 500 or save.runs < 5 or save.review_asks >= 3 or OS.get_name() not in ["Android", "iOS"]:
 		return
 	var today := MayaCalendar.today_local()
 	if save.review_last != "":
@@ -409,7 +410,10 @@ func _maybe_ask_review(is_best: bool, metres: int) -> void:
 	save.save_to_disk()
 	# Let the results page land first.
 	await get_tree().create_timer(1.6).timeout
-	review.generate_review_info()
+	if OS.get_name() == "iOS":
+		store.request_review()
+	else:
+		review.generate_review_info()
 	online.track("review_prompt", {"distance": metres})
 
 ## Leaving a run's results: by the pacing rules, maybe an ad first. A rewarded

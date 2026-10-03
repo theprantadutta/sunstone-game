@@ -6,6 +6,7 @@ tools/out/
 *.aab
 *.idsig
 google-services.json
+GoogleService-Info.plist
 android/build/
 android-plugins/*/build/
 android-plugins/*/.gradle/
