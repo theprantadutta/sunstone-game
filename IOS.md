@@ -47,7 +47,11 @@ on Android. Keep it that way. Naming `StoreKitManager`, `StoreTransaction` or
    - Xcode (current).
    - Godot **4.7.2-stable** for macOS, plus its export templates (Editor → Manage Export Templates; they include `ios.zip`).
    - Run Godot headless as described in CLAUDE.md, and don't leave windows open on the owner's screen.
-2. **Get the project.** There is no git remote. The owner copies the whole `Sunstone/` folder. Check that these gitignored files came along:
+2. **Get the project.** Clone both repos side by side into a `Sunstone/` folder:
+   - `https://github.com/theprantadutta/sunstone-game` (public)
+   - `https://github.com/theprantadutta/sunstone-api` (private)
+
+   Then ask the owner to copy over the gitignored files, which never go to GitHub:
    - `google-services.json`, `ads_config.json`, `override.cfg`;
    - `addons/admob/ios/bin/` (AdMob iOS libs). If it is missing, unzip `ios-template-v4.7.2.zip` into it, keeping at least `ads/` and `package.gd`. The zip is at https://github.com/poingstudios/godot-admob-plugin/releases/download/v5.1.0/ios-template-v4.7.2.zip.
    - `GoogleService-Info.plist`, from step 4 above.
@@ -94,4 +98,4 @@ on Android. Keep it that way. Naming `StoreKitManager`, `StoreTransaction` or
   - Fix option 1: offer Google sign-in on iOS too, through Google's iOS SDK. Apple still has to be offered alongside it.
   - Fix option 2: let a signed-in player link a second provider (Firebase account linking). Either way needs a small native piece or plugin.
 - **App Store Server Notifications** (refunds) are not wired. A refunded purchase stays granted. It is cheap to add later as `POST /api/v1/purchases/apple-notify`, verifying the signed payload with the same `AppleVerifier` chain check.
-- No CI. A GitHub Actions macOS runner could build and upload once there is a remote.
+- No CI. A GitHub Actions macOS runner could build and upload to TestFlight. The repos are on GitHub now; it would need the signing secrets.
