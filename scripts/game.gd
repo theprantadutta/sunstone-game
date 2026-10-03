@@ -165,8 +165,12 @@ func _ready() -> void:
 			_finish_run())
 	ui.pause_pressed.connect(_pause)
 	ui.resume_pressed.connect(_resume)
-	ui.home_pressed.connect(_go_title)
-	ui.again_pressed.connect(_restart)
+	ui.home_pressed.connect(func():
+		if state == State.RESULTS:
+			_leave_results(_go_title)
+		else:
+			_go_title())
+	ui.again_pressed.connect(func(): _leave_results(_restart))
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.back_requested.connect(_on_back)
 	ui.setup(save, online, ads, store)
@@ -240,8 +244,6 @@ func _reset_run() -> void:
 
 func _go_title() -> void:
 	get_tree().paused = false
-	if state == State.RESULTS:
-		ads.after_run(save.runs)
 	daily_key = ""
 	_reset_run()
 	state = State.TITLE
@@ -275,8 +277,6 @@ func _start_daily() -> void:
 
 func _restart() -> void:
 	get_tree().paused = false
-	if state == State.RESULTS:
-		ads.after_run(save.runs)
 	_reset_run()
 	state = State.TITLE # _start_run needs TITLE
 	_start_run()
@@ -411,6 +411,25 @@ func _maybe_ask_review(is_best: bool, metres: int) -> void:
 	await get_tree().create_timer(1.6).timeout
 	review.generate_review_info()
 	online.track("review_prompt", {"distance": metres})
+
+## Leaving a run's results: by the pacing rules, maybe an ad first. A rewarded
+## interstitial is always announced by an intro the player can decline.
+var _leaving := false
+func _leave_results(then: Callable) -> void:
+	if _leaving:
+		return
+	_leaving = true
+	match ads.between_runs(save.runs):
+		"offer":
+			if await ui.show_reward_offer(Ads.BETWEEN_RUNS_REWARD) and await ads.show_rewarded_interstitial():
+				save.bank += Ads.BETWEEN_RUNS_REWARD
+				save.save_to_disk()
+				online.queue_sync()
+				online.track("ad_gift", {"reward": Ads.BETWEEN_RUNS_REWARD})
+		"interstitial":
+			ads.show_interstitial()
+	_leaving = false
+	then.call()
 
 func _on_settings_changed() -> void:
 	save.save_to_disk()
@@ -901,7 +920,7 @@ func _on_back() -> void:
 	elif state == State.OFFER:
 		_finish_run() # back declines the second wind
 	elif state == State.RESULTS:
-		_go_title()
+		_leave_results(_go_title)
 
 # --------------------------------------------------------------- placing ---
 

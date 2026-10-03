@@ -1145,6 +1145,50 @@ func _fill_looks(body: Control, kind: String, list: Array) -> void:
 		if sw.worn:
 			choose.call(sw)
 
+# ------------------------------------------------------------- gift offer ---
+
+signal _offer_answer(watch: bool)
+
+## The intro AdMob requires before a rewarded interstitial: what you'd get,
+## a clear "No thanks", and time to choose. Returns true to watch (tapped, or
+## the countdown ran out), false if declined.
+func show_reward_offer(reward: int) -> bool:
+	var m := _modal(560, 0.5)
+	var layer: Control = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 127
+	_headline(page, "The temple's gift")
+	page.add_child(UiKit.wrapped("Watch a short ad and the temple gives you %d sun-drops. Or carry on without it." % reward,
+		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 140), 330, 150))
+	var ring := UiKit.Countdown.new()
+	ring.seconds = 5.0
+	ring.left = 5.0
+	ring.position = Vector2(410, 140)
+	ring.size = Vector2(130, 130)
+	page.add_child(ring)
+	var watch := UiKit.GlyphButton.new("Watch for +%d" % reward, UiKit.GlyphButton.Kind.PRIMARY)
+	watch.font_size = 28
+	watch.position = Vector2(56, 330)
+	watch.size = Vector2(488, 100)
+	page.add_child(watch)
+	var no := UiKit.GlyphButton.new("No thanks", UiKit.GlyphButton.Kind.SECONDARY)
+	no.font_size = 30
+	no.position = Vector2(56, 444)
+	no.size = Vector2(488, 96)
+	page.add_child(no)
+	var answered := [false]
+	var answer := func(yes: bool) -> void:
+		if answered[0]:
+			return
+		answered[0] = true
+		layer.queue_free()
+		_offer_answer.emit(yes)
+	watch.pressed.connect(func(): answer.call(true))
+	no.pressed.connect(func(): answer.call(false))
+	ring.expired.connect(func(): answer.call(true))
+	page.open()
+	return await _offer_answer
+
 # ----------------------------------------------------------- second wind ---
 
 ## After a fall or a crash: rise again for sun-drops, while the ring counts down.

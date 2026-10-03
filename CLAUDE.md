@@ -148,9 +148,15 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   `scripts/store.gd` (Play Billing; every purchase verified by the server).
   The server's `/config` switches ads and the store on/off.
 - **Live ad ids (never committed):** `ads_config.json` in the repo root
-  (`{"rewarded": "...", "interstitial": "..."}`, shipped with exports) and the
-  AdMob App ID in `override.cfg` (`[admob]` / `general/android/app_id="ca-app-pub-…~…"`).
-  Both gitignored. Without them, release builds show no ads.
+  (`{"android": {"rewarded", "interstitial", "rewarded_interstitial"}, "ios": {…}}`,
+  shipped with exports) and the AdMob App IDs in `override.cfg` (`[admob]` /
+  `general/android/app_id`, `general/ios/app_id`). Both gitignored. Without them,
+  release builds show no ads. The editor ignores `override.cfg`, so
+  `addons/sunstone_overrides` applies it during **release** exports only (never
+  saved to project.godot); debug exports keep Google's test app id.
+- Between runs (paced) the game offers a **rewarded interstitial** behind an intro
+  page with the reward, a countdown and "No thanks" (AdMob policy), or falls back
+  to a plain interstitial. `files/dev_ads_eager` skips the pacing for testing.
 
 ## Release
 
