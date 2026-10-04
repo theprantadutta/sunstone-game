@@ -38,7 +38,11 @@ var _title: Control
 var _wordmark: UiKit.Wordmark
 var _best: UiKit.PaperSlip
 var _hud: Control
-var _distance: Label
+var _distance: Label ## "Night 2"
+var _house: Label
+var _metres: Label
+var _dawn: DawnTrack
+var _banner: Banner
 var _drops: Label
 var _meter: UiKit.SunMeter
 var _hint: UiKit.HintStrip
@@ -84,6 +88,80 @@ class MayaNumber:
 		queue_redraw()
 	func _draw() -> void:
 		UiKit.draw_maya_number(self, Vector2.ZERO, value, unit, color)
+
+## The way to dawn across the top of the HUD: a dotted road, the stretch
+## already run inked in ochre, a tick where each House begins, the little sun
+## of the runner on it, and "Dawn" at the end.
+class DawnTrack:
+	extends Control
+	var t := 0.0
+	var dawn := false
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func set_progress(v: float, at_dawn: bool) -> void:
+		if absf(v - t) > 0.001 or at_dawn != dawn:
+			t = v
+			dawn = at_dawn
+			queue_redraw()
+	func _draw() -> void:
+		var y := size.y - 14.0
+		var x0 := 6.0
+		var x1 := size.x - 6.0
+		var x := 0.0
+		while x < x1 - x0:
+			draw_line(Vector2(x0 + x, y), Vector2(x0 + minf(x + 10.0, x1 - x0), y), Color(UiKit.STUCCO, 0.35), 4.0, true)
+			x += 18.0
+		var xp := lerpf(x0, x1, clampf(t, 0.0, 1.0))
+		draw_line(Vector2(x0, y), Vector2(xp, y), UiKit.INK, 9.0, true)
+		draw_line(Vector2(x0, y), Vector2(xp, y), UiKit.OCHRE, 5.0, true)
+		for f in [1.0 / 3.0, 2.0 / 3.0]:
+			var hx := lerpf(x0, x1, f)
+			draw_line(Vector2(hx, y - 10), Vector2(hx, y + 10), Color(UiKit.STUCCO, 0.8), 3.0, true)
+		var font := UiKit.text_font(900)
+		draw_string_outline(font, Vector2(x1 - 70, y - 16), "Dawn", HORIZONTAL_ALIGNMENT_RIGHT, 70, 22, 8, UiKit.INK)
+		draw_string(font, Vector2(x1 - 70, y - 16), "Dawn", HORIZONTAL_ALIGNMENT_RIGHT, 70, 22, UiKit.OCHRE_LIGHT if dawn else UiKit.STUCCO)
+		UiKit.draw_kin(self, Vector2(xp, y), 13.0, 1.0, 3.0)
+
+## A slip of codex that names the House you just entered, then fades.
+class Banner:
+	extends Control
+	var _title := ""
+	var _sub := ""
+	var _life := 0.0
+	var _t := 0.0
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		modulate.a = 0.0
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	func show_banner(title: String, sub: String, life := 2.8) -> void:
+		_title = title
+		_sub = sub
+		_life = life
+		_t = 0.0
+		queue_redraw()
+	func _process(delta: float) -> void:
+		if _life > 0.0:
+			_life -= delta
+			_t += delta
+			modulate.a = clampf(minf(_t / 0.25, _life / 0.5), 0.0, 1.0)
+			pivot_offset = size / 2.0
+			scale = Vector2.ONE * (1.0 + 0.04 * maxf(0.0, 1.0 - _t / 0.25))
+		elif modulate.a > 0.0:
+			modulate.a = 0.0
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		var edge := UiKit.torn(r, 71, 1.6)
+		var shadow := PackedVector2Array()
+		for p in edge:
+			shadow.append(p + Vector2(0, 8))
+		draw_colored_polygon(shadow, Color(0, 0, 0, 0.32))
+		UiKit.draw_paper(self, edge)
+		UiKit.draw_rule(self, Vector2(14, 10), Vector2(size.x - 14, 10), UiKit.CINNABAR, 3.0, 31)
+		UiKit.draw_rule(self, Vector2(14, size.y - 10), Vector2(size.x - 14, size.y - 10), UiKit.CINNABAR, 3.0, 37)
+		var big := UiKit.display_font()
+		var small := UiKit.text_font(900)
+		draw_string(big, Vector2(0, size.y * 0.52), _title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 42, UiKit.INK)
+		draw_string(small, Vector2(0, size.y * 0.52 + 44), _sub, HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, UiKit.CINNABAR)
 
 func _ready() -> void:
 	layer = 10
@@ -271,7 +349,7 @@ func show_title(save: SaveData) -> void:
 	if save.best > 0:
 		_best.set_text("Best %s m" % UiKit.thousands(save.best), save.best)
 	else:
-		_best.set_text("Outrun the stone jaguars")
+		_best.set_text("Carry the sun to dawn")
 	_title.visible = true
 	_wordmark.replay()
 	_refresh_title()
@@ -288,21 +366,27 @@ func _refresh_title() -> void:
 
 func _build_hud() -> void:
 	_hud = _layer()
-	_distance = UiKit.label("0 m", UiKit.display_font(), 52, UiKit.STUCCO, 12)
+	_distance = UiKit.label("Night 1", UiKit.display_font(), 46, UiKit.STUCCO, 12)
 	_hud.add_child(_distance)
-	_pin(_distance, TOP_LEFT, Rect2(28, _top - 6, 320, 80))
+	_pin(_distance, TOP_LEFT, Rect2(28, _top - 4, 320, 70))
+	_house = UiKit.label("", UiKit.text_font(900), 24, UiKit.OCHRE_LIGHT, 8)
+	_hud.add_child(_house)
+	_pin(_house, TOP_LEFT, Rect2(30, _top + 58, 300, 36))
 
-	var glyph := UiKit.DropGlyph.new(34)
+	var glyph := UiKit.DropGlyph.new(30)
 	_hud.add_child(glyph)
-	_pin(glyph, TOP_LEFT, Rect2(32, _top + 80, 34, 34))
-	_drops = UiKit.label("0", UiKit.text_font(900), 34, UiKit.OCHRE_LIGHT, 10)
+	_pin(glyph, TOP_LEFT, Rect2(32, _top + 100, 30, 30))
+	_drops = UiKit.label("0", UiKit.text_font(900), 30, UiKit.OCHRE_LIGHT, 10)
 	_hud.add_child(_drops)
-	_pin(_drops, TOP_LEFT, Rect2(76, _top + 70, 200, 50))
+	_pin(_drops, TOP_LEFT, Rect2(70, _top + 92, 90, 44))
+	_metres = UiKit.label("0 m", UiKit.text_font(900), 26, UiKit.STUCCO, 8)
+	_hud.add_child(_metres)
+	_pin(_metres, TOP_LEFT, Rect2(150, _top + 96, 180, 40))
 
 	# During a daily dusk, the day's name sits under the sun-drops.
-	_day_tag = UiKit.label("", UiKit.text_font(900), 26, UiKit.OCHRE_LIGHT, 8)
+	_day_tag = UiKit.label("", UiKit.text_font(900), 24, UiKit.OCHRE_LIGHT, 8)
 	_hud.add_child(_day_tag)
-	_pin(_day_tag, TOP_LEFT, Rect2(32, _top + 122, 300, 40))
+	_pin(_day_tag, TOP_LEFT, Rect2(32, _top + 136, 300, 36))
 
 	_meter = UiKit.SunMeter.new()
 	_hud.add_child(_meter)
@@ -313,9 +397,17 @@ func _build_hud() -> void:
 	_pin(pause, TOP_RIGHT, Rect2(-108, _top, 84, 84))
 	pause.pressed.connect(func(): pause_pressed.emit())
 
+	_dawn = DawnTrack.new()
+	_hud.add_child(_dawn)
+	_pin(_dawn, Rect2(0, 0, 1, 0), Rect2(28, _top + 176, -56, 44))
+
+	_banner = Banner.new()
+	_hud.add_child(_banner)
+	_pin(_banner, Rect2(0.5, 0.25, 0, 0), Rect2(-270, 0, 540, 140))
+
 	_hint = UiKit.HintStrip.new()
 	_hud.add_child(_hint)
-	_pin(_hint, Rect2(0.5, 0.62, 0, 0), Rect2(-270, 0, 540, 112))
+	_pin(_hint, Rect2(0.5, 0.74, 0, 0), Rect2(-270, 0, 540, 112))
 
 ## [day_name] is the tzolk'in day during a daily dusk, "" otherwise.
 func show_hud(day_name := "") -> void:
@@ -324,8 +416,33 @@ func show_hud(day_name := "") -> void:
 	_hud.visible = true
 
 func set_run_numbers(metres: int, drop_count: int) -> void:
-	_distance.text = "%s m" % UiKit.thousands(metres)
+	_metres.text = "%s m" % UiKit.thousands(metres)
 	_drops.text = str(drop_count)
+
+## Which night, which House, and how far to dawn (0..1).
+func set_night(n: int, house: String, t: float, dawn: bool) -> void:
+	_distance.text = "Night %d" % n
+	_house.text = "The sun is rising" if dawn else house
+	_dawn.set_progress(1.0 if dawn else t, dawn)
+
+## A short line that pops under the sun meter: "Sun-string +3".
+func pop(text: String) -> void:
+	var l := UiKit.label(text, UiKit.display_font(), 34, UiKit.OCHRE_LIGHT, 10)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hud.add_child(l)
+	_pin(l, TOP_CENTER, Rect2(-260, _top + 230, 520, 60))
+	l.pivot_offset = Vector2(260, 30)
+	l.scale = Vector2.ONE * 0.6
+	var tw := l.create_tween()
+	tw.tween_property(l, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.7)
+	tw.parallel().tween_property(l, "position:y", l.position.y - 30.0, 0.9)
+	tw.tween_property(l, "modulate:a", 0.0, 0.35)
+	tw.tween_callback(l.queue_free)
+
+## Names the House you just walked into.
+func show_banner(title: String, sub: String) -> void:
+	_banner.show_banner(title, sub)
 
 ## The Sunstone's charge, how far night has fallen, and how close the jaguars are.
 func set_light(value: float, night: float, chaser_gap: float) -> void:
@@ -1413,14 +1530,12 @@ func show_second_wind(cost: int, held: int) -> void:
 # -------------------------------------------------------------- records ---
 
 ## How deep into the night a run reached, in words.
-static func night_name(d: float) -> String:
-	if d < 0.3:
-		return "Sunset"
-	if d < 0.6:
-		return "Twilight"
-	if d < 0.9:
-		return "Moonrise"
-	return "Deep night"
+## How deep into the nights a distance reaches: "Night 2, 40% to dawn".
+static func night_name(metres: float) -> String:
+	var at := Nights.locate(maxf(metres, 0.0))
+	if at.dawn:
+		return "Dawn of night %d" % at.n
+	return "Night %d, %d%% to dawn" % [at.n, int(at.t * 100.0)]
 
 static func duration_text(seconds: float) -> String:
 	var m := int(seconds / 60.0)
@@ -1438,9 +1553,9 @@ func _open_records() -> void:
 		["Distance run", "%.1f km" % (_save.total_distance / 1000.0)],
 		["Sun-drops gathered", UiKit.thousands(_save.total_drops)],
 		["Most in one run", UiKit.thousands(_save.best_drops)],
-		["Flares", UiKit.thousands(_save.flares)],
-		["Deepest night", night_name(_save.deepest_dusk) if _save.runs > 0 else "-"],
-		["Time in the temple", duration_text(_save.play_seconds)],
+		["Blazes", UiKit.thousands(_save.flares)],
+		["Deepest night", night_name(_save.best) if _save.runs > 0 else "-"],
+		["Time in Xibalba", duration_text(_save.play_seconds)],
 	]
 	var top := _save.most_common_death()
 	var height := 210.0 + rows.size() * 64.0 + (96.0 if top != "" else 0.0) + 150.0
@@ -1477,7 +1592,7 @@ func _open_records() -> void:
 ## The run, recorded as a codex entry: what ended it, the distance in our
 ## numerals and in Maya ones, the sun-drops gathered, and the way back in.
 ## [daily] is {name, best, is_best} after a daily dusk, empty otherwise.
-func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool, daily := {}, new_glyphs: Array[String] = []) -> void:
+func show_results(cause: String, metres: int, drop_count: int, best: int, is_best: bool, daily := {}, new_glyphs: Array[String] = [], night_line := "") -> void:
 	_hide_all()
 	if _results:
 		_results.queue_free()
@@ -1491,30 +1606,33 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var page := UiKit.Page.new()
 	page.seed = 19
 	_results.add_child(page)
-	_pin(page, BOTTOM_CENTER, Rect2(-310, -780, 620, 724))
+	_pin(page, BOTTOM_CENTER, Rect2(-310, -800, 620, 744))
 
-	var head := UiKit.wrapped(cause, UiKit.display_font(), 38, UiKit.INK, Vector2(56, 44), 508, 100)
+	var night_l := UiKit.label(night_line, UiKit.text_font(900), 24, UiKit.CINNABAR)
+	night_l.position = Vector2(58, 40)
+	page.add_child(night_l)
+	var head := UiKit.wrapped(cause, UiKit.display_font(), 36, UiKit.INK, Vector2(56, 74), 508, 96)
 	page.add_child(head)
-	_rule(page, 150, 21)
+	_rule(page, 172, 21)
 
-	var dist := UiKit.label("0 m", UiKit.display_font(), 92, UiKit.INK)
-	dist.position = Vector2(52, 160)
+	var dist := UiKit.label("0 m", UiKit.display_font(), 88, UiKit.INK)
+	dist.position = Vector2(52, 180)
 	page.add_child(dist)
 	var maya := MayaNumber.new()
-	maya.position = Vector2(510, 176)
+	maya.position = Vector2(510, 196)
 	maya.size = Vector2(40, 120)
 	page.add_child(maya)
 
 	var glyph := UiKit.DropGlyph.new(36)
-	glyph.position = Vector2(58, 306)
+	glyph.position = Vector2(58, 326)
 	page.add_child(glyph)
 	var drops := UiKit.label("+%d sun-drops" % drop_count, UiKit.text_font(900), 32, UiKit.INK)
-	drops.position = Vector2(106, 298)
+	drops.position = Vector2(106, 318)
 	page.add_child(drops)
 	if drop_count > 0 and _ads.rewarded_ready():
 		var twice := UiKit.GlyphButton.new("Watch: double", UiKit.GlyphButton.Kind.PRIMARY)
 		twice.font_size = 20
-		twice.position = Vector2(384, 290)
+		twice.position = Vector2(384, 310)
 		twice.size = Vector2(170, 60)
 		twice.pressed.connect(func():
 			twice.visible = false
@@ -1532,23 +1650,23 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 		best_text = ("New best for %s" % daily.name) if daily.is_best else ("Best for %s: %s m" % [daily.name, UiKit.thousands(daily.best)])
 	var best_l := UiKit.label(best_text,
 		UiKit.display_font() if highlight else UiKit.text_font(900), 30, UiKit.CINNABAR if highlight else UiKit.INK)
-	best_l.position = Vector2(58, 352)
+	best_l.position = Vector2(58, 372)
 	page.add_child(best_l)
 	if not new_glyphs.is_empty():
 		var g_text := "New glyph: %s" % Glyphs.def(new_glyphs[0]).title if new_glyphs.size() == 1 else "%d new glyphs" % new_glyphs.size()
 		var g := UiKit.label(g_text, UiKit.display_font(), 24, UiKit.CINNABAR)
-		g.position = Vector2(58, 394)
+		g.position = Vector2(58, 414)
 		page.add_child(g)
-	_rule(page, 440, 23)
+	_rule(page, 460, 23)
 
 	var again := UiKit.GlyphButton.new("Run again", UiKit.GlyphButton.Kind.PRIMARY)
-	again.position = Vector2(56, 464)
+	again.position = Vector2(56, 484)
 	again.size = Vector2(508, 116)
 	again.pressed.connect(func(): again_pressed.emit())
 	page.add_child(again)
 	var home := UiKit.GlyphButton.new("Home", UiKit.GlyphButton.Kind.SECONDARY)
 	home.font_size = 30
-	home.position = Vector2(56, 594)
+	home.position = Vector2(56, 614)
 	home.size = Vector2(508, 96)
 	home.pressed.connect(func(): home_pressed.emit())
 	page.add_child(home)

@@ -1,365 +1,612 @@
 class_name World
 extends Node3D
-## The endless causeway: straight stretches ("segments") joined by 90° corners
-## where the runner must turn. Segments are generated a few ahead and freed
-## behind, each built as two batched meshes (shadow casters + scenery) and one
-## coin MultiMesh — a handful of draw calls per stretch. The geometry is built
-## on a worker thread, so a new stretch never stalls a frame.
+## The road through Xibalba: a raised causeway that winds forward over the
+## underworld floor, built in 12 m chunks a little ahead of the runner and
+## freed behind him. Each chunk is one batched mesh (built on a worker thread)
+## plus one MultiMesh for its sun-drops.
 ##
-## Path space: a segment has an origin, a forward [dir] and a [right] vector.
-## A point is (s along dir, x across, y up). The straight run is s ∈ [0, length];
-## the corner square is s ∈ [length, length + PATH_WIDTH].
+## Coordinates: the road runs toward -Z. A point on it is (s, u): [s] metres
+## along, [u] metres across (+ = right). [point] turns that into the world.
+## The road's centre wanders left and right ([center]); its width belongs to
+## the House it passes through ([width]).
+##
+## What the road holds (drops, dangers, braziers, jaguars) is dealt in order
+## from one seeded stream as chunks are made, so a seed always deals the same
+## road — the daily dusk is the same for everyone.
 
-const W := Models.PATH_WIDTH
-const LW := Models.LANE_WIDTH
-const ALL := 2 ## obstacle lane value meaning "the full width"
+signal chunk_added(chunk: Chunk)
 
-class Segment:
+const CHUNK := 12.0
+const ROW := 2.0
+const COLS := 5
+const FLOOR_Y := -2.6
+const CURB_W := 0.45
+const CURB_H := 0.22
+const AHEAD := 72.0
+const BEHIND := 26.0
+const PLAZA_W := 16.0
+const PLAZA_BACK := -16.0
+const DROP_Y := 0.65
+const BRAZIER_R := 3.2
+
+class Chunk:
 	extends RefCounted
 	var index := 0
-	var origin := Vector3.ZERO
-	var dir := Vector3.FORWARD
-	var right := Vector3.RIGHT
-	var length := 60.0
-	var turn := 1 ## -1 = corner turns left, +1 = right
-	var prev_turn := 0 ## the corner we came out of (0 for the first stretch)
-	var path_start := 0.0 ## metres along the causeway where this stretch begins
-	var heading := 0 ## -1/0/+1: net quarter-turns from the start direction
-	var obstacles: Array[Dictionary] = [] ## {s, lane, kind}
-	var gaps: Array[Vector2] = [] ## floor missing across all lanes, (s0, s1)
-	var coins: Array[Dictionary] = [] ## {s, x, y, taken}
+	var s0 := 0.0
+	var s1 := 0.0
+	var drops: Array[Dictionary] = [] ## {s, pos: Vector3, taken}
+	var obstacles: Array[Dictionary] = [] ## {kind, s, pos, r, rot, seed}
+	var pits: Array[Dictionary] = [] ## {s0, s1, c0, c1}: road cells missing
+	var braziers: Array[Dictionary] = [] ## {pos, r, curb}
+	var jaguars: Array[Dictionary] = [] ## spawn points {s, pos}
+	var gates: Array[Dictionary] = [] ## {s, id}
+	var seed := 0
 	var node: Node3D
-	var coin_mm: MultiMesh ## every coin of the stretch in one draw
-	var rng := RandomNumberGenerator.new() ## scenery dice, so it can build off-thread
-	var task := -1 ## WorkerThreadPool task building the meshes
-	var baked: Array = [] ## [path arrays, scenery arrays] from the worker
+	var drop_mm: MultiMesh
+	var task := -1
+	var baked: Array = []
 
-	func point(s: float, x := 0.0, y := 0.0) -> Vector3:
-		return origin + dir * s + right * x + Vector3.UP * y
-
-	func frame() -> Transform3D:
-		# Local x = right, y = up, z = -dir: models face -Z, i.e. down the path.
-		return Transform3D(Basis(right, Vector3.UP, -dir), origin)
-
-	func end_s() -> float:
-		return length + W
-
-	func corner_s() -> float:
-		return length + W / 2.0
-
-	func exit_dir() -> Vector3:
-		return right if turn > 0 else -right
-
-	func in_gap(s: float) -> bool:
-		for g in gaps:
-			if s >= g.x and s <= g.y:
+	func has_pit(row_s: float, col: int) -> bool:
+		for p in pits:
+			if absf(p.s0 - row_s) < 0.01 and col >= p.c0 and col <= p.c1:
 				return true
 		return false
 
-## 0..1 while a stretch is generated. It comes from how far along the path the
-## stretch lies — never from how the player ran — so a seed always builds the
-## same causeway (the daily dusk depends on it).
-var difficulty := 0.0
-const DIFFICULTY_RAMP := 2600.0 ## metres of path to reach full difficulty
-var _segments: Array[Segment] = []
-var _rng := RandomNumberGenerator.new()
+var seed := 0
+var _p1 := 0.0
+var _p2 := 0.0
+var _chunks: Array[Chunk] = []
+var _ev := RandomNumberGenerator.new()
+var _next_ev := 0.0
+var _pending := {} ## chunk index → {drops, obstacles, pits, braziers, jaguars}
 var _coin_mesh: ArrayMesh
 var _coin_angle := 0.0
+var _trail_id := 0
 
-func reset(seed: int) -> void:
-	for seg in _segments:
-		_finish_task(seg)
-		if seg.node:
-			seg.node.queue_free()
-	_segments.clear()
-	_rng.seed = seed
-	difficulty = 0.0
+func reset(run_seed: int) -> void:
+	for c in _chunks:
+		_free(c)
+	_chunks.clear()
+	_pending.clear()
+	seed = run_seed
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([run_seed, "path"])
+	_p1 = r.randf() * TAU
+	_p2 = r.randf() * TAU
+	_ev.seed = hash([run_seed, "road"])
+	_next_ev = 0.0
+	_trail_id = 0
 	if _coin_mesh == null:
 		_coin_mesh = Models.coin_mesh()
-	var first := Segment.new()
-	first.index = 0
-	first.length = 52.0
-	first.turn = 1 if _rng.randf() < 0.5 else -1
-	_populate(first, true)
-	first.rng.seed = _rng.randi()
-	_bake(first, true)
-	_attach(first)
-	_segments.append(first)
-	ensure_ahead(0)
-	# A fresh run starts on finished scenery.
-	for seg in _segments:
-		_finish_task(seg)
+	ensure(0.0)
+	for c in _chunks:
+		_finish(c)
 
-func get_segment(index: int) -> Segment:
-	for seg in _segments:
-		if seg.index == index:
-			return seg
+# ---------------------------------------------------------------- shape ---
+
+## The road's centre line, as a lateral offset, [s] metres along.
+func center(s: float) -> float:
+	var ramp := smoothstep(0.0, 30.0, s)
+	return ramp * (3.2 * sin(0.0717 * s + _p1) + 1.27 * sin(0.184 * s + _p2))
+
+func slope(s: float) -> float:
+	return (center(s + 0.05) - center(s - 0.05)) / 0.1
+
+## Unit vector across the road (to the runner's right) at [s].
+func right(s: float) -> Vector3:
+	return Vector3(1.0, 0.0, slope(s)).normalized()
+
+## Unit vector down the road at [s].
+func forward(s: float) -> Vector3:
+	return Vector3(slope(s), 0.0, -1.0).normalized()
+
+func point(s: float, u := 0.0, y := 0.0) -> Vector3:
+	return Vector3(center(s), y, -s) + right(s) * u
+
+func width(s: float) -> float:
+	if s < 0.0:
+		return PLAZA_W
+	return Nights.width(s, seed)
+
+## How far across the road a world point at ([x], [z]) is (+ = right).
+func u_of(x: float, z: float) -> float:
+	var s := -z
+	return (x - center(s)) / sqrt(1.0 + slope(s) * slope(s))
+
+## True where the road has fallen away under ([x], [z]).
+func in_pit(x: float, z: float) -> bool:
+	var s := -z
+	var c := chunk_at(s)
+	if c == null or c.pits.is_empty():
+		return false
+	var u := u_of(x, z)
+	var w := width(s)
+	for p in c.pits:
+		# A little forgiveness: the edge of a hole doesn't swallow you.
+		if s < p.s0 + 0.25 or s > p.s1 - 0.25:
+			continue
+		var u0: float = (float(p.c0) / COLS - 0.5) * w + 0.25
+		var u1: float = (float(p.c1 + 1) / COLS - 0.5) * w - 0.25
+		if u > u0 and u < u1:
+			return true
+	return false
+
+func chunk_at(s: float) -> Chunk:
+	var i := floori(s / CHUNK)
+	for c in _chunks:
+		if c.index == i:
+			return c
 	return null
 
-## Keeps four segments generated ahead of [current] and two behind.
-func ensure_ahead(current: int) -> void:
-	while _segments.back().index < current + 4:
-		_segments.append(_next_after(_segments.back()))
-	while _segments.front().index < current - 2:
-		var old: Segment = _segments.pop_front()
-		_finish_task(old)
-		if old.node:
-			old.node.queue_free()
+func chunks() -> Array[Chunk]:
+	return _chunks
 
-func _next_after(prev: Segment) -> Segment:
-	var seg := Segment.new()
-	seg.index = prev.index + 1
-	seg.dir = prev.exit_dir()
-	seg.right = seg.dir.cross(Vector3.UP)
-	seg.heading = prev.heading + prev.turn
-	seg.prev_turn = prev.turn
-	seg.origin = prev.point(prev.corner_s()) + seg.dir * (W / 2.0)
-	seg.path_start = prev.path_start + prev.corner_s() + W / 2.0
-	difficulty = clampf(seg.path_start / DIFFICULTY_RAMP, 0.0, 1.0)
-	seg.length = _rng.randf_range(lerpf(70.0, 46.0, difficulty), lerpf(110.0, 72.0, difficulty))
-	# Stay within ±90° of the starting heading: the causeway zig-zags forward
-	# and can never curl back across itself.
-	if seg.heading > 0:
-		seg.turn = -1
-	elif seg.heading < 0:
-		seg.turn = 1
-	else:
-		seg.turn = 1 if _rng.randf() < 0.5 else -1
-	_populate(seg, false)
-	seg.rng.seed = _rng.randi()
-	seg.task = WorkerThreadPool.add_task(_bake.bind(seg, false), false, "segment")
-	return seg
+# ------------------------------------------------------------ streaming ---
 
-## Attaches any stretch whose worker has finished; called each frame.
+## Keeps chunks built from a little behind [s] to well ahead of it.
+func ensure(s: float) -> void:
+	var first := floori((s - BEHIND) / CHUNK)
+	var last := floori((s + AHEAD) / CHUNK)
+	first = mini(first, -2) if s < 30.0 else first
+	while not _chunks.is_empty() and _chunks.front().index < first:
+		_free(_chunks.pop_front())
+	for i in _pending.keys():
+		if i < first:
+			_pending.erase(i)
+	var next: int = first if _chunks.is_empty() else _chunks.back().index + 1
+	while next <= last:
+		_chunks.append(_make(next))
+		next += 1
+
+## Attaches chunks whose worker has finished; call once a frame.
 func poll() -> void:
-	for seg in _segments:
-		if seg.task >= 0 and WorkerThreadPool.is_task_completed(seg.task):
-			_finish_task(seg)
+	for c in _chunks:
+		if c.task >= 0 and WorkerThreadPool.is_task_completed(c.task):
+			_finish(c)
 
-func _finish_task(seg: Segment) -> void:
-	if seg.task < 0:
+func _free(c: Chunk) -> void:
+	if c.task >= 0:
+		WorkerThreadPool.wait_for_task_completion(c.task)
+		c.task = -1
+	if c.node:
+		c.node.queue_free()
+		c.node = null
+
+func _finish(c: Chunk) -> void:
+	if c.task < 0:
 		return
-	WorkerThreadPool.wait_for_task_completion(seg.task)
-	seg.task = -1
-	_attach(seg)
+	WorkerThreadPool.wait_for_task_completion(c.task)
+	c.task = -1
+	_attach(c)
 
-# ------------------------------------------------------------- content ---
-
-func _populate(seg: Segment, first: bool) -> void:
-	var s := 24.0 if first else 10.0
-	var end := seg.length - 12.0
-	while s < end:
-		var d := difficulty
-		var pick := _rng.randf()
-		var lane := _rng.randi_range(-1, 1)
-		var other := _other_lane(lane)
-		if d < 0.12 or pick < 0.18:
-			# Breather: just a coin trail.
-			_coin_line(seg, s, other, 6)
-		elif pick < 0.36:
-			_obstacle(seg, s, ALL, "log")
-			_coin_arc(seg, s, lane)
-		elif pick < 0.52:
-			_obstacle(seg, s, lane, "statue")
-			if d > 0.3 and _rng.randf() < 0.5:
-				_obstacle(seg, s, other, "statue") # one lane left open
-				_coin_line(seg, s - 4.0, -lane - other, 5)
-			else:
-				_coin_line(seg, s - 4.0, other, 5)
-		elif pick < 0.68:
-			_obstacle(seg, s, lane, "wall")
-			if d > 0.2 and _rng.randf() < 0.5:
-				_obstacle(seg, s, other, "wall")
-			_coin_arc(seg, s, lane)
-		elif pick < 0.84 and d > 0.15:
-			_obstacle(seg, s, ALL, "arch")
-			_coin_line(seg, s - 2.0, lane, 4, 0.45)
-		elif d > 0.3:
-			var length := lerpf(2.2, 3.4, d)
-			seg.gaps.append(Vector2(s - length / 2.0, s + length / 2.0))
-			_coin_arc(seg, s, lane)
-		else:
-			_coin_line(seg, s, lane, 6)
-		s += _rng.randf_range(lerpf(17.0, 9.5, difficulty), lerpf(22.0, 13.0, difficulty))
-
-func _other_lane(lane: int) -> int:
-	var o := _rng.randi_range(-1, 1)
-	while o == lane:
-		o = _rng.randi_range(-1, 1)
-	return o
-
-func _obstacle(seg: Segment, s: float, lane: int, kind: String) -> void:
-	seg.obstacles.append({"s": s, "lane": lane, "kind": kind})
-
-func _coin_line(seg: Segment, s: float, lane: int, count: int, y := 0.8) -> void:
-	for i in count:
-		seg.coins.append({"s": s + i * 1.7, "x": lane * LW, "y": y, "taken": false})
-
-## Coins tracing a jump arc over [s].
-func _coin_arc(seg: Segment, s: float, lane: int) -> void:
-	for i in 5:
-		var t := (i - 2) / 2.0
-		seg.coins.append({"s": s + t * 2.6, "x": lane * LW, "y": 0.9 + (1.0 - t * t) * 0.9, "taken": false})
-
-# ---------------------------------------------------------------- build ---
-
-## Builds the stretch's geometry. Runs on a worker thread: touches nothing but
-## its own Meshers and the segment's dice.
-func _bake(seg: Segment, first: bool) -> void:
-	var m := Mesher.new() # the path and anything that should shadow it
-	var sc := Mesher.new() # jungle and piers far below: no shadows, half the cost
-	var f := seg.frame()
-
-	# Floor + kerbs along the straight, tile by tile (gaps simply skip tiles).
-	var s := 0.0
-	while s < seg.length:
-		var mid := s + Models.TILE_LENGTH / 2.0
-		if not seg.in_gap(mid):
-			for lane in [-1, 0, 1]:
-				Models.floor_tile(m, Models.sub(f, Vector3(lane * LW, 0, -mid)), seg.rng.randf())
-			for side in [-1.0, 1.0]:
-				Models.kerb(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.22), 0, -mid)), Models.TILE_LENGTH, side)
-		s += Models.TILE_LENGTH
-
-	# Corner square: open toward the turn, kerb on the other side, altar ahead.
-	for row in 3:
-		for col in [-1, 0, 1]:
-			var tile := Models.sub(f, Vector3(col * LW, 0, -(seg.length + LW * (row + 0.5))))
-			m.box(tile * Transform3D(Basis(), Vector3(0, -0.3, 0)), Vector3(LW - 0.06, 0.6, LW - 0.06), Models.STONE_LIGHT if (row + col) % 2 == 0 else Models.STONE)
-	var closed_side := -float(seg.turn)
-	Models.kerb(m, Models.sub(f, Vector3(closed_side * (W / 2.0 + 0.22), 0, -(seg.length + W / 2.0))), W, closed_side)
-	Models.corner_altar(m, Models.sub(f, Vector3(0, 0, -(seg.end_s() + 0.4))))
-
-	# The embankment the road stands on, tile-aligned so it breaks exactly where
-	# the floor does. Alternate stretches sit a hair apart so corners never flicker.
-	var dy := 0.02 * (seg.index % 2)
-	var span_from := -1.0
-	var e := 0.0
-	while e < seg.length:
-		var solid := not seg.in_gap(e + Models.TILE_LENGTH / 2.0)
-		if solid and span_from < 0.0:
-			span_from = e
-		elif not solid and span_from >= 0.0:
-			_embankment(m, f, span_from, e, dy)
-			span_from = -1.0
-		if not solid and seg.in_gap(e + Models.TILE_LENGTH / 2.0) and not seg.in_gap(e - Models.TILE_LENGTH / 2.0):
-			# Where a stretch collapsed, its blocks lie in the jungle below.
-			Models.rubble(sc, Models.sub(f, Vector3(0, Models.GROUND_Y, -(e + 1.0))), seg.rng.randi())
-		e += Models.TILE_LENGTH
-	_embankment(m, f, span_from if span_from >= 0.0 else seg.length, seg.end_s() + 0.9, dy)
-
-	# Dressing along the walls: pillars on buttresses, torches on the parapet,
-	# vines spilling over, growth on the tier ledges.
-	var k := 8.0
-	while k < seg.length - 4.0:
+func _make(i: int) -> Chunk:
+	var c := Chunk.new()
+	c.index = i
+	c.s0 = i * CHUNK
+	c.s1 = c.s0 + CHUNK
+	c.seed = hash([seed, i, "decor"])
+	_deal_until(c.s1 + 10.0)
+	var p: Dictionary = _pending.get(i, {})
+	_pending.erase(i)
+	for key in ["drops", "obstacles", "pits", "braziers", "jaguars"]:
+		if p.has(key):
+			c.get(key).append_array(p[key])
+	for g in _gates_in(c.s0, c.s1):
+		c.gates.append(g)
+		var w := width(g.s)
 		for side in [-1.0, 1.0]:
-			var at := Models.sub(f, Vector3(0, 0, -k))
-			if seg.in_gap(k - 1.5) or seg.in_gap(k + 1.5):
+			c.braziers.append({"pos": point(g.s, side * (w / 2.0 + CURB_W + 1.4), 3.4), "r": 3.0, "curb": false})
+	chunk_added.emit(c)
+	c.task = WorkerThreadPool.add_task(_bake.bind(c), false, "chunk")
+	return c
+
+# --------------------------------------------------------------- dealing ---
+
+func _slot(i: int) -> Dictionary:
+	if not _pending.has(i):
+		_pending[i] = {"drops": [], "obstacles": [], "pits": [], "braziers": [], "jaguars": []}
+	return _pending[i]
+
+func _put(kind: String, s: float, item: Dictionary) -> void:
+	_slot(floori(s / CHUNK))[kind].append(item)
+
+## Where Houses begin (their gates) inside [s0, s1).
+func _gates_in(s0: float, s1: float) -> Array:
+	var out := []
+	if s1 <= 0.0:
+		return out
+	var n0: int = Nights.locate(maxf(s0, 0.0)).n
+	var n1: int = Nights.locate(maxf(s1, 0.0)).n + 1
+	for n in range(n0, n1 + 1):
+		var starts := Nights.house_starts(n)
+		var plan := Nights.plan(n, seed)
+		for k in 3:
+			if n == 1 and k == 0:
 				continue
-			var roll := seg.rng.randf()
-			if roll < 0.4:
-				Models.buttress(m, at, side)
-				Models.pillar(m, Models.sub(f, Vector3(side * (Models.WALL_HALF + 0.9), 0, -k)), seg.rng.randf_range(2.6, 3.6), seg.rng.randf() < 0.3)
-			elif roll < 0.75:
-				Models.torch(m, Models.sub(f, Vector3(side * (W / 2.0 + 0.22), 0.4, -k)))
-			else:
-				Models.vines(sc, at, side, seg.rng.randi())
-		k += seg.rng.randf_range(7.0, 11.0)
-	var v := 3.0
-	while v < seg.length:
-		var side := -1.0 if seg.rng.randf() < 0.5 else 1.0
-		if not seg.in_gap(v):
-			if seg.rng.randf() < 0.5:
-				Models.vines(sc, Models.sub(f, Vector3(0, 0, -v)), side, seg.rng.randi())
-			# Bushes rooted on a tier ledge.
-			var tier := seg.rng.randi_range(0, 2)
-			var lx := Models.WALL_HALF + Models.TIER_STEP * tier + 0.35
-			var ly := Models.TIER_TOP - Models.TIER_H * tier + (0.1 if tier == 0 else 0.0)
-			Models.bush(sc, Models.sub(f, Vector3(side * lx, ly, -(v + seg.rng.randf_range(0.0, 2.0)))), seg.rng.randf_range(0.6, 0.9), seg.rng.randi_range(0, 99))
-		v += seg.rng.randf_range(3.0, 6.0)
+			var gs: float = starts[k] + 2.0
+			if gs >= s0 and gs < s1:
+				out.append({"s": gs, "id": plan[k]})
+	return out
 
-	# The jungle: trees rooted on the floor in two rows — lower near the wall,
-	# taller behind — with undergrowth at the foot of the embankment.
-	var base := Models.WALL_HALF + Models.TIER_STEP * 3.0
-	for row in 2:
-		var t := 0.0
-		while t < seg.end_s():
-			for side in [-1.0, 1.0]:
-				# Past the corner, the turn side is where the next stretch runs;
-				# near the start, the side we came from is where the last one ran.
-				if t > seg.length - 3.0 and side == float(seg.turn):
-					continue
-				if t < 10.0 + 8.0 * row and side == float(seg.prev_turn):
-					continue
-				var off := seg.rng.randf_range(1.6, 4.5) if row == 0 else seg.rng.randf_range(5.0, 15.0)
-				var size := seg.rng.randf_range(0.7, 0.95) if row == 0 else seg.rng.randf_range(1.0, 1.5)
-				var along := t + seg.rng.randf_range(0.0, 3.0)
-				Models.tree(sc, Models.sub(f, Vector3(side * (base + off), Models.GROUND_Y, -along)), size, seg.rng.randi_range(0, 99))
-				if row == 0 and seg.rng.randf() < 0.6:
-					Models.bush(sc, Models.sub(f, Vector3(side * (base + 0.6), Models.GROUND_Y, -(along + 1.5))), seg.rng.randf_range(1.0, 1.6), seg.rng.randi_range(0, 99))
-			t += seg.rng.randf_range(3.5, 5.5) if row == 0 else seg.rng.randf_range(5.0, 8.0)
+func _near_gate(s: float) -> bool:
+	var n: int = Nights.locate(maxf(s, 0.0)).n
+	for k in 3:
+		if n == 1 and k == 0:
+			continue
+		if absf(s - (Nights.house_starts(n)[k] + 2.0)) < 6.0:
+			return true
+	return false
 
-	# Obstacles.
-	for o in seg.obstacles:
-		var x: float = 0.0 if o.lane == ALL else o.lane * LW
-		var at := Models.sub(f, Vector3(x, 0, -o.s))
+## Deals what the road holds, in order, up to [upto].
+func _deal_until(upto: float) -> void:
+	while _next_ev < upto:
+		var s := _next_ev
+		var at := Nights.locate(maxf(s, 0.0))
+		var prog: float = (at.n - 1) + at.t
+		_next_ev += _ev.randf_range(5.6, 8.5) / (1.0 + 0.07 * prog)
+		if s < Nights.START_CLEAR:
+			continue
+		if at.dawn:
+			if _ev.randf() < 0.5:
+				_trail(s)
+			continue
+		if s > Nights.start(at.n) + Nights.length(at.n) - 6.0 or _near_gate(s):
+			continue
+		var h := Nights.house(s, seed)
+		var weights := [["drop", h.w_drop], ["obst", h.w_obst], ["jag", h.w_jag], ["brazier", h.w_brazier]]
+		var total := 0.0
+		for wt in weights:
+			total += wt[1]
+		var roll := _ev.randf() * total
+		var pick := "drop"
+		for wt in weights:
+			roll -= wt[1]
+			if roll <= 0.0:
+				pick = wt[0]
+				break
+		var side := -1.0 if _ev.randf() < 0.5 else 1.0
+		var w := width(s)
+		match pick:
+			"drop":
+				_trail(s)
+			"obst":
+				var kseed := _ev.randi()
+				if Nights.house_id(s, seed) == "knives" or _ev.randf() < 0.2:
+					var u := _ev.randf_range(-0.2, 0.2) * w
+					_put("obstacles", s, {"kind": "blades", "s": s, "pos": point(s, u), "r": 0.75, "rot": 0.0, "seed": kseed})
+				elif _ev.randf() < 0.55:
+					var u := _ev.randf_range(-0.14, 0.14) * w
+					_put("obstacles", s, {"kind": "stela", "s": s, "pos": point(s, u), "r": 0.95, "rot": _ev.randf_range(-0.35, 0.35), "seed": kseed})
+				else:
+					var row_s := floorf(s / ROW) * ROW
+					var frac := side * _ev.randf_range(0.05, 0.26)
+					var col := clampi(roundi((frac + 0.5) * COLS - 0.5), 0, COLS - 1)
+					var c1 := col
+					if _ev.randf() < 0.4:
+						c1 = clampi(col + (1 if col < COLS / 2 else -1), 0, COLS - 1)
+					_put("pits", row_s, {"s0": row_s, "s1": row_s + ROW, "c0": mini(col, c1), "c1": maxi(col, c1)})
+			"jag":
+				var n := 2 if _ev.randf() < 0.3 + 0.1 * at.n else 1
+				for k in n:
+					var sd := side if k == 0 else -side
+					var js := s + _ev.randf_range(-1.2, 1.2)
+					var pos := point(js, sd * (width(js) / 2.0 + _ev.randf_range(-0.4, 0.3)))
+					_put("jaguars", js, {"s": js, "pos": pos})
+			"brazier":
+				_put("braziers", s, {"pos": point(s, side * (w / 2.0 + CURB_W / 2.0), CURB_H), "r": BRAZIER_R, "curb": true, "seed": _ev.randi()})
+
+## A trail of five sun-drops drifting from the middle toward one side — taking
+## them all means steering, and steering means blazing.
+func _trail(s: float) -> void:
+	var side := -1.0 if _ev.randf() < 0.5 else 1.0
+	var a := _ev.randf_range(-0.05, 0.05)
+	var b := side * _ev.randf_range(0.22, 0.34)
+	_trail_id += 1
+	for i in 5:
+		var si := s + i * 1.3
+		_put("drops", si, {"s": si, "pos": point(si, lerpf(a, b, i / 4.0) * width(si), DROP_Y), "taken": false, "trail": _trail_id})
+	_next_ev += 3.0
+
+# ----------------------------------------------------------------- build ---
+
+const DECOR := {
+	"jungle": {
+		"near": [["bush", 3.0], ["fern", 3.0], ["grass", 4.0], ["maize", 1.5], ["rock", 1.5], ["urn", 0.6], ["skull_rack", 0.4], ["stela", 0.5], ["altar", 0.4]],
+		"mid": [["ceiba", 4.0], ["stela", 1.0], ["banner", 1.0], ["temple", 0.45], ["bush", 1.5]],
+		"far": [["ceiba", 4.0], ["temple", 1.0], ["rock_big", 1.0]],
+	},
+	"jaguars": {
+		"near": [["brazier", 1.0], ["urn", 1.0], ["bush", 2.0], ["grass", 3.0], ["rock", 1.0], ["banner_ochre", 1.0], ["fern", 1.5]],
+		"mid": [["jaguar_statue", 2.5], ["ceiba", 2.5], ["stela", 1.0], ["altar", 1.0]],
+		"far": [["temple", 1.2], ["ceiba", 2.5], ["jaguar_big", 1.0]],
+	},
+	"bats": {
+		"near": [["stalagmite_small", 2.0], ["crystals", 2.0], ["bones", 1.5], ["cave_stone", 1.5]],
+		"mid": [["stalagmite", 2.5], ["roost", 2.0], ["cave_rock", 2.0], ["crystals_big", 1.0]],
+		"far": [["cave_rock_big", 2.5], ["stalagmite_big", 2.0]],
+	},
+	"gloom": {
+		"near": [["mist_shrub", 3.0], ["bones", 1.5], ["stone_small", 1.5], ["grey_rock", 1.5]],
+		"mid": [["dead_tree", 3.0], ["standing_stone", 2.0], ["broken_pillar", 2.0]],
+		"far": [["dead_tree_big", 2.0], ["standing_big", 1.5]],
+	},
+	"knives": {
+		"near": [["obsidian_small", 3.0], ["dark_rock", 1.5], ["bones", 1.5]],
+		"mid": [["obsidian", 3.0], ["red_spire", 2.0], ["skull_rack", 1.0]],
+		"far": [["red_spire_big", 2.5], ["obsidian_big", 1.0]],
+	},
+	"cold": {
+		"near": [["snow_mound", 3.0], ["ice_small", 2.0], ["grey_rock", 1.0]],
+		"mid": [["ice_spikes", 2.5], ["frozen_stela", 1.5], ["white_tree", 1.5]],
+		"far": [["ice_big", 2.0], ["snow_big", 1.5]],
+	},
+	"fire": {
+		"near": [["lava_small", 2.0], ["basalt_small", 2.0], ["fire_pit", 1.0], ["char_rock", 1.5]],
+		"mid": [["basalt", 2.5], ["char_tree", 2.0], ["brazier", 1.0], ["lava", 1.0]],
+		"far": [["basalt_big", 2.5], ["lava_big", 1.0]],
+	},
+}
+
+## Builds a chunk's geometry. Runs on a worker thread: touches nothing but the
+## chunk, a fresh Mesher and the pure shape functions above.
+func _bake(c: Chunk) -> void:
+	var m := Mesher.new()
+	var r := RandomNumberGenerator.new()
+	r.seed = c.seed
+	var mid := c.s0 + CHUNK / 2.0
+	var h: Dictionary = Nights.HOUSES["dusk"] if c.s0 < 0.0 else Nights.house(mid, seed)
+	# The underworld floor: hatched earth in the House's colour.
+	m.box(Models.at(Vector3(center(mid), FLOOR_Y - 0.25, -mid)), Vector3(150.0, 0.5, CHUNK + 0.02), Mesher.hatched(h.earth), false, false)
+	var row_s := c.s0
+	while row_s < c.s1 - 0.001:
+		if row_s >= PLAZA_BACK:
+			_road_row(m, c, row_s, h, r)
+		row_s += ROW
+	if c.s1 > 0.0:
+		_decor(m, c, h, r)
+	for o in c.obstacles:
+		var s: float = o.s
+		var basis := Basis.looking_at(forward(s), Vector3.UP).rotated(Vector3.UP, o.rot)
 		match o.kind:
-			"log": Models.log_barrier(m, at, W)
-			"wall": Models.low_wall(m, at, LW)
-			"arch": Models.arch(m, at, W)
-			"statue": Models.statue(m, at)
+			"stela": Models.fallen_stela(m, Models.at(o.pos, basis), o.seed)
+			"blades": Models.blades(m, Models.at(o.pos, basis), o.seed)
+	for b in c.braziers:
+		if b.curb:
+			Models.brazier(m, Models.at(b.pos + Vector3(0, 0.09, 0)), b.get("seed", 0))
+	for g in c.gates:
+		var w := width(g.s)
+		var hh: Dictionary = Nights.HOUSES[g.id]
+		for side in [-1.0, 1.0]:
+			var pos := point(g.s, side * (w / 2.0 + CURB_W + 1.4), FLOOR_Y)
+			var basis := Basis.looking_at(-side * right(g.s), Vector3.UP)
+			Models.gate_pylon(m, Models.at(pos, basis.scaled(Vector3.ONE * 1.3)), hh.accent, c.seed + int(side))
+	if c.index == floori(PLAZA_BACK / CHUNK):
+		Models.start_temple(m, Models.at(Vector3(0, 0, -PLAZA_BACK)))
+	c.baked = m.bake()
 
-	if first:
-		Models.start_temple(m, f)
+## One 2 m row of road: paving stones (missing over a pit), the bed under
+## them, and the painted walls down to the floor on both sides.
+func _road_row(m: Mesher, c: Chunk, s0: float, h: Dictionary, r: RandomNumberGenerator) -> void:
+	var s1 := s0 + ROW
+	var plaza := s1 <= 0.001
+	var cols := 8 if plaza else COLS
+	var w0 := width(s0) if not plaza else PLAZA_W
+	var w1 := width(s1) if not plaza else PLAZA_W
+	if plaza:
+		w0 = PLAZA_W
+		w1 = PLAZA_W
+	var ins := 0.04
+	for k in cols:
+		var f0 := float(k) / cols - 0.5
+		var f1 := float(k + 1) / cols - 0.5
+		if not plaza and c.has_pit(s0, k):
+			_pit(m, s0, s1, f0, f1, w0, w1)
+			continue
+		var col: Color = h.tile.lerp(h.tile2, r.randf() * 0.8) if not plaza else Models.STUCCO.lerp(Models.STUCCO_SHADE, r.randf() * 0.7)
+		var roll := r.randf()
+		if roll < 0.03:
+			col = col.lerp(h.accent, 0.45)
+		# Every fifth row is a band of darker stone across the road.
+		if not plaza and int(roundf(s0 / ROW)) % 5 == 0:
+			col = col.darkened(0.12)
+		var quad := [
+			point(s0 + ins, f0 * w0 + ins), point(s0 + ins, f1 * w0 - ins),
+			point(s1 - ins, f1 * w1 - ins), point(s1 - ins, f0 * w1 + ins),
+		]
+		var down := Vector3(0, -0.3, 0)
+		m.block([quad[0] + down, quad[1] + down, quad[2] + down, quad[3] + down, quad[0], quad[1], quad[2], quad[3]], col)
+		var bed := [point(s0, f0 * w0, -0.56), point(s0, f1 * w0, -0.56), point(s1, f1 * w1, -0.56), point(s1, f0 * w1, -0.56)]
+		var bed_top := Vector3(0, 0.26, 0)
+		m.block([bed[0], bed[1], bed[2], bed[3], bed[0] + bed_top, bed[1] + bed_top, bed[2] + bed_top, bed[3] + bed_top], Models.STONE_DARK, false, false)
+		var mark_p := 0.025 if h.mark == "kin" else 0.11
+		if roll > 1.0 - mark_p:
+			var sm := (s0 + s1) / 2.0
+			var um := (f0 + f1) / 2.0 * (w0 + w1) / 2.0
+			Models.road_mark(m, "kin" if plaza else h.mark, point(sm, um), 0.9, right(sm), forward(sm), r)
+	for side in [-1.0, 1.0]:
+		var e0: float = side * w0 / 2.0
+		var e1: float = side * w1 / 2.0
+		var o0: float = e0 + side * CURB_W
+		var o1: float = e1 + side * CURB_W
+		var wall := [point(s0, e0, FLOOR_Y), point(s0, o0, FLOOR_Y), point(s1, o1, FLOOR_Y), point(s1, e1, FLOOR_Y)]
+		var top := Vector3(0, CURB_H - FLOOR_Y, 0)
+		m.block([wall[0], wall[1], wall[2], wall[3], wall[0] + top, wall[1] + top, wall[2] + top, wall[3] + top], Models.STONE)
+		# The curb's painted cap in the House's colour.
+		var cap := [point(s0, e0 - side * 0.03, CURB_H), point(s0, o0 + side * 0.03, CURB_H), point(s1, o1 + side * 0.03, CURB_H), point(s1, e1 - side * 0.03, CURB_H)]
+		var lift := Vector3(0, 0.09, 0)
+		m.block([cap[0], cap[1], cap[2], cap[3], cap[0] + lift, cap[1] + lift, cap[2] + lift, cap[3] + lift], h.accent)
+		# The frieze on the outer face: a cinnabar band over a Maya-blue line.
+		for band in [[-1.15, -0.7, Models.CINNABAR], [-1.42, -1.3, Models.MAYA_BLUE]]:
+			var a := [point(s0, o0, band[0]), point(s0, o0 + side * 0.02, band[0]), point(s1, o1 + side * 0.02, band[0]), point(s1, o1, band[0])]
+			var up := Vector3(0, band[1] - band[0], 0)
+			m.block([a[0], a[1], a[2], a[3], a[0] + up, a[1] + up, a[2] + up, a[3] + up], band[2], false, false)
 
-	seg.baked = [m.bake(), sc.bake()]
+## A hole where road stones fell into the dark: black shaft walls going down.
+func _pit(m: Mesher, s0: float, s1: float, f0: float, f1: float, w0: float, w1: float) -> void:
+	var y0 := -2.2
+	var q := [point(s0, f0 * w0, y0), point(s0, f1 * w0, y0), point(s1, f1 * w1, y0), point(s1, f0 * w1, y0)]
+	var low := Vector3(0, -0.4, 0)
+	m.block([q[0] + low, q[1] + low, q[2] + low, q[3] + low, q[0], q[1], q[2], q[3]], Models.PIT, false, false)
+	var t := 0.06
+	var walls := [
+		[point(s0, f0 * w0, y0), point(s0, f1 * w0, y0), point(s0 + t, f1 * w0, y0), point(s0 + t, f0 * w0, y0)],
+		[point(s1 - t, f0 * w1, y0), point(s1 - t, f1 * w1, y0), point(s1, f1 * w1, y0), point(s1, f0 * w1, y0)],
+		[point(s0, f0 * w0, y0), point(s0, f0 * w0 + t, y0), point(s1, f0 * w1 + t, y0), point(s1, f0 * w1, y0)],
+		[point(s0, f1 * w0 - t, y0), point(s0, f1 * w0, y0), point(s1, f1 * w1, y0), point(s1, f1 * w1 - t, y0)],
+	]
+	var lift := Vector3(0, -y0 - 0.3, 0)
+	for wq in walls:
+		m.block([wq[0], wq[1], wq[2], wq[3], wq[0] + lift, wq[1] + lift, wq[2] + lift, wq[3] + lift], Color("#241612"), false, false)
 
-## Embankment under the road from [s0] to [s1].
-func _embankment(m: Mesher, f: Transform3D, s0: float, s1: float, dy: float) -> void:
-	if s1 - s0 < 0.01:
-		return
-	Models.embankment(m, Models.sub(f, Vector3(0, 0, -(s0 + s1) / 2.0)), s1 - s0, dy)
+func _decor(m: Mesher, c: Chunk, h: Dictionary, r: RandomNumberGenerator) -> void:
+	var set_id: String = h.decor if c.s0 >= 0.0 else "jungle"
+	var set_d: Dictionary = DECOR[set_id]
+	for side in [-1.0, 1.0]:
+		for band in [["near", 0.5, 3.6, 1.0, 1.9, 0.9], ["mid", 3.8, 9.0, 2.4, 3.8, 0.8], ["far", 9.5, 21.0, 3.0, 5.0, 0.75]]:
+			var s := c.s0 + r.randf_range(0.0, band[3])
+			while s < c.s1:
+				if s > 1.0 and r.randf() < band[5]:
+					var kind := _pick(set_d[band[0]], r)
+					_place(m, kind, s, side, r.randf_range(band[1], band[2]), r)
+				s += r.randf_range(band[3], band[4])
+	# Vines and roots spilling down the causeway walls.
+	if set_id in ["jungle", "jaguars", "bats"]:
+		var vine_col: Color = Models.LEAF if set_id != "bats" else Models.CAVE_DARK
+		for side in [-1.0, 1.0]:
+			var s := c.s0 + r.randf_range(0.0, 2.0)
+			while s < c.s1:
+				if s > 0.5 and r.randf() < 0.55:
+					var top := point(s, side * (width(s) / 2.0 + CURB_W + 0.02), CURB_H)
+					Models.vines(m, Models.at(top, Basis.looking_at(side * right(s), Vector3.UP)), r.randi(), vine_col)
+				s += r.randf_range(1.6, 3.2)
+	if c.s0 > 0.0 and r.randf() < 0.2:
+		var side := -1.0 if r.randf() < 0.5 else 1.0
+		var s := r.randf_range(c.s0, c.s1)
+		var pos := point(s, side * (width(s) / 2.0 + r.randf_range(26.0, 36.0)), FLOOR_Y)
+		var faces := Basis.looking_at(-side * right(s), Vector3.UP)
+		if set_id in ["jungle", "jaguars", "fire"]:
+			Models.pyramid(m, Models.at(pos, faces), r.randf_range(0.8, 1.2))
+		elif set_id == "bats":
+			Models.cave_rock(m, Models.at(pos, faces), r.randf_range(3.5, 5.0), r.randi())
+		else:
+			Models.standing_stone(m, Models.at(pos, faces), r.randf_range(4.0, 6.0), r.randi())
+
+func _pick(list: Array, r: RandomNumberGenerator) -> String:
+	var total := 0.0
+	for e in list:
+		total += e[1]
+	var roll := r.randf() * total
+	for e in list:
+		roll -= e[1]
+		if roll <= 0.0:
+			return e[0]
+	return list[0][0]
+
+## Puts one piece of scenery [d] metres out from the wall on [side], facing
+## the road.
+func _place(m: Mesher, kind: String, s: float, side: float, d: float, r: RandomNumberGenerator) -> void:
+	var u := side * (width(s) / 2.0 + CURB_W + d)
+	var pos := point(s, u, FLOOR_Y)
+	var faces := Basis.looking_at(-side * right(s), Vector3.UP)
+	var xf := Models.at(pos, faces)
+	var loose := Models.at(pos, Basis(Vector3.UP, r.randf() * TAU))
+	var sd := r.randi()
+	match kind:
+		"bush": Models.bush(m, loose, r.randf_range(0.8, 1.4), sd)
+		"grass": Models.grass(m, loose, r.randf_range(0.8, 1.4), sd)
+		"fern": Models.fern(m, loose, r.randf_range(0.8, 1.3), sd)
+		"maize": Models.maize(m, loose, sd)
+		"rock": Models.rock(m, loose, r.randf_range(0.7, 1.5), sd)
+		"rock_big": Models.rock(m, loose, r.randf_range(2.5, 4.0), sd)
+		"urn": Models.urn(m, xf, sd)
+		"skull_rack": Models.skull_rack(m, xf, sd)
+		"stela": Models.stela(m, xf, r.randf_range(0.8, 1.15), sd)
+		"altar": Models.altar(m, loose, sd)
+		"ceiba": Models.ceiba(m, loose, r.randf_range(0.9, 1.4), sd)
+		"temple": Models.temple(m, xf, r.randf_range(0.8, 1.2), sd)
+		"banner": Models.banner(m, xf, [Models.CINNABAR, Models.MAYA_BLUE, Models.JADE][sd % 3], sd)
+		"banner_ochre": Models.banner(m, xf, Models.OCHRE, sd)
+		"brazier": Models.brazier(m, loose, sd)
+		"jaguar_statue": Models.jaguar_statue(m, xf, r.randf_range(1.0, 1.3))
+		"jaguar_big": Models.jaguar_statue(m, xf, r.randf_range(2.0, 2.8))
+		"stalagmite_small": Models.stalagmite(m, loose, r.randf_range(0.4, 0.7), sd)
+		"stalagmite": Models.stalagmite(m, loose, r.randf_range(0.8, 1.3), sd)
+		"stalagmite_big": Models.stalagmite(m, loose, r.randf_range(1.6, 2.4), sd)
+		"crystals": Models.crystals(m, loose, r.randf_range(0.7, 1.1), sd)
+		"crystals_big": Models.crystals(m, loose, r.randf_range(1.5, 2.2), sd)
+		"bones": Models.bones(m, loose, sd)
+		"cave_stone": Models.rock(m, loose, r.randf_range(0.7, 1.4), sd, Models.CAVE)
+		"cave_rock": Models.cave_rock(m, loose, r.randf_range(0.8, 1.3), sd)
+		"cave_rock_big": Models.cave_rock(m, loose, r.randf_range(1.8, 2.8), sd)
+		"roost": Models.dead_tree(m, loose, r.randf_range(0.9, 1.2), sd, Models.CAVE_DARK, true)
+		"mist_shrub": Models.mist_shrub(m, loose, r.randf_range(0.8, 1.3), sd)
+		"stone_small": Models.standing_stone(m, xf, r.randf_range(0.4, 0.6), sd)
+		"grey_rock": Models.rock(m, loose, r.randf_range(0.7, 1.4), sd, Color("#8C8A92"))
+		"dead_tree": Models.dead_tree(m, loose, r.randf_range(0.9, 1.3), sd)
+		"dead_tree_big": Models.dead_tree(m, loose, r.randf_range(1.8, 2.6), sd)
+		"standing_stone": Models.standing_stone(m, xf, r.randf_range(0.9, 1.3), sd)
+		"standing_big": Models.standing_stone(m, xf, r.randf_range(2.0, 3.0), sd)
+		"broken_pillar": Models.broken_pillar(m, loose, r.randf_range(0.9, 1.3), sd)
+		"obsidian_small": Models.obsidian(m, loose, r.randf_range(0.5, 0.8), sd)
+		"obsidian": Models.obsidian(m, loose, r.randf_range(1.0, 1.5), sd)
+		"obsidian_big": Models.obsidian(m, loose, r.randf_range(2.2, 3.0), sd)
+		"dark_rock": Models.rock(m, loose, r.randf_range(0.7, 1.4), sd, Color("#4A3A3A"))
+		"red_spire": Models.red_spire(m, loose, r.randf_range(0.9, 1.3), sd)
+		"red_spire_big": Models.red_spire(m, loose, r.randf_range(2.0, 3.0), sd)
+		"snow_mound": Models.snow_mound(m, loose, r.randf_range(0.8, 1.3), sd)
+		"snow_big": Models.snow_mound(m, loose, r.randf_range(2.0, 3.0), sd)
+		"ice_small": Models.ice_spikes(m, loose, r.randf_range(0.5, 0.8), sd)
+		"ice_spikes": Models.ice_spikes(m, loose, r.randf_range(0.9, 1.3), sd)
+		"ice_big": Models.ice_spikes(m, loose, r.randf_range(1.8, 2.6), sd)
+		"frozen_stela": Models.frozen_stela(m, xf, r.randf_range(0.9, 1.15), sd)
+		"white_tree": Models.dead_tree(m, loose, r.randf_range(0.9, 1.3), sd, Color("#D8E2E4"))
+		"lava_small": Models.lava_pool(m, loose, r.randf_range(0.5, 0.8), sd)
+		"lava": Models.lava_pool(m, loose, r.randf_range(1.0, 1.5), sd)
+		"lava_big": Models.lava_pool(m, loose, r.randf_range(2.0, 3.0), sd)
+		"basalt_small": Models.basalt(m, loose, r.randf_range(0.5, 0.8), sd)
+		"basalt": Models.basalt(m, loose, r.randf_range(0.9, 1.3), sd)
+		"basalt_big": Models.basalt(m, loose, r.randf_range(1.8, 2.6), sd)
+		"fire_pit": Models.fire_pit(m, loose, sd)
+		"char_rock": Models.rock(m, loose, r.randf_range(0.7, 1.4), sd, Models.CHAR)
+		"char_tree": Models.dead_tree(m, loose, r.randf_range(0.9, 1.3), sd, Models.CHAR)
 
 ## Main thread: turns the baked arrays into nodes.
-func _attach(seg: Segment) -> void:
+func _attach(c: Chunk) -> void:
 	var node := Node3D.new()
-	var path := MeshInstance3D.new()
-	path.mesh = Mesher.from_arrays(seg.baked[0])
-	node.add_child(path)
-	var scenery := MeshInstance3D.new()
-	scenery.mesh = Mesher.from_arrays(seg.baked[1])
-	scenery.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.add_child(scenery)
-	seg.baked = []
-	if not seg.coins.is_empty():
+	var mi := MeshInstance3D.new()
+	mi.mesh = Mesher.from_arrays(c.baked)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.add_child(mi)
+	c.baked = []
+	if not c.drops.is_empty():
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = _coin_mesh
-		mm.instance_count = seg.coins.size()
+		mm.instance_count = c.drops.size()
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(mmi)
-		seg.coin_mm = mm
-	seg.node = node
+		c.drop_mm = mm
+	c.node = node
 	add_child(node)
-	_spin(seg)
+	_spin(c)
 
-## Spins every coin and hides the collected ones; called each frame.
-func spin_coins(delta: float) -> void:
+## Spins every sun-drop and hides the taken ones; call once a frame.
+func spin(delta: float) -> void:
 	poll()
 	_coin_angle = fmod(_coin_angle + delta * 3.0, TAU)
-	for seg in _segments:
-		_spin(seg)
+	for c in _chunks:
+		_spin(c)
 
-func _spin(seg: Segment) -> void:
-	if seg.coin_mm == null:
+func _spin(c: Chunk) -> void:
+	if c.drop_mm == null:
 		return
-	for i in seg.coins.size():
-		var c := seg.coins[i]
-		var pos := seg.point(c.s, c.x, c.y)
-		if c.taken:
-			seg.coin_mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), pos))
+	for i in c.drops.size():
+		var d: Dictionary = c.drops[i]
+		var pos: Vector3 = d.pos
+		if d.taken:
+			c.drop_mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), pos))
 		else:
-			# Offset by s so neighbouring coins don't spin in lockstep.
-			seg.coin_mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, _coin_angle + c.s), pos))
+			pos.y += sin(_coin_angle * 2.0 + d.s) * 0.08
+			c.drop_mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, _coin_angle + d.s), pos))

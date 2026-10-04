@@ -28,6 +28,8 @@ func _col(key: String, fallback: Color) -> Color:
 	return palette.get(key, fallback)
 
 var pose := Pose.IDLE
+## 0..1: how high he holds the Sunstone (1 while it blazes).
+var raise := 0.0
 var _phase := 0.0
 var _fall_t := 0.0
 var _hold_up := 0.0 # idle: the Sunstone raised overhead
@@ -141,6 +143,11 @@ func animate(delta: float, run_speed: float) -> void:
 		for i in t.size():
 			_pose_now[i] = lerpf(_pose_now[i], t[i], k)
 	_apply(_pose_now)
+	# Blazing: the Sunstone held high over his head, whatever his legs do.
+	if raise > 0.001 and pose != Pose.FALL:
+		_sh_r.rotation.x = lerpf(_sh_r.rotation.x, 2.95, raise)
+		_el_r.rotation.x = lerpf(_el_r.rotation.x, 0.12, raise)
+		_torso.rotation.z = lerpf(0.0, -0.08, raise)
 	if _squash > 0.0:
 		_squash = maxf(_squash - delta * 6.0, 0.0)
 		var dip := sin(_squash * PI) * 0.13

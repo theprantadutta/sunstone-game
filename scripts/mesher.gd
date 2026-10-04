@@ -1,93 +1,111 @@
 class_name Mesher
 extends RefCounted
 ## Batches low-poly primitives into ONE mesh with per-vertex colours and flat
-## (faceted) normals. A whole stretch of temple becomes a single draw call, which
-## is what keeps a mid-range phone at a steady frame rate.
+## (faceted) normals. A whole stretch of the causeway becomes a single draw (plus
+## its ink-line pass), which is what keeps a mid-range phone at a steady 60.
 ##
-## Two surfaces: a lit one (stone, leaves, wood) and a glowing one (flames, the
-## Sunstone, jaguar eyes) that is unshaded and bright enough to bloom.
+## Two surfaces: a lit one (stone, leaves, wood — codex-shaded, painted only
+## where there is light) and a glowing one (flames, the Sunstone, eyes, drops).
+## Both get the scribe's ink outline from [Codex].
+##
+## Every vertex also stores the direction its outline hull pushes out (in UV
+## and UV2). Corners of one primitive share a position and a direction, so the
+## hull stays closed. A zero direction means "no outline" (decals, the ground).
+##
+## A colour with alpha below 1 marks hatched ground (see Codex).
 
 var _lit := SurfaceTool.new()
 var _glow := SurfaceTool.new()
+var _flat := SurfaceTool.new() ## lit, but no ink line: ground, decals
 var _lit_tris := 0
 var _glow_tris := 0
-
-static var _lit_material: StandardMaterial3D
-static var _glow_material: ShaderMaterial
+var _flat_tris := 0
 
 func _init() -> void:
 	_lit.begin(Mesh.PRIMITIVE_TRIANGLES)
 	_glow.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-static func lit_material() -> StandardMaterial3D:
-	if _lit_material == null:
-		var m := StandardMaterial3D.new()
-		m.vertex_color_use_as_albedo = true
-		m.vertex_color_is_srgb = true
-		m.roughness = 0.92
-		_lit_material = m
-	return _lit_material
+static func lit_material() -> Material:
+	return Codex.world()
 
-static func glow_material() -> ShaderMaterial:
-	if _glow_material == null:
-		var sh := Shader.new()
-		sh.code = """
-shader_type spatial;
-render_mode unshaded;
-uniform float strength = 3.0;
-void fragment() {
-	// Vertex colours are sRGB; push them past 1.0 so the glow pass picks them up.
-	ALBEDO = pow(COLOR.rgb, vec3(2.2)) * strength;
-}
-"""
-		_glow_material = ShaderMaterial.new()
-		_glow_material.shader = sh
-	return _glow_material
+static func glow_material() -> Material:
+	return Codex.glow()
+
+static func flat_material() -> Material:
+	return Codex.world_flat()
+
+## Hatched ground colour: the same pigment, flagged for the hatch strokes.
+static func hatched(c: Color) -> Color:
+	return Color(c, 0.5)
+
+const _BOX_FACES := [[0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0]]
+const _BOX_CORNERS := [
+	Vector3(-1, -1, -1), Vector3(1, -1, -1), Vector3(1, 1, -1), Vector3(-1, 1, -1),
+	Vector3(-1, -1, 1), Vector3(1, -1, 1), Vector3(1, 1, 1), Vector3(-1, 1, 1),
+]
+const _BLOCK_FACES := [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]
 
 # ------------------------------------------------------------ primitives ---
 
 ## Axis-aligned box of [size], centred at the transform's origin.
-func box(xf: Transform3D, size: Vector3, color: Color, glow := false) -> void:
+func box(xf: Transform3D, size: Vector3, color: Color, glow := false, outline := true) -> void:
 	var h := size / 2.0
-	var c := [
-		Vector3(-h.x, -h.y, -h.z), Vector3(h.x, -h.y, -h.z),
-		Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z),
-		Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z),
-		Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z),
-	]
+	var rot := xf.basis.orthonormalized()
 	var p: Array[Vector3] = []
-	for v in c:
-		p.append(xf * v)
-	var faces := [[0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0]]
+	var d: Array[Vector3] = []
+	for c in _BOX_CORNERS:
+		p.append(xf * (c * h))
+		d.append(rot * c if outline else Vector3.ZERO)
 	var center := xf.origin
-	for f in faces:
-		_quad(p[f[0]], p[f[1]], p[f[2]], p[f[3]], color, center, glow)
+	for f in _BOX_FACES:
+		_quad(p[f[0]], p[f[1]], p[f[2]], p[f[3]], d[f[0]], d[f[1]], d[f[2]], d[f[3]], color, center, glow)
+
+## A six-sided block from eight world corners: bottom four then top four, each
+## ring in the same order. For road cells and ribbons that follow a curve.
+func block(c: Array, color: Color, glow := false, outline := true) -> void:
+	var center := Vector3.ZERO
+	for v in c:
+		center += v
+	center /= 8.0
+	var d: Array[Vector3] = []
+	for v in c:
+		d.append((v - center).normalized() * 1.25 if outline else Vector3.ZERO)
+	for f in _BLOCK_FACES:
+		_quad(c[f[0]], c[f[1]], c[f[2]], c[f[3]], d[f[0]], d[f[1]], d[f[2]], d[f[3]], color, center, glow)
 
 ## Faceted frustum: [sides]-gon, base radius [r0] at y=0, top radius [r1] at
 ## y=[h] (local). r1 = 0 makes a cone; r0 = r1 a prism.
-func prism(xf: Transform3D, r0: float, r1: float, h: float, sides: int, color: Color, glow := false, top_color := Color(0, 0, 0, 0)) -> void:
+func prism(xf: Transform3D, r0: float, r1: float, h: float, sides: int, color: Color, glow := false, top_color := Color(0, 0, 0, 0), outline := true) -> void:
 	var top_col := color if top_color.a == 0.0 else top_color
+	var rot := xf.basis.orthonormalized()
 	var center := xf * Vector3(0, h / 2.0, 0)
 	var bottom: Array[Vector3] = []
 	var top: Array[Vector3] = []
+	var db: Array[Vector3] = []
+	var dt: Array[Vector3] = []
 	for i in sides:
 		var a := TAU * i / sides
-		var d := Vector3(cos(a), 0, sin(a))
-		bottom.append(xf * (d * r0))
-		top.append(xf * (d * r1 + Vector3(0, h, 0)))
+		var dir := Vector3(cos(a), 0, sin(a))
+		bottom.append(xf * (dir * r0))
+		top.append(xf * (dir * r1 + Vector3(0, h, 0)))
+		db.append(rot * (dir + Vector3(0, -0.8, 0)) if outline else Vector3.ZERO)
+		dt.append(rot * (dir * (1.0 if r1 > 0.001 else 0.0) + Vector3(0, 0.8, 0)) if outline else Vector3.ZERO)
 	var bc := xf * Vector3.ZERO
 	var tc := xf * Vector3(0, h, 0)
+	var dbc := rot * Vector3(0, -1, 0) if outline else Vector3.ZERO
+	var dtc := rot * Vector3(0, 1, 0) if outline else Vector3.ZERO
 	for i in sides:
 		var j := (i + 1) % sides
 		if r1 > 0.001:
-			_quad(bottom[i], bottom[j], top[j], top[i], color, center, glow)
-			_tri(tc, top[i], top[j], top_col, center, glow)
+			_quad(bottom[i], bottom[j], top[j], top[i], db[i], db[j], dt[j], dt[i], color, center, glow)
+			_tri(tc, top[i], top[j], dtc, dt[i], dt[j], top_col, center, glow)
 		else:
-			_tri(bottom[i], bottom[j], tc, color, center, glow)
-		_tri(bc, bottom[j], bottom[i], color, center, glow)
+			_tri(bottom[i], bottom[j], tc, db[i], db[j], dtc, color, center, glow)
+		_tri(bc, bottom[j], bottom[i], dbc, db[j], db[i], color, center, glow)
 
-## A low-poly blob (subdivided icosahedron), optionally lumpy for foliage/rock.
-func blob(xf: Transform3D, radius: float, color: Color, lumpiness := 0.0, seed := 0, glow := false) -> void:
+## A low-poly blob (icosahedron), optionally lumpy for foliage/rock.
+func blob(xf: Transform3D, radius: float, color: Color, lumpiness := 0.0, seed := 0, glow := false, outline := true) -> void:
 	var t := (1.0 + sqrt(5.0)) / 2.0
 	var v: Array[Vector3] = [
 		Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0),
@@ -102,29 +120,35 @@ func blob(xf: Transform3D, radius: float, color: Color, lumpiness := 0.0, seed :
 	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
+	var rot := xf.basis.orthonormalized()
 	var pts: Array[Vector3] = []
+	var dirs: Array[Vector3] = []
 	for p in v:
 		var k := 1.0 + rng.randf_range(-lumpiness, lumpiness)
 		pts.append(xf * (p.normalized() * radius * k))
+		dirs.append(rot * p.normalized() * 1.2 if outline else Vector3.ZERO)
 	var center := xf.origin
 	for tri in f:
-		_tri(pts[tri[0]], pts[tri[1]], pts[tri[2]], color, center, glow)
+		_tri(pts[tri[0]], pts[tri[1]], pts[tri[2]], dirs[tri[0]], dirs[tri[1]], dirs[tri[2]], color, center, glow)
+
+## A flat quad painted on a surface (a decal): four corners, no outline.
+## Visible from the side its corners wind clockwise toward [up].
+func decal(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, glow := false, up := Vector3.UP) -> void:
+	var z := Vector3.ZERO
+	var center := (a + b + c + d) / 4.0 - up * 0.5
+	_quad(a, b, c, d, z, z, z, z, color, center, glow)
 
 # --------------------------------------------------------------- output ---
 
 func is_empty() -> bool:
-	return _lit_tris == 0 and _glow_tris == 0
+	return _lit_tris == 0 and _glow_tris == 0 and _flat_tris == 0
 
-## Builds the ArrayMesh (lit surface first, glow second when present).
+func triangles() -> int:
+	return _lit_tris + _glow_tris + _flat_tris
+
+## Builds the ArrayMesh: lit, glow and flat surfaces, whichever have triangles.
 func commit() -> ArrayMesh:
-	var mesh := ArrayMesh.new()
-	if _lit_tris > 0:
-		_lit.commit(mesh)
-		mesh.surface_set_material(mesh.get_surface_count() - 1, lit_material())
-	if _glow_tris > 0:
-		_glow.commit(mesh)
-		mesh.surface_set_material(mesh.get_surface_count() - 1, glow_material())
-	return mesh
+	return from_arrays(bake())
 
 ## The raw surface arrays, without touching the RenderingServer — safe to call
 ## on a worker thread. Turn them into a mesh on the main thread with [from_arrays].
@@ -132,33 +156,34 @@ func bake() -> Array:
 	return [
 		_lit.commit_to_arrays() if _lit_tris > 0 else [],
 		_glow.commit_to_arrays() if _glow_tris > 0 else [],
+		_flat.commit_to_arrays() if _flat_tris > 0 else [],
 	]
 
 static func from_arrays(baked: Array) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
-	if not baked[0].is_empty():
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, baked[0])
-		mesh.surface_set_material(mesh.get_surface_count() - 1, lit_material())
-	if not baked[1].is_empty():
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, baked[1])
-		mesh.surface_set_material(mesh.get_surface_count() - 1, glow_material())
+	var mats := [lit_material(), glow_material(), flat_material()]
+	for i in baked.size():
+		if not baked[i].is_empty():
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, baked[i])
+			mesh.surface_set_material(mesh.get_surface_count() - 1, mats[i])
 	return mesh
 
 func to_instance() -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = commit()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
 
 # ------------------------------------------------------------- internals ---
 
-func _quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, center: Vector3, glow: bool) -> void:
-	_tri(a, b, c, color, center, glow)
-	_tri(a, c, d, color, center, glow)
+func _quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, da: Vector3, db: Vector3, dc: Vector3, dd: Vector3, color: Color, center: Vector3, glow: bool) -> void:
+	_tri(a, b, c, da, db, dc, color, center, glow)
+	_tri(a, c, d, da, dc, dd, color, center, glow)
 
 ## One flat-shaded triangle facing away from [center]. Godot treats CLOCKWISE
 ## triangles (seen from outside) as front faces, so the winding is fixed here
 ## from the outward direction — callers never have to think about it.
-func _tri(a: Vector3, b: Vector3, c: Vector3, color: Color, center: Vector3, glow: bool) -> void:
+func _tri(a: Vector3, b: Vector3, c: Vector3, da: Vector3, db: Vector3, dc: Vector3, color: Color, center: Vector3, glow: bool) -> void:
 	var n := (b - a).cross(c - a)
 	if n.length_squared() < 1e-12:
 		return
@@ -167,14 +192,27 @@ func _tri(a: Vector3, b: Vector3, c: Vector3, color: Color, center: Vector3, glo
 		var tmp := b
 		b = c
 		c = tmp
+		var td := db
+		db = dc
+		dc = td
 		n = -n
 	var normal := -n.normalized()
-	var st := _glow if glow else _lit
-	for p in [a, b, c]:
-		st.set_color(color)
-		st.set_normal(normal)
-		st.add_vertex(p)
+	var st := _lit
 	if glow:
+		st = _glow
 		_glow_tris += 1
+	elif da == Vector3.ZERO and db == Vector3.ZERO and dc == Vector3.ZERO:
+		st = _flat
+		_flat_tris += 1
 	else:
 		_lit_tris += 1
+	_vert(st, a, da, normal, color)
+	_vert(st, b, db, normal, color)
+	_vert(st, c, dc, normal, color)
+
+static func _vert(st: SurfaceTool, p: Vector3, d: Vector3, normal: Vector3, color: Color) -> void:
+	st.set_color(color)
+	st.set_normal(normal)
+	st.set_uv(Vector2(d.x, d.y))
+	st.set_uv2(Vector2(d.z, 0.0))
+	st.add_vertex(p)

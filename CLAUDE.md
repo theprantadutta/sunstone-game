@@ -1,15 +1,21 @@
-# Sunstone: Dusk Run — the game (Godot 4.7)
+# Sunstone — the game (Godot 4.7)
 
-An explorer takes the glowing Sunstone from a painted Maya temple at dusk; stone
-jaguar guardians chase him along an endless causeway. Temple-Run-style controls:
-swipe left/right to change lanes (or to turn at corners), up to jump, down to
-slide — plus our own twist, the **dusk run**: the sun sets over each run, the
-Sunstone is the only light (drains; sun-drops refill it), the jaguars move only
-in the dark, and a tap flares the stone to freeze and push them back. The UI is
-the **Codex** (Maya codex pages, glyph-block buttons). Keep both original.
-Store title **Sunstone: Dusk Run** (launcher label "Sunstone"), package
-`com.pranta.sunstone`. Visual identity and rules: **`DESIGN.md`** — read it before
-touching any UI. The roadmap to release is **`PLAN.md`**.
+**Carry the sun through Xibalba.** In Maya myth the sun goes down into the
+underworld every night and must cross it to rise at dawn. The explorer carries
+the Sunstone — that sun — along a winding causeway through the Houses of
+Xibalba (the Popol Vuh's trials). One run is a chain of nights; each night is
+three Houses, then dawn.
+
+One thumb, one decision: **how bright to be.** Holding blazes the Sunstone —
+colour floods back into the world (outside the light it is bare ink on night
+paper), the stone jaguars freeze, and the thumb steers. It burns light fast and
+draws the bats of Camazotz. Letting go dims it to embers: the road leads you
+back to its middle, light lasts, the dark closes in. The UI is the **Codex**
+(Maya codex pages, glyph-block buttons). Store title **Sunstone: Dusk Run**
+(launcher label "Sunstone"), package `com.pranta.sunstone`. Visual identity:
+**`DESIGN.md`** — read it before touching UI or 3D art. Roadmap: **`PLAN.md`**.
+The earlier lane runner (swipes, corners) is gone; its code is in git history
+on `master` before the `xibalba` branch.
 
 This repo is `sunstone-game`; its backend is the sibling repo `../sunstone-api`
 (`G:\Personal\MyProjects\Sunstone\`). The game is a clean break from any
@@ -18,62 +24,79 @@ earlier project: no names, ids or assets carry over.
 ## Layout
 
 ```
-project.godot / export_presets.cfg   portrait, Mobile renderer, Android arm64,
-                                     package com.pranta.sunstone
+project.godot / export_presets.cfg   portrait, Android uses Compatibility renderer
 scenes/main.tscn        one node; everything is built in code by game.gd
 scripts/
-  game.gd               state machine (title → running → dying → results),
-                        path-space movement, input, collisions, jaguars, camera,
-                        environment (sky, fog, sun, glow), dev autopilot
-  world.gd              endless causeway: segments + 90° corners, obstacles,
-                        coins, scenery; each segment is ONE batched mesh
-  mesher.gd             batches low-poly primitives into one mesh (vertex colours,
-                        flat normals, lit + glowing surfaces) — the perf backbone
-  models.gd             every 3D asset, written into a Mesher (no imported models)
-  runner_model.gd       the explorer, jointed, procedural run/jump/slide/fall/idle
-  jaguar_model.gd       the chasers
+  game.gd               state machine (title → running → dying → results), the
+                        run (blaze/steer, light, jaguars, bats, hazards, dawn),
+                        camera, halo, motes, title sky, dev autopilot
+  nights.gd             THE shape of a run: nights, Houses (their numbers and
+                        looks), speeds, widths, dawn — pure functions of distance
+  world.gd              the winding causeway in 12 m chunks: road cells, walls,
+                        pits, dangers, drops, braziers, gates, scenery per House;
+                        baked on a worker thread, one mesh + one drop MultiMesh
+  codex.gd              the look: the three shared materials (world, glow, ink
+                        outline) and the light uniforms (stone, braziers, dawn)
+  mesher.gd             batches low-poly primitives into one mesh: lit, glow and
+                        flat (no outline) surfaces; stores outline directions
+  models.gd             every 3D asset (road marks, all House scenery, gates,
+                        temple, sky, sun-drop) — no imported models
+  runner_model.gd       the explorer, jointed; `raise` lifts the Sunstone high
+  jaguar_model.gd       the stone jaguars        bat_model.gd   the bats
   ui_kit.gd             the Codex design system: palette, fonts, paper, glyph
                         blocks, pages, k'in sun glyph, sun meter, Maya numerals
-  game_ui.gd            screens (title + menu, HUD, pause, settings, results, Daily
-                        dusk, Offerings, Glyphs, Market, Records, Second wind)
-  save_data.gd          versioned JSON save (+ .bak fallback): progress, records,
-                        daily, glyphs, offerings, charms, owned looks
+  game_ui.gd            screens (title + menu, HUD with night/House/dawn track
+                        and banners, pause, settings, results, Daily dusk,
+                        Offerings, Glyphs, Market, Records, Second wind)
+  save_data.gd          versioned JSON save (+ .bak fallback)
   maya_calendar.gd      tzolk'in day names, UTC/local day keys, daily seeds
-  glyphs.gd             the 20 glyphs (achievements) and when they're earned
-  market.gd             charms, garbs, hues, Second wind cost — effects mirrored
-                        in sunstone-api Runs/RunRules.cs
+  glyphs.gd             the 20 glyphs (achievements), earned by nights/blazes
+  market.gd             charms, garbs, hues, Second wind cost
   online.gd             Firebase Auth (REST, silent guest) → our JWT; run outbox;
-                        leaderboards; rename/delete account; cloud save merge;
-                        batched analytics. Never blocks play when offline.
-  sfx.gd / save_data.gd audio + vibration / ConfigFile at user://save.cfg
-tools/make_audio.py     synthesizes every sound + the music loop (pure Python)
-tools/make_icon.py      draws the app icon, adaptive layers and boot splash
-tools/make_paper.py     draws the tileable codex bark-paper texture
+                        leaderboards; account; cloud save merge; analytics
+  sfx.gd                audio + vibration
+tools/make_audio.py     synthesizes every sound + the night music (pure Python)
+tools/make_icon.py      app icon, adaptive layers, boot splash
+tools/make_paper.py     the tileable codex bark-paper texture (UI)
 ```
 
-## Rules of the world (path space)
+## Rules of the run
 
-A segment has `origin`, `dir`, `right`, `length`; a point is (s along, x across,
-y up). The straight run is `s ∈ [0, length]`, the corner square `[length,
-length + PATH_WIDTH]`. Turns alternate so heading stays within ±90° of the start —
-the causeway zig-zags forward and can never cross itself. Lanes are x = −1.6/0/+1.6.
-
-- Nothing floats: the road is a raised sacbe on a stepped embankment
-  (`Models.embankment`) standing on the jungle floor at `Models.GROUND_Y`.
-  Pillars stand on buttresses, torches on the parapet, trees and bushes are
-  rooted on the floor or tier ledges. Gaps break the embankment too (rubble
-  below). The ground plane and skyline ride along under the camera.
-- Head-on hit = run over (specific cause shown). Clipping a statue mid lane-change
-  = stumble (jaguars close in); a second stumble within 8 s = caught.
-- Missing the corner = "Ran off the causeway". Gaps = "Fell into the jungle".
-- Turning: a swipe inside the window queues the turn; each lane pivots where it
-  meets the same lane of the next stretch (`_pivot_s`), so only the heading
-  changes. Camera and runner yaw are exp-damped; lanes ride a critically
-  damped spring.
-- Second wind: once per run, for sun-drops (Market.SECOND_WIND_COST): rise just
-  past what ended the run, jaguars driven off, 1.5 s shield.
-- Speed 12.5 → 27 u/s over ~1800 m; difficulty (density, gaps, double statues)
-  ramps over ~2600 m. Swipe hints show during the first two runs.
+- **Road space.** A point on the road is (s, u): metres along, metres across
+  (+ right). `world.point(s, u)` gives the world position; the road runs toward
+  −Z and its centre wanders (`world.center(s)`, two sines, seeded phases). Width
+  belongs to the House (`Nights.width`, blended at House changes).
+- **Nights** (`nights.gd`): night n lasts min(90, 58 + 8(n−1)) s at its own speed
+  (6.6 → 11 m/s); its length in metres follows. Three Houses per night, a 36 m
+  sunrise road (no danger) between nights. Night 1 is always dusk causeway →
+  Jaguars → Bats; later nights draw three from Gloom, Knives, Cold, Jaguars,
+  Bats, Fire (seeded). Everything is a function of distance and seed, so the
+  daily dusk is identical for everyone and the score stays in metres.
+- **The thumb.** Touch = blaze (light radius ember → 8.4 m) and steer: the
+  runner keeps his place across the road and the drag moves him over
+  (`STEER_SPAN` m per screen width). Let go = embers; he drifts back to the
+  road's middle. Dodging always needs a touch.
+- **Light** drains 0.014/s at embers, +0.075/s blazing (× House drain × Ember
+  heart); sun-drops +0.055 (× Sun-drinker); a full trail of five = a
+  "Sun-string" bonus (+3 drops); dawn gives back 0.35. Zero = "The Sunstone went
+  out".
+- **Jaguars** are frozen wherever any light reaches them (stone, braziers, the
+  dusk/dawn flood); in the dark they come — at a creep from ahead, faster than
+  you from behind. Stay dim > 2.2 s and one may pick up your trail.
+  Jaguar's patience = they stay stone a moment after the light leaves.
+- **Bats** come when you blaze for long (attraction builds while blazing, House
+  "bat" factor) and steal 0.2 light on a hit; let go and they lose you. They
+  move in the runner's frame.
+- **Dangers**: off the road ("Stepped off the road into Xibalba"), pits (missing
+  road cells), fallen stelae, obsidian blades. Death causes ≤ 60 chars.
+- **Second wind**: once per run — rise past what ended it, nearby jaguars gone,
+  light ≥ 0.6, 1.5 s shield.
+- **The look** (`codex.gd`): no real lights or shadows. Flat three-band shading
+  from a fixed sun; painted colour only inside light circles (stone, up to 8
+  braziers, dawn flood), bare night paper elsewhere; ink outline (inverted hull)
+  black in light, pale in the dark; distance fades to the background colour.
+  Glow geometry (flames, eyes, drops, lava) always shows. Paper grain is a
+  multiplied texture over the 3D view (under the UI).
 
 ## Building and testing — never open windows on the user's PC
 
@@ -91,19 +114,23 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
 
 - **Autopilot** (the game plays itself, for screenshots): `adb shell run-as
   com.pranta.sunstone touch files/autopilot`; remove the file to turn it off.
+- **`files/dev_start`** (metres) starts every run that far along — to look at a
+  given House (night 1 Houses begin at 0 / 138 / 276 m; night 2 at ~450).
+  `files/dev_noflare` stops the autopilot blazing for jaguars.
+- The Godot console wrapper can hang after an export finishes: wait for the APK
+  timestamp to change, then stop the wrapper. Gradle sometimes takes ~10 min.
 - **Renderer:** Android uses the Compatibility renderer (`rendering_method.mobile`).
   On the Tab A9 (Mali-G57) the Mobile renderer's fixed post-process cost alone
   is ~9 ms; Compatibility holds a locked 60. Verify pacing with
   `dumpsys SurfaceFlinger --latency '<SurfaceView layer>'` — every interval
   should be one vsync.
-- **Dusk dev switches:** `files/dev_dusk` (e.g. `1.0`) starts runs at that much
-  night; `files/dev_light` (e.g. `0.3`) sets the starting light; `files/dev_noflare`
-  stops the autopilot flaring, so the jaguars close in (chase screenshots).
+- **Dev switches:** `files/dev_light` (e.g. `0.3`) sets the starting light.
 - **Perf switches** (dev): with autopilot on, logcat prints fps / frame-time /
   draw calls every 2 s. Flag files in `files/` toggle features without a rebuild:
-  `perf_noglow`, `perf_noshadow`, `perf_nomsaa`, `perf_nosky`, `perf_noui`,
-  `perf_noworld`, `perf_nocoins`, `perf_novsync`, `perf_scale` (contents = 3D scale).
-- Segment geometry is baked on a WorkerThreadPool task (`World._bake`) and
+  `perf_nomsaa`, `perf_noui`, `perf_noworld`, `perf_nograin`, `perf_novsync`,
+  `perf_scale` (contents = 3D scale). Budget on the Tab A9: a locked 60 at
+  ~250–320 draws and ~90k primitives.
+- Chunk geometry is baked on a WorkerThreadPool task (`World._bake`) and
   attached on the main thread (`_attach`) — keep `_bake` free of scene-tree and
   shared-RNG access, or turns will hitch again.
 - Keep devices **silent** while testing (the user is in an office): media volume 0.

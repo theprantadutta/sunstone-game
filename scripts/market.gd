@@ -9,7 +9,7 @@ const SECOND_WIND_COST := 150 ## one rise per run, after a fall or a crash
 const CHARMS := [
 	{"id": "ember_heart", "title": "Ember heart", "text": "The stone's light drains slower.",
 		"costs": [300, 800, 1800], "effects": ["10% slower", "20% slower", "30% slower"]},
-	{"id": "patience", "title": "Jaguar's patience", "text": "A flare holds the jaguars as stone for longer.",
+	{"id": "patience", "title": "Jaguar's patience", "text": "Jaguars stay stone a moment after your light leaves them.",
 		"costs": [250, 700, 1500], "effects": ["+0.4 s", "+0.8 s", "+1.2 s"]},
 	{"id": "sun_drinker", "title": "Sun-drinker", "text": "Each sun-drop restores more light.",
 		"costs": [300, 800, 1800], "effects": ["+15% light", "+30% light", "+50% light"]},

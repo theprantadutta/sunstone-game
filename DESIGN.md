@@ -1,15 +1,33 @@
 # Sunstone — design system
 
-A 3D endless runner with one twist of its own: **the dusk run**. An explorer takes
-the glowing Sunstone from a jungle temple as the sun goes down. Every run goes
-sunset → twilight → moonlit night, and the Sunstone is his only light. It drains;
-sun-drops feed it. The stone jaguars that guard the temple are statues that only
-move in the dark — let the light fail and they close in. A tap flares the stone:
-they freeze back into stone and fall away. Temple Run gave us the run, the swipes
-and the chase; everything else is ours.
+**Carry the sun through Xibalba.** In Maya myth the sun descends into the
+underworld each night and must cross it to rise again. The explorer carries
+the Sunstone — that sun — down a winding causeway through the Houses of
+Xibalba: Gloom, Knives, Cold, Jaguars, Bats, Fire. A run is a chain of nights;
+each night ends at dawn. One thumb decides how bright to be: hold and the stone
+blazes (colour, steering, frozen jaguars — but it burns light and draws bats),
+let go and it dims to embers.
 
-The UI has three jobs: get you running instantly, keep the light readable at a
-glance, and make the end of a run land.
+The UI has three jobs: get you running instantly, keep the light and the way to
+dawn readable at a glance, and make the end of a run land.
+
+## The world — the codex comes alive where there is light
+
+The 3D world is drawn as a codex page, not as a lit 3D scene:
+
+- **Light paints, darkness is bare paper.** Inside a circle of light (the
+  Sunstone, a brazier, the dusk and dawn floods) the world is in full codex
+  colour. Outside it, it is bare indigo night paper with pale chalk lines.
+  The light circle has a freehand cinnabar rim where it meets the dark.
+- **Ink outlines on everything** — black in the light, pale in the dark. Even
+  line weight on screen.
+- **Flat shading:** three hard bands from one fixed sun. No real-time lights,
+  no shadows, no bloom, no realistic sky.
+- **Things that are light always show:** flames, the Sunstone, sun-drops,
+  jaguar and bat eyes, lava. That's how you read the dark.
+- **Every House has its own world:** earth colour, paving, road marks, curb
+  colour, scenery set and floating motes (fireflies, ash, snow, embers).
+- **Paper grain** over the whole view.
 
 ## Identity — the Codex
 
@@ -59,13 +77,15 @@ The live 3D world is always the background.
   (red printed a hair off the black) up top; the explorer raising the stone on
   the temple steps; the Run glyph block low, with the best distance on a paper
   slip beneath it. Settings (bar-and-dot sliders) top-right.
-- **HUD:** distance top-left with sun-drops under it; the **sun meter** top
-  centre — the k'in glyph ringed by twenty count marks that go dark as the light
-  drains, a cinnabar ring beating when it's failing, and a jaguar's eyes opening
-  beneath it as the pack closes in. Pause top-right. The edges of the screen
-  darken as the light fails at night.
-- **Results:** a page unfolds: what ended the run, the distance in both numeral
-  systems, sun-drops gathered, best, then Run again / Home.
+- **HUD:** "Night N" top-left, the House under it, then sun-drops and metres;
+  the **sun meter** top centre — the k'in glyph ringed by twenty count marks
+  that go dark as the light drains, a cinnabar ring beating when it's failing,
+  and a jaguar's eyes opening beneath it as one wakes nearby. Pause top-right.
+  Under them, the **way to dawn**: a dotted road with a tick at each House and
+  the runner's little sun on it. Entering a House, a codex slip names it.
+- **Results:** a page unfolds: the night and House it ended in, what ended the
+  run, the distance in both numeral systems, sun-drops gathered, best, then Run
+  again / Home.
 
 ## Motion
 
@@ -75,6 +95,8 @@ answers touch: buttons stamp down, pages unfold, a flare bursts warm white.
 
 ## Copy
 
-Death causes are specific: "Hit a fallen log", "Fell into the jungle", "Caught in
-the dark", "Caught by the jaguars". Hints name the move at the moment it's needed:
-"Tap to flare the Sunstone", "Sun-drops keep the stone lit".
+Death causes are specific: "Ran into a fallen stela", "Fell into a pit",
+"Stepped off the road into Xibalba", "Caught by a jaguar in the dark", "The
+Sunstone went out". Hints name the move at the moment it's needed: "Touch and
+hold: the Sunstone blazes and you can steer", "Bats hunt bright light: let go
+and they lose you".
