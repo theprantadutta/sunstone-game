@@ -58,25 +58,34 @@ A painted Maya world at dusk, and a codex-styled interface you won't find in any
 
 ## Data safety form
 
-Data **collected** (all encrypted in transit; users can request deletion — in-app
-Settings → Account → Delete account):
+Overview: collects data **Yes**; all of it encrypted in transit **Yes** (HTTPS: the
+API once hosted on https, Firebase, AdMob, Play); accounts: guest by default,
+optional **username/password (email)** and **OAuth (Google)** sign-in; users can
+delete their account **in the app** (Settings → Account → Delete account) and
+**on the web** (the deletion URL below); partial deletion on request **No**.
 
-| Data type | Collected | Shared | Why |
+"Shared" follows Play's meaning: service providers working for us (Firebase, the
+server host) are not sharing. Data the AdMob SDK sends to Google for ads is.
+Nothing is processed ephemerally only.
+
+| Category → type | Shared | Required? | Purposes |
 |---|---|---|---|
-| Email address | Yes, optional (only if the player signs in with Google or an email) | No | Account management |
-| User IDs (Firebase uid, our player id) | Yes | No | Account management, app functionality |
-| Name (runner display name) | Yes, optional to change | No (shown on ranks in-app) | App functionality |
-| Purchase history | Yes | No | App functionality (granting purchases) |
-| App interactions (gameplay events) | Yes | No | Analytics |
-| Other in-app content (runs, save) | Yes | No | App functionality |
-| Device or other IDs (advertising ID) | Yes — by AdMob | Yes, with Google (AdMob) | Advertising |
-| Approximate location from IP | Yes — by AdMob | Yes, with Google (AdMob) | Advertising |
-| Crash logs / diagnostics | No | — | — |
+| Personal info → Name (runner name, auto-made, changeable) | No | Required | App functionality, Account management |
+| Personal info → Email address (Google / email sign-in) | No | Optional | App functionality, Account management |
+| Personal info → User IDs (Firebase uid, player id) | No | Required | App functionality, Analytics, Fraud prevention/security, Account management |
+| Financial info → Purchase history (product, order id, receipt) | No | Optional | App functionality, Fraud prevention/security |
+| Location → Approximate location (from IP, by AdMob) | Yes | Required | Advertising or marketing, Analytics, Fraud prevention/security |
+| App activity → App interactions (our gameplay events; AdMob ad interactions) | Yes | Required | Analytics, Advertising or marketing, Fraud prevention/security |
+| App activity → Other actions (runs, scores, cloud save) | No | Required | App functionality, Fraud prevention/security |
+| App info and performance → Diagnostics (by AdMob) | Yes | Required | Analytics, Fraud prevention/security |
+| Device or other IDs (advertising ID, app set ID; by AdMob) | Yes | Required | Advertising or marketing, Analytics, Fraud prevention/security |
 
-- Is data encrypted in transit? **Yes** (HTTPS) — once the API is hosted on https.
-- Can users request deletion? **Yes** — in the app and by email.
-- Account deletion URL (Play requires a web link too): *(host a page explaining:
-  open Settings → Account → Delete account, or email prantadutta1997@gmail.com)*
+Not collected: phone, address, other personal info, payment info (Play handles
+it), precise location, messages, photos/videos, audio, files, calendar,
+contacts, health, web browsing, installed apps, search history, crash logs.
+
+- Account deletion URL (Play requires a web link): host a page explaining
+  Settings → Account → Delete account, or email prantadutta1997@gmail.com.
 
 ## App access (Play Console → App content → App access)
 
