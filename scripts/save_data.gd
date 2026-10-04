@@ -51,6 +51,7 @@ var charms := {} ## charm id → tier bought (1..3)
 var owned: Array = ["explorer", "sun"] ## garbs and hues you own
 var garb := "explorer"
 var hue := "sun"
+var character := "explorer" ## who runs (Themes.CHARACTERS)
 var entitlements: Array = [] ## bought for good: "no_ads", "patron"
 var review_asks := 0 ## times we've asked Google to show the rating sheet
 var review_last := "" ## local day of the last ask
@@ -114,6 +115,7 @@ func _apply(d: Dictionary) -> void:
 	review_last = str(d.get("review_last", ""))
 	garb = str(d.get("garb", "explorer"))
 	hue = str(d.get("hue", "sun"))
+	character = str(d.get("character", "explorer"))
 	music = bool(d.get("music", true))
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
@@ -127,7 +129,7 @@ func to_dict() -> Dictionary:
 		"deaths": deaths,
 		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
 		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
-		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "entitlements": entitlements,
+		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "character": character, "entitlements": entitlements,
 		"review_asks": review_asks, "review_last": review_last,
 		"music": music, "sound": sound, "vibration": vibration,
 	}

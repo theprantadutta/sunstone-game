@@ -93,6 +93,10 @@ void fragment() {
 	vec3 base = pow(COLOR.rgb, vec3(2.2));
 	float ndl = dot(normalize(wnorm), normalize(sun_dir));
 	float band = ndl > 0.55 ? 1.0 : (ndl > -0.3 ? 0.82 : 0.66);
+	if (COLOR.a > 0.9 && COLOR.a < 0.99) {
+		// Characters: soft toon light, so faces never fall into deep shade.
+		band = ndl > 0.15 ? 1.0 : (ndl > -0.55 ? 0.92 : 0.84);
+	}
 	vec3 col = base * band;
 	vec3 night = mix(night_lo, night_hi, smoothstep(0.6, 1.0, band));
 	if (COLOR.a < 0.9) {
@@ -144,7 +148,7 @@ varying vec3 wpos;
 void vertex() {
 	vec3 dir = mat3(MODEL_MATRIX) * vec3(UV.x, UV.y, UV2.x);
 	float dist = length(CAMERA_POSITION_WORLD - VERTEX);
-	VERTEX += dir * width * clamp(dist / 20.0, 0.5, 3.0);
+	VERTEX += dir * width * clamp(dist / 20.0, 0.06, 3.0);
 	wpos = VERTEX;
 }
 

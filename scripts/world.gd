@@ -354,7 +354,7 @@ func _bake(c: Chunk) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = c.seed
 	var mid := c.s0 + CHUNK / 2.0
-	var h: Dictionary = Nights.HOUSES["dusk"] if c.s0 < 0.0 else Nights.house(mid, seed)
+	var h: Dictionary = Themes.house("dusk") if c.s0 < 0.0 else Nights.house(mid, seed)
 	# The underworld floor: hatched earth in the House's colour.
 	m.box(Models.at(Vector3(center(mid), FLOOR_Y - 0.25, -mid)), Vector3(150.0, 0.5, CHUNK + 0.02), Mesher.hatched(h.earth), false, false)
 	var row_s := c.s0
@@ -375,7 +375,7 @@ func _bake(c: Chunk) -> void:
 			Models.brazier(m, Models.at(b.pos + Vector3(0, 0.09, 0)), b.get("seed", 0))
 	for g in c.gates:
 		var w := width(g.s)
-		var hh: Dictionary = Nights.HOUSES[g.id]
+		var hh: Dictionary = Themes.house(g.id)
 		for side in [-1.0, 1.0]:
 			var pos := point(g.s, side * (w / 2.0 + CURB_W + 1.4), FLOOR_Y)
 			var basis := Basis.looking_at(-side * right(g.s), Vector3.UP)
@@ -460,13 +460,12 @@ func _pit(m: Mesher, s0: float, s1: float, f0: float, f1: float, w0: float, w1: 
 
 func _decor(m: Mesher, c: Chunk, h: Dictionary, r: RandomNumberGenerator) -> void:
 	var set_id: String = h.decor if c.s0 >= 0.0 else "jungle"
-	var set_d: Dictionary = DECOR[set_id]
 	for side in [-1.0, 1.0]:
 		for band in [["near", 0.5, 3.6, 1.0, 1.9, 0.9], ["mid", 3.8, 9.0, 2.4, 3.8, 0.8], ["far", 9.5, 21.0, 3.0, 5.0, 0.75]]:
 			var s := c.s0 + r.randf_range(0.0, band[3])
 			while s < c.s1:
 				if s > 1.0 and r.randf() < band[5]:
-					var kind := _pick(set_d[band[0]], r)
+					var kind := _pick(Themes.decor(DECOR, set_id, band[0]), r)
 					_place(m, kind, s, side, r.randf_range(band[1], band[2]), r)
 				s += r.randf_range(band[3], band[4])
 	# Vines and roots spilling down the causeway walls.
@@ -569,6 +568,9 @@ func _place(m: Mesher, kind: String, s: float, side: float, d: float, r: RandomN
 		"fire_pit": Models.fire_pit(m, loose, sd)
 		"char_rock": Models.rock(m, loose, r.randf_range(0.7, 1.4), sd, Models.CHAR)
 		"char_tree": Models.dead_tree(m, loose, r.randf_range(0.9, 1.3), sd, Models.CHAR)
+		"pine": Models.pine(m, loose, r.randf_range(0.9, 1.5), sd)
+		"snowman": Models.snowman(m, xf, r.randf_range(0.9, 1.2), sd)
+		"gift": Models.gift(m, loose, sd)
 
 ## Main thread: turns the baked arrays into nodes.
 func _attach(c: Chunk) -> void:

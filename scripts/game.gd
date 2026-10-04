@@ -140,7 +140,15 @@ func _ready() -> void:
 	review.review_info_generated.connect(func(): review.launch_review_flow())
 	online.config_loaded.connect(func(c: Dictionary):
 		ads.configure(c.get("adsEnabled", false), int(c.get("interstitialEveryRuns", 4)), save.has_entitlement("no_ads"))
-		store.open = c.get("storeOpen", false))
+		store.open = c.get("storeOpen", false)
+		# The server may switch a seasonal event on or off.
+		var before := Themes.event_id()
+		Themes.choose_event(str(c.get("event", "")))
+		if Themes.event_id() != before and state == State.TITLE:
+			_build_sky()
+			_spawn_runner()
+			_go_title())
+	Themes.choose_event("")
 	_make_environment()
 	world = World.new()
 	add_child(world)
@@ -477,7 +485,10 @@ func _spawn_runner() -> void:
 		runner.queue_free()
 	var hue := Market.find(Market.HUES, save.hue)
 	runner = RunnerModel.new()
-	runner.palette = Market.find(Market.GARBS, save.garb).palette.duplicate()
+	var who := Themes.character(save.character)
+	runner.look = Themes.look_of(save.character)
+	runner.palette = who.outfit.duplicate()
+	runner.palette.merge(Market.find(Market.GARBS, save.garb).palette, true)
 	runner.palette["gem"] = hue.gem
 	runner.pose = old_pose
 	runner.scale = Vector3.ONE * 1.2
@@ -521,7 +532,7 @@ func _step_run(delta: float) -> void:
 	s += speed * delta
 	distance = maxf(s, 0.0)
 	world.ensure(s)
-	var h: Dictionary = Nights.HOUSES["dusk"] if s < 0.0 else Nights.house(s, world.seed)
+	var h: Dictionary = Themes.house("dusk") if s < 0.0 else Nights.house(s, world.seed)
 
 	# The thumb: holding blazes (and steers), letting go dims to embers.
 	if _autopilot:
@@ -618,6 +629,8 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 		return
 	if at.n > 1 and at.house == 0:
 		ui.show_banner(h.name, "Night %d begins" % at.n)
+	elif first and Themes.event().has("name"):
+		ui.show_banner(h.name, Themes.event().name)
 	else:
 		ui.show_banner(h.name, h.sub)
 	if not first:
@@ -925,10 +938,11 @@ func _make_motes() -> void:
 	_set_motes("jungle")
 
 func _set_motes(set_id: String) -> void:
-	if set_id == _mote_set or not MOTES.has(set_id):
+	var key := set_id + "/" + Themes.event_id()
+	if key == _mote_set or not MOTES.has(set_id):
 		return
-	_mote_set = set_id
-	var m: Array = MOTES[set_id]
+	_mote_set = key
+	var m: Array = Themes.motes(MOTES, set_id)
 	_motes.color = m[0]
 	_motes.gravity = Vector3(0.0, m[1], 0.0)
 	_motes.scale_amount_min = m[2] * 0.7
@@ -942,9 +956,7 @@ func _place_motes() -> void:
 ## The Sunstone's glow in his hand: small embers low at his side, a blaze held
 ## high.
 func _place_halo(_delta: float) -> void:
-	var up: float = runner.raise
-	var hand := runner.global_transform * Vector3(0.4, lerpf(1.05, 2.25, up), lerpf(-0.25, -0.05, up))
-	_halo.global_position = hand
+	_halo.global_position = runner.stone_global()
 	var size := lerpf(0.9, 2.6, blaze) * (0.35 + 0.65 * light)
 	if state == State.TITLE:
 		size = 1.6
@@ -1034,11 +1046,16 @@ func _chase(delta: float) -> Array:
 	var base := Vector3(_cam_x, 0.0, -s)
 	return [base + Vector3(0.0, CAM_UP, CAM_BACK), base + Vector3(0.0, 0.0, -CAM_AHEAD)]
 
+## Dev: `files/dev_face` puts the title camera right at his face.
+var _dev_face := FileAccess.file_exists("user://dev_face")
+
 ## The title shot: low, in front of him, the temple rising behind.
 func _title_shot() -> Array:
 	var sway := sin(_title_t * 0.3) * 0.6
 	var base := Vector3(0.0, 0.0, -s)
-	return [base + Vector3(1.3 + sway, 1.7, -5.6), base + Vector3(-0.2, 1.9, 2.0)]
+	if _dev_face:
+		return [base + Vector3(0.2, 1.55, -1.0), base + Vector3(0.0, 1.5, 0.0)]
+	return [base + Vector3(0.9 + sway * 0.6, 1.5, -3.9), base + Vector3(-0.1, 1.45, 2.0)]
 
 func _update_camera(delta: float) -> void:
 	var shot: Array
@@ -1090,16 +1107,23 @@ func _make_environment() -> void:
 	grain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	if FileAccess.file_exists("user://perf_nograin"):
 		layer.visible = false
-	# The painted sky behind the temple (seen from the title shot).
+	_build_sky()
+
+## The painted sky behind the temple (seen from the title shot), in the
+## colours of the season.
+var _sky: MeshInstance3D
+func _build_sky() -> void:
+	if _sky:
+		_sky.queue_free()
 	var sky := Mesher.new()
 	Models.sky(sky, Models.at(Vector3(0, 0, 110)))
-	var sky_mi := sky.to_instance()
+	_sky = sky.to_instance()
 	var sky_mat := StandardMaterial3D.new()
 	sky_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sky_mat.vertex_color_use_as_albedo = true
 	sky_mat.vertex_color_is_srgb = true
-	sky_mi.material_override = sky_mat
-	add_child(sky_mi)
+	_sky.material_override = sky_mat
+	add_child(_sky)
 
 ## White paper with the fibres and specks of beaten bark: multiplied over the
 ## world it leaves colours alone and adds the grain.

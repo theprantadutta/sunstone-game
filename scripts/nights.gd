@@ -133,8 +133,9 @@ static func house_id(s: float, seed: int) -> String:
 	var at := locate(maxf(s, 0.0))
 	return plan(at.n, seed)[at.house]
 
+## The House at [s] as it looks now (any seasonal event laid over it).
 static func house(s: float, seed: int) -> Dictionary:
-	return HOUSES[house_id(s, seed)]
+	return Themes.house(house_id(s, seed))
 
 ## Where each House of night [n] begins.
 static func house_starts(n: int) -> Array:

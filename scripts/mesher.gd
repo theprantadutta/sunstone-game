@@ -20,6 +20,9 @@ var _flat := SurfaceTool.new() ## lit, but no ink line: ground, decals
 var _lit_tris := 0
 var _glow_tris := 0
 var _flat_tris := 0
+## Soft toon shading for characters: gentler bands than the scenery's (the
+## codex shader reads it from the vertex colour's alpha).
+var soft := false
 
 func _init() -> void:
 	_lit.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -131,6 +134,98 @@ func blob(xf: Transform3D, radius: float, color: Color, lumpiness := 0.0, seed :
 	for tri in f:
 		_tri(pts[tri[0]], pts[tri[1]], pts[tri[2]], dirs[tri[0]], dirs[tri[1]], dirs[tri[2]], color, center, glow)
 
+## A sculpted surface from rings of points: [rows][i] is a ring (all rings the
+## same length), joined to the next ring quad by quad. [closed] wraps each
+## ring round. Faces point away from [center]; the ink line pushes out from
+## it too. [colors], if given, colours each band between two rings.
+func grid(rows: Array, color: Color, center: Vector3, closed := true, outline := true, colors := []) -> void:
+	var n: int = rows[0].size()
+	var last := n if closed else n - 1
+	for i in rows.size() - 1:
+		var col: Color = colors[i] if i < colors.size() else color
+		for j in last:
+			var k := (j + 1) % n
+			var a: Vector3 = rows[i][j]
+			var b: Vector3 = rows[i][k]
+			var c: Vector3 = rows[i + 1][k]
+			var d: Vector3 = rows[i + 1][j]
+			var z := Vector3.ZERO
+			_quad(a, b, c, d,
+				(a - center).normalized() * 1.1 if outline else z, (b - center).normalized() * 1.1 if outline else z,
+				(c - center).normalized() * 1.1 if outline else z, (d - center).normalized() * 1.1 if outline else z,
+				col, center, false)
+
+## Like [grid], but smooth: each vertex's normal averages the quads around it,
+## so the codex bands fall in soft toon curves instead of facets. For the
+## rounded, cartoon shapes of characters.
+func smooth_grid(rows: Array, color: Color, center: Vector3, closed := true, outline := true, glow := false) -> void:
+	var nr := rows.size()
+	var n: int = rows[0].size()
+	var last := n if closed else n - 1
+	var normals := []
+	for i in nr:
+		var ring := []
+		ring.resize(n)
+		ring.fill(Vector3.ZERO)
+		normals.append(ring)
+	for i in nr - 1:
+		for j in last:
+			var k := (j + 1) % n
+			var a: Vector3 = rows[i][j]
+			var c: Vector3 = rows[i + 1][k]
+			var fn: Vector3 = (rows[i][k] - a).cross(rows[i + 1][j] - a) + (c - rows[i][k]).cross(rows[i + 1][j] - rows[i][k])
+			if fn.dot((a + c) * 0.5 - center) < 0.0:
+				fn = -fn
+			for idx in [[i, j], [i, k], [i + 1, k], [i + 1, j]]:
+				normals[idx[0]][idx[1]] += fn
+	for i in nr - 1:
+		for j in last:
+			var k := (j + 1) % n
+			var q := [[i, j], [i, k], [i + 1, k], [i + 1, j]]
+			var p := []
+			var nn := []
+			var dd := []
+			for idx in q:
+				var v: Vector3 = rows[idx[0]][idx[1]]
+				var nv: Vector3 = normals[idx[0]][idx[1]]
+				nv = nv.normalized() if nv.length_squared() > 1e-12 else (v - center).normalized()
+				p.append(v)
+				nn.append(nv)
+				dd.append(nv * 1.1 if outline else Vector3.ZERO)
+			_tri_n(p[0], p[1], p[2], dd[0], dd[1], dd[2], nn[0], nn[1], nn[2], color, center, glow)
+			_tri_n(p[0], p[2], p[3], dd[0], dd[2], dd[3], nn[0], nn[2], nn[3], color, center, glow)
+
+## A smooth ellipsoid of half-sizes [radii] at [xf].
+func ellipsoid(xf: Transform3D, radii: Vector3, color: Color, rings := 8, segs := 12, outline := true, glow := false) -> void:
+	var rows := []
+	for i in rings + 1:
+		var th := PI * i / rings
+		var ring := []
+		for j in segs:
+			var ph := TAU * j / segs
+			ring.append(xf * Vector3(sin(th) * cos(ph) * radii.x, cos(th) * radii.y, sin(th) * sin(ph) * radii.z))
+		rows.append(ring)
+	smooth_grid(rows, color, xf.origin, true, outline, glow)
+
+## A smooth capsule along +Y from 0 to [h]: radius [r0] at the bottom, [r1]
+## at the top, rounded ends. Limbs, fingers, hat crowns.
+func capsule(xf: Transform3D, r0: float, r1: float, h: float, color: Color, segs := 10, outline := true) -> void:
+	var prof := []
+	for k in 4:
+		var a := -PI / 2.0 + PI / 2.0 * k / 3.0
+		prof.append(Vector2(r0 * cos(a), r0 + r0 * sin(a)))
+	for k in 4:
+		var a := PI / 2.0 * k / 3.0
+		prof.append(Vector2(r1 * cos(a), h - r1 + r1 * sin(a)))
+	var rows := []
+	for pr in prof:
+		var ring := []
+		for j in segs:
+			var ph := TAU * j / segs
+			ring.append(xf * Vector3(cos(ph) * pr.x, pr.y, sin(ph) * pr.x))
+		rows.append(ring)
+	smooth_grid(rows, color, xf * Vector3(0, h / 2.0, 0), true, outline)
+
 ## A flat quad painted on a surface (a decal): four corners, no outline.
 ## Visible from the side its corners wind clockwise toward [up].
 func decal(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, glow := false, up := Vector3.UP) -> void:
@@ -210,8 +305,37 @@ func _tri(a: Vector3, b: Vector3, c: Vector3, da: Vector3, db: Vector3, dc: Vect
 	_vert(st, b, db, normal, color)
 	_vert(st, c, dc, normal, color)
 
-static func _vert(st: SurfaceTool, p: Vector3, d: Vector3, normal: Vector3, color: Color) -> void:
-	st.set_color(color)
+## A triangle with its own vertex normals (smooth shading). Winding is fixed
+## from [center] like [_tri].
+func _tri_n(a: Vector3, b: Vector3, c: Vector3, da: Vector3, db: Vector3, dc: Vector3, na: Vector3, nb: Vector3, nc: Vector3, color: Color, center: Vector3, glow: bool) -> void:
+	var n := (b - a).cross(c - a)
+	if n.length_squared() < 1e-14:
+		return
+	if n.dot((a + b + c) / 3.0 - center) > 0.0:
+		var t := b
+		b = c
+		c = t
+		var td := db
+		db = dc
+		dc = td
+		var tn := nb
+		nb = nc
+		nc = tn
+	var st := _lit
+	if glow:
+		st = _glow
+		_glow_tris += 1
+	elif da == Vector3.ZERO and db == Vector3.ZERO and dc == Vector3.ZERO:
+		st = _flat
+		_flat_tris += 1
+	else:
+		_lit_tris += 1
+	_vert(st, a, da, na, color)
+	_vert(st, b, db, nb, color)
+	_vert(st, c, dc, nc, color)
+
+func _vert(st: SurfaceTool, p: Vector3, d: Vector3, normal: Vector3, color: Color) -> void:
+	st.set_color(Color(color, 0.95) if soft and color.a > 0.99 else color)
 	st.set_normal(normal)
 	st.set_uv(Vector2(d.x, d.y))
 	st.set_uv2(Vector2(d.z, 0.0))

@@ -310,8 +310,9 @@ static func brazier(m: Mesher, xf: Transform3D, seed: int) -> void:
 
 static func flame(m: Mesher, xf: Transform3D, s: float, seed: int) -> void:
 	var r := _rng(seed)
-	m.prism(xf, 0.26 * s, 0.0, 0.85 * s, 5, FLAME, true)
-	m.prism(sub(xf, Vector3(0.08 * s, 0, 0.04 * s), Basis(Vector3.UP, r.randf())), 0.15 * s, 0.0, 0.6 * s, 5, FLAME_CORE, true)
+	var fire := Themes.flame()
+	m.prism(xf, 0.26 * s, 0.0, 0.85 * s, 5, fire[0], true)
+	m.prism(sub(xf, Vector3(0.08 * s, 0, 0.04 * s), Basis(Vector3.UP, r.randf())), 0.15 * s, 0.0, 0.6 * s, 5, fire[1], true)
 	m.prism(sub(xf, Vector3(-0.1 * s, 0, -0.05 * s)), 0.12 * s, 0.0, 0.5 * s, 4, LAVA, true)
 
 ## A seated stone jaguar on its plinth, jade eyes, painted rosettes.
@@ -518,7 +519,7 @@ static func start_temple(m: Mesher, xf: Transform3D) -> void:
 ## colour from the glowing horizon up to the coming night, a huge setting k'in
 ## sun, and scrolled clouds. Built facing -Z at [xf]; drawn unshaded.
 static func sky(m: Mesher, xf: Transform3D) -> void:
-	var bands := [Color("#F4BE74"), Color("#EDA066"), Color("#E0805A"), Color("#C4605C"), Color("#97476A"), Color("#66376C"), Color("#3E2C5E"), Color("#25204A")]
+	var bands := Themes.sky()
 	var h := 11.0
 	for i in bands.size():
 		m.box(sub(xf, Vector3(0, -8.0 + i * h + h / 2.0, 0)), Vector3(260.0, h + 0.05, 0.5), bands[i], false, false)
@@ -543,6 +544,54 @@ static func sky(m: Mesher, xf: Transform3D) -> void:
 		var col := Color("#F6C9A0") if cy < 40.0 else Color("#C98A9A")
 		for k in 3:
 			m.blob(sub(xf, Vector3(cx + k * 6.0 - 6.0, cy + (2.0 if k == 1 else 0.0), -3.0), Basis().scaled(Vector3(1.6, 0.7, 0.2))), r.randf_range(4.0, 6.0), col, 0.1, i * 3 + k, false, false)
+
+# ============================================================== seasons ===
+
+## A pine dusted with snow, strung with little glowing lights.
+static func pine(m: Mesher, xf: Transform3D, s: float, seed: int) -> void:
+	var r := _rng(seed)
+	m.prism(xf, 0.16 * s, 0.12 * s, 0.7 * s, 6, BARK)
+	var lights := [Color("#FF5A4A"), Color("#FFD35A"), Color("#5AD2FF"), Color("#8AFF7A")]
+	for i in 4:
+		var y := (0.55 + i * 0.62) * s
+		var rad := (1.25 - i * 0.26) * s
+		m.prism(sub(xf, Vector3(0, y, 0)), rad, 0.0, 1.0 * s, 8, Color("#2E6A46") if i % 2 == 0 else Color("#3A7A52"))
+		m.prism(sub(xf, Vector3(0, y + 0.55 * s, 0)), rad * 0.5, 0.0, 0.42 * s, 8, SNOW, false, Color(0, 0, 0, 0), false)
+		for k in 5:
+			var a := r.randf() * TAU
+			var p := Vector3(cos(a) * rad * 0.7, y + 0.3 * s, sin(a) * rad * 0.7)
+			m.box(sub(xf, p), Vector3(0.09, 0.09, 0.09) * s, lights[(i + k) % 4], true, false)
+	m.prism(sub(xf, Vector3(0, 3.0 * s, 0)), 0.14 * s, 0.0, 0.3 * s, 5, Color("#FFD35A"), true)
+
+## A snowman with a scarf, coal eyes and a carrot nose, facing the road.
+static func snowman(m: Mesher, xf: Transform3D, s: float, seed: int) -> void:
+	m.blob(sub(xf, Vector3(0, 0.45 * s, 0)), 0.5 * s, SNOW, 0.05, seed)
+	m.blob(sub(xf, Vector3(0, 1.1 * s, 0)), 0.36 * s, SNOW, 0.05, seed + 1)
+	m.blob(sub(xf, Vector3(0, 1.6 * s, 0)), 0.26 * s, SNOW, 0.05, seed + 2)
+	m.prism(sub(xf, Vector3(0, 1.36 * s, 0)), 0.3 * s, 0.28 * s, 0.1 * s, 10, CINNABAR)
+	m.box(sub(xf, Vector3(0.18 * s, 1.2 * s, -0.12 * s), Basis(Vector3.RIGHT, -0.3)), Vector3(0.1, 0.35, 0.03) * s, CINNABAR)
+	for x in [-0.09, 0.09]:
+		m.box(sub(xf, Vector3(x * s, 1.68 * s, -0.24 * s)), Vector3(0.05, 0.05, 0.03) * s, INKY, false, false)
+	m.prism(sub(xf, Vector3(0, 1.6 * s, -0.24 * s), Basis(Vector3.RIGHT, -PI / 2.0)), 0.045 * s, 0.0, 0.2 * s, 5, Color("#F07A2A"))
+	for k in 3:
+		m.box(sub(xf, Vector3(0, (1.0 + k * 0.13) * s, -0.35 * s)), Vector3(0.05, 0.05, 0.03) * s, INKY, false, false)
+	m.prism(sub(xf, Vector3(0, 1.82 * s, 0)), 0.2 * s, 0.2 * s, 0.03 * s, 10, INKY)
+	m.prism(sub(xf, Vector3(0, 1.84 * s, 0)), 0.13 * s, 0.13 * s, 0.25 * s, 10, INKY)
+
+## A wrapped gift with a ribbon and a bow.
+static func gift(m: Mesher, xf: Transform3D, seed: int) -> void:
+	var r := _rng(seed)
+	var wraps := [Color("#C8202A"), Color("#2E7A4A"), Color("#3A6AC8"), Color("#E3A82F")]
+	var ribbon := [Color("#FFD35A"), Color("#FFFFFF"), Color("#C8202A")]
+	var size := Vector3(r.randf_range(0.4, 0.7), r.randf_range(0.3, 0.6), r.randf_range(0.4, 0.7))
+	var w: Color = wraps[r.randi() % wraps.size()]
+	var rb: Color = ribbon[r.randi() % ribbon.size()]
+	var at := sub(xf, Vector3(0, size.y / 2.0, 0))
+	m.box(at, size, w)
+	m.box(at, Vector3(size.x + 0.02, size.y + 0.02, 0.08), rb, false, false)
+	m.box(at, Vector3(0.08, size.y + 0.02, size.z + 0.02), rb, false, false)
+	for a in [-0.6, 0.6]:
+		m.blob(sub(xf, Vector3(sin(a) * 0.08, size.y + 0.06, 0), Basis().scaled(Vector3(1.0, 0.6, 0.5))), 0.08, rb, 0.1, seed)
 
 ## The shared sun-drop mesh: a small gold sun disc with the four glowing
 ## petals of the k'in glyph on both faces.
