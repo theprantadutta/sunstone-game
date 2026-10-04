@@ -52,7 +52,12 @@ var owned: Array = ["explorer", "sun"] ## garbs and hues you own
 var garb := "explorer"
 var hue := "sun"
 var character := "explorer" ## who runs (Themes.CHARACTERS)
-var entitlements: Array = [] ## bought for good: "no_ads", "patron"
+var hat := "own" ## headwear (Shop.HATS); "own" keeps the runner's
+## Boosts as two totals that only grow, like sun-drops, so cloud merges can't
+## duplicate or undo them: held = bought - used.
+var boosts_bought := {}
+var boosts_used := {}
+var entitlements: Array = [] ## bought for good: "no_ads", "patron", and looks sold for money
 var review_asks := 0 ## times we've asked Google to show the rating sheet
 var review_last := "" ## local day of the last ask
 
@@ -116,6 +121,11 @@ func _apply(d: Dictionary) -> void:
 	garb = str(d.get("garb", "explorer"))
 	hue = str(d.get("hue", "sun"))
 	character = str(d.get("character", "explorer"))
+	hat = str(d.get("hat", "own"))
+	var bb: Variant = d.get("boosts_bought", {})
+	boosts_bought = bb if bb is Dictionary else {}
+	var bu: Variant = d.get("boosts_used", {})
+	boosts_used = bu if bu is Dictionary else {}
 	music = bool(d.get("music", true))
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
@@ -129,7 +139,8 @@ func to_dict() -> Dictionary:
 		"deaths": deaths,
 		"daily": daily, "daily_streak": daily_streak, "daily_last": daily_last,
 		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
-		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "character": character, "entitlements": entitlements,
+		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "character": character, "hat": hat,
+		"boosts_bought": boosts_bought, "boosts_used": boosts_used, "entitlements": entitlements,
 		"review_asks": review_asks, "review_last": review_last,
 		"music": music, "sound": sound, "vibration": vibration,
 	}
@@ -185,6 +196,11 @@ func merge_from(other: Variant) -> bool:
 		for id in ow:
 			if not owned.has(id):
 				owned.append(id)
+	for pair in [["boosts_bought", boosts_bought], ["boosts_used", boosts_used]]:
+		var ob: Variant = o.get(pair[0], {})
+		if ob is Dictionary:
+			for k in ob:
+				pair[1][k] = maxi(int(pair[1].get(k, 0)), int(ob[k]))
 	return JSON.stringify(to_dict()) != before
 
 func save_to_disk() -> void:
@@ -303,8 +319,27 @@ func buy_charm(id: String) -> bool:
 	charms[id] = tier + 1
 	return true
 
+## Owns a look: bought with sun-drops, or with real money (an entitlement).
 func owns(id: String) -> bool:
-	return owned.has(id)
+	return owned.has(id) or entitlements.has(id)
+
+## How many of a boost are held.
+func boosts(id: String) -> int:
+	return maxi(0, int(boosts_bought.get(id, 0)) - int(boosts_used.get(id, 0)))
+
+func buy_boost(id: String, cost: int) -> bool:
+	if bank < cost:
+		return false
+	bank -= cost
+	boosts_bought[id] = int(boosts_bought.get(id, 0)) + 1
+	return true
+
+## Uses one boost; false when none are held.
+func use_boost(id: String) -> bool:
+	if boosts(id) <= 0:
+		return false
+	boosts_used[id] = int(boosts_used.get(id, 0)) + 1
+	return true
 
 ## Buys a garb or hue; false if already owned or too dear.
 func buy_item(id: String, cost: int) -> bool:

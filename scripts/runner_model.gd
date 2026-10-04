@@ -16,7 +16,7 @@ extends Node3D
 
 ## The explorer, and the fallback for any key a look leaves out.
 ## hair: "tuft", "bob", "ponytail", "buns", "curly", "none"
-## hat: "fedora", "cap", "beanie", "santa", "band", "none"
+## hat: "fedora", "cap", "beanie", "santa", "crown", "band", "none"
 ## mouth: "smile", "grin", "o"
 const DEFAULT_LOOK := {
 	"skin": Color("#E8A97C"), "hair": "tuft", "hair_col": Color("#3A2416"),
@@ -317,6 +317,17 @@ func _build_hat(m: Mesher) -> void:
 			m.ellipsoid(Models.at(top + Vector3(0, 0.22, 0.2)), Vector3(0.05, 0.05, 0.05), Color.WHITE, 4, 8)
 		"band":
 			m.ellipsoid(Models.at(HEAD_C + Vector3(0, HEAD_R.y * 0.45, 0)), Vector3(HEAD_R.x * 1.08, 0.025, HEAD_R.z * 1.08), _col("band", HAT_BAND), 3, 16)
+		"crown":
+			# A quetzal-feather crown: a jade band with a gold jewel and a fan of
+			# long green, blue and red plumes.
+			var band_y := HEAD_C + Vector3(0, HEAD_R.y * 0.42, 0)
+			m.ellipsoid(Models.at(band_y), Vector3(HEAD_R.x * 1.1, 0.04, HEAD_R.z * 1.1), Color("#2FA07A"), 3, 18)
+			m.ellipsoid(Models.at(band_y + Vector3(0, 0.0, -HEAD_R.z * 1.1)), Vector3(0.04, 0.04, 0.02), Models.GOLD, 3, 8)
+			var plumes := [Color("#1F8A5A"), Color("#3FA7B5"), Color("#2FB86A"), Color("#D2402F"), Color("#2FB86A"), Color("#3FA7B5"), Color("#1F8A5A")]
+			for k in plumes.size():
+				var a := lerpf(-1.0, 1.0, k / 6.0)
+				var ptilt := Basis(Vector3.FORWARD, -a * 0.6) * Basis(Vector3.RIGHT, 0.35)
+				m.capsule(Models.at(band_y + Vector3(a * 0.12, 0.02, 0.06), ptilt), 0.03, 0.012, 0.42 - absf(a) * 0.12, plumes[k], 6)
 
 func _joint(parent: Node3D, pos: Vector3) -> Node3D:
 	var j := Node3D.new()

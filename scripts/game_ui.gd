@@ -312,7 +312,7 @@ func _build_title() -> void:
 	var menu := [
 		[UiKit.GlyphIcon.Icon.DAILY, "Daily dusk", _open_daily],
 		[UiKit.GlyphIcon.Icon.OFFERINGS, "Offerings", _open_offerings],
-		[UiKit.GlyphIcon.Icon.MARKET, "Market", _open_market],
+		[UiKit.GlyphIcon.Icon.MARKET, "Shop", _open_market],
 		[UiKit.GlyphIcon.Icon.GLYPHS, "Glyphs", _open_glyphs],
 		[UiKit.GlyphIcon.Icon.RANKS, "Ranks", _open_ranks],
 		[UiKit.GlyphIcon.Icon.RECORDS, "Records", _open_records],
@@ -1206,34 +1206,95 @@ static func _markdown_to_bbcode(md: String) -> String:
 			out.append(b)
 	return "\n".join(out)
 
-# ---------------------------------------------------------------- market ---
+# ------------------------------------------------------------------ shop ---
 
-const MARKET_TABS := ["Charms", "Garbs", "Hues", "Treasury"]
+## A card on a shop shelf: the item's name, a few chips of its colours, and
+## its price — sun-drops, a store price, or "Yours" / "Wearing".
+class ItemCard:
+	extends Control
+	signal chosen
+	var title := ""
+	var chips: Array = [] ## colours to show
+	var price := "" ## "" when owned
+	var drops_price := false ## price is in sun-drops (draw the drop glyph)
+	var state := "" ## "Wearing", "Yours", ""
+	var selected := false:
+		set(v):
+			selected = v
+			queue_redraw()
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+		custom_minimum_size = Vector2(152, 112)
+	func _gui_input(event: InputEvent) -> void:
+		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
+			chosen.emit()
+			accept_event()
+	func _draw() -> void:
+		var r := Rect2(Vector2(3, 3), size - Vector2(6, 6))
+		var face := UiKit.glyph_block(r, hash(title) % 97, 0.6)
+		UiKit.draw_paper(self, face, Color(1, 1, 1) if state == "" else Color(1.0, 0.97, 0.88))
+		UiKit.draw_ink(self, face, UiKit.CINNABAR if selected else UiKit.INK, 6.0 if selected else 3.0)
+		var big := UiKit.display_font()
+		var small := UiKit.text_font(900)
+		draw_string(big, Vector2(12, 34), title, HORIZONTAL_ALIGNMENT_CENTER, size.x - 24, 19 if title.length() < 11 else (16 if title.length() < 13 else 14), UiKit.INK)
+		var n := chips.size()
+		for i in n:
+			var c := Vector2(size.x / 2.0 + (i - (n - 1) / 2.0) * 26.0, 58)
+			draw_circle(c, 10.0, chips[i], true, -1.0, true)
+			draw_arc(c, 10.0, 0.0, TAU, 20, UiKit.INK, 2.0, true)
+		if state != "":
+			draw_string(small, Vector2(10, size.y - 16), state, HORIZONTAL_ALIGNMENT_CENTER, size.x - 20, 20, UiKit.CINNABAR)
+		else:
+			var tw := small.get_string_size(price, HORIZONTAL_ALIGNMENT_LEFT, -1, 21).x
+			var x0 := (size.x - tw - (26.0 if drops_price else 0.0)) / 2.0
+			if drops_price:
+				UiKit.draw_kin(self, Vector2(x0 + 9, size.y - 23), 9.0, 1.0, 2.0)
+				x0 += 24.0
+			draw_string(small, Vector2(x0, size.y - 16), price, HORIZONTAL_ALIGNMENT_LEFT, -1, 21, UiKit.INK)
 
-## The market: charms (permanent upgrades), garbs and stone hues, paid for
-## in sun-drops. Tabs switch the register; the body rebuilds in place.
+const MARKET_TABS := Shop.SHELVES
+var _shop_sel := {} ## shelf → selected item id
+var _preview: SubViewport
+var _preview_root: Node3D
+var _preview_runner: RunnerModel
+var _shop_action: UiKit.GlyphButton
+var _shop_caption: Label
+
+## The shop: runners, outfits, hats and stone hues to try on and buy (for
+## sun-drops or real money), charms, boosts, and the treasury. Tabs switch
+## the shelf; the body rebuilds in place.
 func _open_market() -> void:
 	if _market:
 		_market.queue_free()
-	var m := _modal(1080)
+	var m := _modal(1100)
 	_market = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 71
-	_headline(page, "Market")
+	_headline(page, "Shop")
 	_market_body = Control.new()
 	_market_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_market_body.size = Vector2(600, 1080)
+	_market_body.size = Vector2(600, 1100)
 	page.add_child(_market_body)
 	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 28
-	close.position = Vector2(56, 970)
-	close.size = Vector2(488, 84)
-	close.pressed.connect(func(): _market.visible = false)
+	close.position = Vector2(56, 996)
+	close.size = Vector2(488, 80)
+	close.pressed.connect(func():
+		_market.visible = false
+		_free_preview())
 	page.add_child(close)
 	_fill_market()
 	page.open()
 
+func _free_preview() -> void:
+	if _preview and is_instance_valid(_preview):
+		_preview.get_parent().queue_free()
+	_preview = null
+	_preview_runner = null
+
 func _fill_market() -> void:
+	_free_preview()
 	for c in _market_body.get_children():
 		c.queue_free()
 	var body := _market_body
@@ -1246,32 +1307,249 @@ func _fill_market() -> void:
 	drop.position = Vector2(508, 58)
 	body.add_child(drop)
 	for i in MARKET_TABS.size():
+		var row := 0 if i < 4 else 1
+		var col := i if i < 4 else i - 4
 		var tab := UiKit.GlyphButton.new(MARKET_TABS[i],
 			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
-		tab.font_size = 21
-		tab.position = Vector2(56 + i * 124, 138)
-		tab.size = Vector2(116, 74)
+		tab.font_size = 19
+		tab.position = Vector2(56 + col * 124, 136 + row * 76)
+		tab.size = Vector2(116, 68)
 		tab.pressed.connect(func():
 			_market_tab = i
 			_fill_market())
 		body.add_child(tab)
-	match _market_tab:
-		0: _fill_charms(body)
-		1: _fill_looks(body, "garb", Market.GARBS)
-		2: _fill_looks(body, "hue", Market.HUES)
-		3: _fill_treasury(body)
+	var shelf: String = MARKET_TABS[_market_tab]
+	match shelf:
+		"Charms": _fill_charms(body)
+		"Boosts": _fill_boosts(body)
+		"Treasury": _fill_treasury(body)
+		_: _fill_shelf(body, shelf)
 
-## Real-money items through Google Play, priced by Play in local currency.
+## What the player has on, for a looks shelf.
+func _worn(shelf: String) -> String:
+	match shelf:
+		"Runners": return _save.character
+		"Outfits": return _save.garb
+		"Hats": return _save.hat
+		_: return _save.hue
+
+func _owns_item(item: Dictionary) -> bool:
+	return Shop.drops_price(item) == 0 or _save.owns(item.id)
+
+func _chips(shelf: String, item: Dictionary) -> Array:
+	match shelf:
+		"Runners":
+			var l: Dictionary = item.look
+			var o: Dictionary = item.outfit
+			return [l.get("skin", RunnerModel.DEFAULT_LOOK.skin), l.get("hair_col", RunnerModel.DEFAULT_LOOK.hair_col), o.get("shirt", RunnerModel.SHIRT)]
+		"Outfits":
+			var p: Dictionary = item.palette
+			if p.is_empty():
+				return []
+			return [p.get("shirt", RunnerModel.SHIRT), p.get("scarf", RunnerModel.SCARF), p.get("trousers", RunnerModel.TROUSERS)]
+		"Stones":
+			return [item.gem, item.light]
+		_:
+			return []
+
+## A looks shelf: a live 3D preview of the runner wearing what's selected,
+## the cards, and one button that buys or puts it on.
+func _fill_shelf(body: Control, shelf: String) -> void:
+	var items := Shop.shelf(shelf, _save)
+	if not _shop_sel.has(shelf):
+		_shop_sel[shelf] = _worn(shelf)
+	# The preview: its own little 3D world inside the page.
+	var box := SubViewportContainer.new()
+	box.stretch = true
+	box.position = Vector2(56, 296)
+	box.size = Vector2(488, 300)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(box)
+	_preview = SubViewport.new()
+	_preview.own_world_3d = true
+	_preview.transparent_bg = true
+	_preview.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	box.add_child(_preview)
+	_preview_root = Node3D.new()
+	_preview.add_child(_preview_root)
+	var cam := Camera3D.new()
+	cam.keep_aspect = Camera3D.KEEP_HEIGHT
+	cam.fov = 26.0
+	_preview.add_child(cam)
+	cam.position = Vector3(0, 0.95, -3.9)
+	cam.look_at(Vector3(0, 0.86, 0))
+	_shop_caption = UiKit.label("", UiKit.display_font(), 26, UiKit.INK)
+	_shop_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_shop_caption.position = Vector2(56, 598)
+	_shop_caption.size = Vector2(488, 40)
+	body.add_child(_shop_caption)
+	# The cards, in a scrolling grid.
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(48, 642)
+	scroll.size = Vector2(504, 236)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	scroll.add_child(grid)
+	var cards := {}
+	for item in items:
+		var card := ItemCard.new()
+		card.title = str(item.title).split(" the ")[0]
+		card.chips = _chips(shelf, item)
+		var worn: bool = item.id == _worn(shelf)
+		if worn:
+			card.state = "Wearing" if shelf != "Runners" else "Running"
+		elif _owns_item(item):
+			card.state = "Yours"
+		else:
+			var dp := Shop.drops_price(item)
+			if dp > 0:
+				card.price = UiKit.thousands(dp)
+				card.drops_price = true
+			else:
+				card.price = str(_store.prices.get(Shop.product_of(item), "In store"))
+		card.selected = item.id == _shop_sel[shelf]
+		var id: String = item.id
+		card.chosen.connect(func():
+			_shop_sel[shelf] = id
+			for k in cards:
+				cards[k].selected = k == id
+			_shop_choose(shelf))
+		grid.add_child(card)
+		cards[id] = card
+	_shop_action = UiKit.GlyphButton.new("", UiKit.GlyphButton.Kind.PRIMARY)
+	_shop_action.font_size = 28
+	_shop_action.position = Vector2(56, 892)
+	_shop_action.size = Vector2(488, 92)
+	body.add_child(_shop_action)
+	_shop_action.pressed.connect(func(): _shop_act(shelf))
+	_market_note = UiKit.label("", UiKit.text_font(900), 20, UiKit.CINNABAR)
+	_market_note.position = Vector2(58, 296)
+	body.add_child(_market_note)
+	_shop_choose(shelf)
+
+func _shop_item(shelf: String) -> Dictionary:
+	for item in Shop.shelf(shelf, _save):
+		if item.id == _shop_sel.get(shelf, ""):
+			return item
+	return {}
+
+## Shows the selected item on the preview runner and sets the button.
+func _shop_choose(shelf: String) -> void:
+	var item := _shop_item(shelf)
+	if item.is_empty():
+		return
+	var character := _save.character
+	var outfit := _save.garb
+	var hat := _save.hat
+	var hue := _save.hue
+	match shelf:
+		"Runners": character = item.id
+		"Outfits": outfit = item.id
+		"Hats": hat = item.id
+		"Stones": hue = item.id
+	if _preview_runner:
+		_preview_runner.queue_free()
+	_preview_runner = Shop.dress(character, outfit, hat, hue)
+	_preview_root.add_child(_preview_runner)
+	_preview_runner.rotation.y = PI + 0.5
+	_shop_caption.text = item.title
+	var label: Label = _shop_action.get_child(0)
+	var worn: bool = item.id == _worn(shelf)
+	var dp := Shop.drops_price(item)
+	if worn:
+		label.text = "Running as %s" % item.title.split(" ")[0] if shelf == "Runners" else ("In the stone" if shelf == "Stones" else "Wearing")
+	elif _owns_item(item):
+		label.text = ("Run as %s" % item.title.split(" ")[0]) if shelf == "Runners" else ("Use this hue" if shelf == "Stones" else "Wear")
+	elif dp > 0:
+		label.text = ("Buy for %s" % UiKit.thousands(dp)) if _save.bank >= dp else ("%s sun-drops" % UiKit.thousands(dp))
+	elif Shop.product_of(item) != "":
+		label.text = "Buy for %s" % _store.prices.get(Shop.product_of(item), "…") if _store.ready_to_sell() else "Treasury closed"
+	else:
+		label.text = "Patrons only"
+
+## The button: buy (sun-drops or the store), or put on what you own.
+func _shop_act(shelf: String) -> void:
+	var item := _shop_item(shelf)
+	if item.is_empty() or item.id == _worn(shelf):
+		return
+	if not _owns_item(item):
+		var dp := Shop.drops_price(item)
+		if dp > 0:
+			if not _save.buy_item(item.id, dp):
+				_market_note.text = "Not enough sun-drops yet."
+				return
+			_online.track("market_buy", {"id": item.id, "shelf": shelf, "drops": dp})
+		elif Shop.product_of(item) != "":
+			_market_note.text = "Opening the store…"
+			_store.buy(Shop.product_of(item))
+			return
+		else:
+			return
+	match shelf:
+		"Runners": _save.character = item.id
+		"Outfits": _save.garb = item.id
+		"Hats": _save.hat = item.id
+		"Stones": _save.hue = item.id
+	_save.save_to_disk()
+	_online.track("market_wear", {"id": item.id, "shelf": shelf})
+	_online.queue_sync()
+	looks_changed.emit()
+	_fill_market()
+	_refresh_title()
+
+func _process(delta: float) -> void:
+	if _preview_runner and is_instance_valid(_preview_runner):
+		_preview_runner.rotation.y += delta * 0.6
+		_preview_runner.animate(delta, 0.0)
+
+## Boosts: used up when they're needed, bought one at a time.
+func _fill_boosts(body: Control) -> void:
+	_market_note = UiKit.label("", UiKit.text_font(900), 22, UiKit.CINNABAR)
+	_market_note.position = Vector2(58, 300)
+	body.add_child(_market_note)
+	var y := 340.0
+	for b in Shop.BOOSTS:
+		var t := UiKit.label(b.title, UiKit.display_font(), 28, UiKit.INK)
+		t.position = Vector2(58, y)
+		body.add_child(t)
+		body.add_child(UiKit.wrapped(b.text, UiKit.text_font(800), 23, UiKit.INK, Vector2(58, y + 42), 310, 90))
+		var have := UiKit.label("You hold %d" % _save.boosts(b.id), UiKit.text_font(900), 22, UiKit.CINNABAR)
+		have.position = Vector2(58, y + 134)
+		body.add_child(have)
+		var cost: int = b.drops
+		var btn := UiKit.GlyphButton.new(UiKit.thousands(cost),
+			UiKit.GlyphButton.Kind.PRIMARY if _save.bank >= cost else UiKit.GlyphButton.Kind.SECONDARY)
+		btn.font_size = 26
+		btn.position = Vector2(384, y + 40)
+		btn.size = Vector2(160, 76)
+		var id: String = b.id
+		btn.pressed.connect(func():
+			if _save.buy_boost(id, cost):
+				_save.save_to_disk()
+				_online.track("boost_buy", {"id": id})
+				_online.queue_sync()
+				_fill_market()
+				_refresh_title()
+			else:
+				_market_note.text = "Not enough sun-drops yet.")
+		body.add_child(btn)
+		y += 210.0
+
+## Real-money items through the store, priced by it in local currency.
 func _fill_treasury(body: Control) -> void:
 	_market_note = UiKit.label("", UiKit.text_font(900), 22, UiKit.CINNABAR)
-	_market_note.position = Vector2(58, 228)
+	_market_note.position = Vector2(58, 300)
 	body.add_child(_market_note)
 	if not _store.ready_to_sell():
 		body.add_child(UiKit.wrapped("The treasury opens soon. Everything here will also be yours on any phone you sign in on.",
-			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 262), 486, 120))
+			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 340), 486, 120))
 		return
-	var y := 258.0
-	for p in Store.PRODUCTS:
+	var y := 336.0
+	for p in Shop.TREASURY:
 		var owned: bool = (p.id == "sunstone_remove_ads" and _save.has_entitlement("no_ads")) \
 			or (p.id == "sunstone_patron" and _save.has_entitlement("patron"))
 		var t := UiKit.label(p.title, UiKit.display_font(), 24, UiKit.INK)
@@ -1286,35 +1564,35 @@ func _fill_treasury(body: Control) -> void:
 		var id: String = p.id
 		if not owned:
 			btn.pressed.connect(func():
-				_market_note.text = "Opening Google Play…"
+				_market_note.text = "Opening the store…"
 				_store.buy(id))
 		body.add_child(btn)
-		y += 108.0
+		y += 104.0
 	var restore := UiKit.GlyphButton.new("Restore purchases", UiKit.GlyphButton.Kind.SECONDARY)
 	restore.font_size = 22
-	restore.position = Vector2(56, 806)
+	restore.position = Vector2(56, 872)
 	restore.size = Vector2(488, 62)
 	restore.pressed.connect(func():
-		_market_note.text = "Asking Google Play…"
+		_market_note.text = "Asking the store…"
 		await _store.restore()
 		_market_note.text = "Up to date.")
 	body.add_child(restore)
 
 func _fill_charms(body: Control) -> void:
-	var y := 238.0
+	var y := 312.0
 	for ch in Market.CHARMS:
 		var tier := _save.charm_tier(ch.id)
 		var t := UiKit.label(ch.title, UiKit.display_font(), 28, UiKit.INK)
 		t.position = Vector2(58, y)
 		body.add_child(t)
-		body.add_child(UiKit.wrapped(ch.text, UiKit.text_font(800), 24, UiKit.INK, Vector2(58, y + 42), 486, 60))
+		body.add_child(UiKit.wrapped(ch.text, UiKit.text_font(800), 23, UiKit.INK, Vector2(58, y + 40), 486, 60))
 		var marks := UiKit.TierMarks.new()
 		marks.tier = tier
-		marks.position = Vector2(58, y + 124)
+		marks.position = Vector2(58, y + 118)
 		marks.size = Vector2(120, 32)
 		body.add_child(marks)
 		var now := UiKit.label(ch.effects[tier - 1] if tier > 0 else "Not yet", UiKit.text_font(900), 22, UiKit.CINNABAR)
-		now.position = Vector2(184, y + 126)
+		now.position = Vector2(184, y + 120)
 		body.add_child(now)
 		var costs: Array = ch.costs
 		var btn: UiKit.GlyphButton
@@ -1333,69 +1611,10 @@ func _fill_charms(body: Control) -> void:
 					_fill_market()
 					_refresh_title())
 		btn.font_size = 26
-		btn.position = Vector2(384, y + 110)
+		btn.position = Vector2(384, y + 104)
 		btn.size = Vector2(160, 72)
 		body.add_child(btn)
-		y += 236.0
-
-func _fill_looks(body: Control, kind: String, list: Array) -> void:
-	var worn := _save.garb if kind == "garb" else _save.hue
-	var action := UiKit.GlyphButton.new("", UiKit.GlyphButton.Kind.PRIMARY)
-	var swatches: Array[UiKit.Swatch] = []
-	var choose := func(sw: UiKit.Swatch) -> void:
-		for o in swatches:
-			o.selected = o == sw
-		var id: String = sw.item.id
-		var cost: int = sw.item.cost
-		var label: Label = action.get_child(0)
-		if id == worn:
-			label.text = "Wearing" if kind == "garb" else "In the stone"
-		elif _save.owns(id):
-			label.text = "Wear" if kind == "garb" else "Use this hue"
-		elif cost < 0:
-			label.text = "Patrons only"
-		elif _save.bank >= cost:
-			label.text = "Buy for %s" % UiKit.thousands(cost)
-		else:
-			label.text = "%s sun-drops" % UiKit.thousands(cost)
-	for i in list.size():
-		var sw := UiKit.Swatch.new()
-		sw.kind = kind
-		sw.item = list[i]
-		sw.owned = _save.owns(list[i].id)
-		sw.worn = list[i].id == worn
-		var three := list.size() > 4
-		sw.position = Vector2(56 + (i % 3) * 168, 236 + (i / 3) * 236) if three else Vector2(76 + (i % 2) * 254, 238 + (i / 2) * 312)
-		sw.size = Vector2(150, 190) if three else Vector2(196, 240)
-		sw.chosen.connect(func(): choose.call(sw))
-		body.add_child(sw)
-		swatches.append(sw)
-	action.font_size = 28
-	action.position = Vector2(56, 862)
-	action.size = Vector2(488, 92)
-	body.add_child(action)
-	action.pressed.connect(func():
-		for sw in swatches:
-			if not sw.selected:
-				continue
-			var id: String = sw.item.id
-			if not _save.owns(id) and (sw.item.cost < 0 or not _save.buy_item(id, sw.item.cost)):
-				return
-			if kind == "garb":
-				_save.garb = id
-			else:
-				_save.hue = id
-			_save.save_to_disk()
-			_online.track("market_wear", {"id": id})
-			_online.queue_sync()
-			looks_changed.emit()
-			_fill_market()
-			_refresh_title()
-			return)
-	# Start on what you wear.
-	for sw in swatches:
-		if sw.worn:
-			choose.call(sw)
+		y += 212.0
 
 ## Apple's own look for its button (App Review checks it): black, rounded,
 ## the Apple logo and "Sign in with Apple" in the system font. The logo is

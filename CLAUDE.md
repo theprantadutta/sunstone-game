@@ -51,7 +51,12 @@ scripts/
   save_data.gd          versioned JSON save (+ .bak fallback)
   maya_calendar.gd      tzolk'in day names, UTC/local day keys, daily seeds
   glyphs.gd             the 20 glyphs (achievements), earned by nights/blazes
-  market.gd             charms, garbs, hues, Second wind cost
+  market.gd             charms, stone hues, Second wind cost
+  shop.gd               the shop catalog: outfits, hats, boosts, treasury,
+                        prices (sun-drops or a store product); Shop.dress()
+                        builds a runner from character + outfit + hat + hue
+  themes.gd             characters (look + outfit + price) and seasonal events
+                        that restyle Houses, scenery, motes, fire, sky, runner
   online.gd             Firebase Auth (REST, silent guest) → our JWT; run outbox;
                         leaderboards; account; cloud save merge; analytics
   sfx.gd                audio + vibration
@@ -97,6 +102,21 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   black in light, pale in the dark; distance fades to the background colour.
   Glow geometry (flames, eyes, drops, lava) always shows. Paper grain is a
   multiplied texture over the 3D view (under the UI).
+
+## Shop and themes
+
+- Everything visual is data. Characters: `Themes.CHARACTERS`. Outfits, hats,
+  boosts, treasury: `Shop`. Events: `Themes.EVENTS` (winter is the example),
+  switched by the server's `/config` `event` (`GAME_EVENT` in sunstone-api
+  .env; "none" = off), by the event's date window, or `files/dev_event`.
+- Looks bought for sun-drops go in `save.owned`; looks sold for real money are
+  non-consumable store products whose server grant is an entitlement equal to
+  the item's id (`save.owns()` checks both). Product ids must match
+  `sunstone-api` Purchases/Products.cs and Play Console. Sun-drop packs are the
+  consumables. Boosts (Ember shield, Jaguar ward) are bought/used totals in the
+  save, used automatically in a run.
+- The shop's 3D preview is a SubViewport with its own world; it is painted
+  because the title's daylight flood covers it — only open the shop on the title.
 
 ## Building and testing — never open windows on the user's PC
 

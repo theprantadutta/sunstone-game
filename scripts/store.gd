@@ -7,8 +7,8 @@ extends Node
 ## finished on the App Store. Unfinished purchases come back at launch, so a
 ## paid purchase is never lost.
 ##
-## Product ids must match sunstone-api Purchases/Products.cs, Play Console and
-## App Store Connect.
+## Product ids (the catalog in shop.gd) must match sunstone-api
+## Purchases/Products.cs, Play Console and App Store Connect.
 
 signal products_changed ## prices arrived (or the store closed)
 signal purchase_finished(product_id: String, message: String)
@@ -39,10 +39,7 @@ func setup(online: Online, save: SaveData) -> void:
 			products_changed.emit())
 		_apple.transaction.connect(_finish_apple)
 		_apple.purchase_failed.connect(func(id: String, message: String): purchase_finished.emit(id, message))
-		var ids := PackedStringArray()
-		for p in PRODUCTS:
-			ids.append(p.id)
-		if _apple.start(ids):
+		if _apple.start(Shop.product_ids()):
 			restore_owned()
 		return
 	if not Engine.has_singleton("GodotGooglePlayBilling"):
@@ -94,10 +91,7 @@ func restore_owned() -> void:
 			products_changed.emit()
 
 func _on_connected() -> void:
-	var ids := PackedStringArray()
-	for p in PRODUCTS:
-		ids.append(p.id)
-	_billing.query_product_details(ids, BillingClient.ProductType.INAPP)
+	_billing.query_product_details(Shop.product_ids(), BillingClient.ProductType.INAPP)
 	restore()
 
 func _on_product_details(response: Dictionary) -> void:

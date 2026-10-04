@@ -484,12 +484,7 @@ func _spawn_runner() -> void:
 		old_pose = runner.pose
 		runner.queue_free()
 	var hue := Market.find(Market.HUES, save.hue)
-	runner = RunnerModel.new()
-	var who := Themes.character(save.character)
-	runner.look = Themes.look_of(save.character)
-	runner.palette = who.outfit.duplicate()
-	runner.palette.merge(Market.find(Market.GARBS, save.garb).palette, true)
-	runner.palette["gem"] = hue.gem
+	runner = Shop.dress(save.character, save.garb, save.hat, save.hue)
 	runner.pose = old_pose
 	runner.scale = Vector3.ONE * 1.2
 	add_child(runner)
@@ -595,8 +590,14 @@ func _step_run(delta: float) -> void:
 		return
 	_step_bats(delta, h, at)
 	if light <= 0.0 and s > 0.0 and not at.dawn:
-		_die("The Sunstone went out")
-		return
+		if save.use_boost("shield"):
+			light = 0.4
+			ui.pop("Ember shield!")
+			ui.flash_flare()
+			sfx.play(Sfx.FLARE)
+		else:
+			_die("The Sunstone went out")
+			return
 	if save.tutorial_runs < 2 and light < 0.35:
 		_hint("drops", "Sun-drops feed the stone: steer through them")
 
@@ -751,6 +752,15 @@ func _step_jaguars(delta: float, h: Dictionary, at: Dictionary) -> void:
 			sfx.play(Sfx.ROAR)
 			_growl_cd = 6.0
 		if dist < CATCH_R and _shield_t <= 0.0:
+			if save.use_boost("ward"):
+				# The ward: this one is stone for good.
+				j.node.frozen = true
+				_jags.erase(j)
+				ui.pop("Jaguar ward!")
+				ui.flash_flare()
+				sfx.play(Sfx.FLARE)
+				_shield_t = 1.0
+				continue
 			_die("Caught by a jaguar in the dark", false, true)
 			return
 	# Stay dim too long and one finds your trail from behind.
