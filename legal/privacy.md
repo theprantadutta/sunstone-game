@@ -2,11 +2,11 @@
 
 Sunstone: Dusk Run ("the game") is made by Pranta Dutta. This policy says what the game collects, why, and how to have it deleted.
 
-Last updated: 3 October 2026.
+Last updated: 4 October 2026.
 
 ## What the game collects
 
-**Your account.** When you first open the game it creates an anonymous account for you with Google Firebase Authentication. It has a random ID and no personal details. If you choose "Sign in with Google" (Android) or "Sign in with Apple" (iPhone and iPad), that account is linked to it so your progress can follow you to another device. With Google we receive your email address. With Apple we receive an ID and, if you choose to share it, your email address or an Apple private relay address.
+**Your account.** When you first open the game it creates an anonymous account for you with Google Firebase Authentication. It has a random ID and no personal details. If you choose "Sign in with Google" (Android), "Sign in with Apple" (iPhone and iPad) or sign in with an email and password, that is linked to it so your progress can follow you to another device. With Google, or with an email and password, we keep your email address. With Apple we receive an ID and, if you choose to share it, your email address or an Apple private relay address. Passwords are held by Google Firebase Authentication; we never see or store them.
 
 **Your runner name.** The game gives you a random name, such as "Swift Jaguar 42", which you can change. It is shown to other players on the ranks.
 

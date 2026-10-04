@@ -15,6 +15,7 @@ extends Node
 signal signed_in(player: Dictionary)
 signal save_merged ## the local save took in progress from the cloud
 signal config_loaded(config: Dictionary)
+signal account_changed ## this phone now uses another account, or a new way to sign in
 
 ## Debug builds talk to the API on the dev PC over the LAN; release builds to
 ## the hosted server. `files/api_base` on a device overrides both.
@@ -37,7 +38,7 @@ var reachable := false ## the last call to our server got an answer
 var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, storeOpen…
 
 var _api_key := ""
-var _state := {} ## refresh_token, jwt, jwt_exp, player, save_revision
+var _state := {} ## refresh_token, jwt, jwt_exp, player, save_revision, links
 var _outbox: Array = []
 var _events: Array = []
 var _busy_session := false
@@ -51,6 +52,11 @@ func _ready() -> void:
 		base_url = FileAccess.get_file_as_string("user://api_base").strip_edges()
 	_api_key = _read_api_key()
 	_state = _read_json(STATE_PATH, {})
+	# Older builds kept only the Google email (or an Apple label).
+	if not _state.has("links") and (_state.has("google_email") or _state.has("apple_label")):
+		_state.links = {"google.com": _state.google_email} if _state.has("google_email") else {"apple.com": _state.apple_label}
+		_state.erase("google_email")
+		_state.erase("apple_label")
 	var ob: Variant = _read_json(OUTBOX_PATH, [])
 	_outbox = ob if ob is Array else []
 	player = _state.get("player", {})
@@ -70,6 +76,7 @@ func start(save: SaveData) -> void:
 			config_loaded.emit(config)
 		await sync_save()
 		await _flush_outbox()
+		await _refresh_links() # e.g. a sign-in method added from another phone
 
 # ----------------------------------------------------------------- session
 
@@ -216,29 +223,50 @@ func entitlements() -> Variant:
 	var r := await api(HTTPClient.METHOD_GET, "/purchases/entitlements")
 	return r.body.get("entitlements", []) if r.code == 200 and r.body is Dictionary else null
 
-# ----------------------------------------------------------- account link
+# --------------------------------------------------------------- accounts
+#
+# Every player starts as a guest (an anonymous Firebase account). To keep
+# progress on any phone they add a way to sign in: Google (Android), Apple
+# (iOS) or an email and password (everywhere). Adding one to a guest keeps
+# the same account. Signing in to an account that already exists switches
+# this phone to it, and the cloud save merges both, so nothing is lost.
+# Signing out saves first, then the phone starts fresh as a new guest.
 
-## Who players keep their progress with here: Apple on iOS (App Store rule
-## 4.8 — and the natural choice there), Google everywhere else.
+const IDENTITY := "https://identitytoolkit.googleapis.com/v1/accounts:"
+const PROVIDERS := {"google.com": "Google", "apple.com": "Apple", "password": "email"}
+
+## Who players keep their progress with here, besides email: Apple on iOS
+## (App Store rule 4.8, and the natural choice there), Google elsewhere.
 func provider_name() -> String:
 	return "Apple" if OS.get_name() == "iOS" else "Google"
 
-## What this phone's progress is kept with ("" = only this phone): the
-## Google email, or the Apple ID's email (or "your Apple ID" if hidden).
-func linked_as() -> String:
-	return str(_state.get("apple_label", "")) if OS.get_name() == "iOS" else google_email()
+## The ways this account can sign in: Firebase provider id ("google.com",
+## "apple.com", "password") → its email. Empty for a guest.
+func links() -> Dictionary:
+	var l: Variant = _state.get("links", {})
+	return l if l is Dictionary else {}
 
-## Signs in with this platform's provider and links it to this player.
-## Returns "" on success (or a cancel), otherwise a sentence for the player.
+func is_guest() -> bool:
+	return links().is_empty()
+
+## "Kept with Google: …" for the Account page; "" for a guest.
+func linked_summary() -> String:
+	var l := links()
+	if l.has("google.com"):
+		return "Kept with Google: %s" % l["google.com"]
+	if l.has("apple.com"):
+		return "Kept with Apple: %s" % l["apple.com"]
+	if l.has("password"):
+		return "Kept with your email: %s" % l["password"]
+	return ""
+
+## Signs in with this platform's provider (Google, or Apple on iOS).
+## "" on success or a cancel, otherwise a sentence for the player.
 func link_account() -> String:
 	return await link_apple() if OS.get_name() == "iOS" else await link_google()
 
-## The Google account this phone's progress is kept with, or "".
-func google_email() -> String:
-	return str(_state.get("google_email", ""))
-
 ## Sign in with Apple (GodotApplePlugins' AuthenticationServices addon, iOS
-## only — untyped so this script still parses where it doesn't exist), then
+## only; untyped so this script still parses where it doesn't exist), then
 ## link that Apple ID like a Google account. The plugin sets no nonce, so the
 ## token carries none and Firebase gets none.
 func link_apple() -> String:
@@ -261,18 +289,9 @@ func link_apple() -> String:
 		# Apple reports a dismissed sheet as error 1001 ("canceled").
 		var reason := str(got[1])
 		return "" if "1001" in reason or "cancel" in reason.to_lower() else "Sign in with Apple didn't work: %s" % reason
-	var err := await _link_idp("id_token=%s&providerId=apple.com" % got[1], "Apple")
-	if err == "":
-		# Apple shares the email only the first time; keep what we were told.
-		var label := str(got[2]) if str(got[2]) != "" else str(_state.get("apple_label", ""))
-		_state.apple_label = label if label != "" else "your Apple ID"
-		_write_state()
-	return err
+	return await _link_idp("id_token=%s&providerId=apple.com" % got[1], "Apple")
 
-## Signs in with Google and links it to this player, so progress survives a
-## new phone or a reinstall. If that Google account already has a Sunstone
-## account, this phone switches to it and the cloud save merges both.
-## Returns "" on success, otherwise a sentence for the player.
+## Signs in with Google (our Credential Manager plugin, Android).
 func link_google() -> String:
 	if not Engine.has_singleton("SunstoneGoogleSignIn"):
 		return "Google sign-in isn't available on this device."
@@ -287,15 +306,10 @@ func link_google() -> String:
 	plugin.disconnect("sign_in_failed", on_fail)
 	if not got[0]:
 		return "" if got[1] == "cancelled" else "Google sign-in didn't work: %s" % got[1]
-	var err := await _link_idp("id_token=%s&providerId=google.com" % got[1], "Google")
-	if err == "":
-		_state.google_email = got[2]
-		_write_state()
-		print("[online] Google account %s" % got[2])
-	return err
+	return await _link_idp("id_token=%s&providerId=google.com" % got[1], "Google")
 
-## Links (or switches to) a Firebase account from another provider's token:
-## postBody is the signInWithIdp body for it. Returns "" or a sentence.
+## Links a Google / Apple token to this guest, or switches to the account
+## that already owns it. postBody is the signInWithIdp body for it.
 func _link_idp(post_body: String, provider: String) -> String:
 	var body := {
 		"postBody": post_body,
@@ -304,29 +318,149 @@ func _link_idp(post_body: String, provider: String) -> String:
 	var current := await _firebase_id_token()
 	if current != "":
 		body["idToken"] = current # link to this guest instead of making a new account
-	var r := await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + _api_key,
-		body, _firebase_headers())
+	var r := await _http(HTTPClient.METHOD_POST, IDENTITY + "signInWithIdp?key=" + _api_key, body, _firebase_headers())
 	var switched := false
 	if r.code != 200:
-		var message := str(r.body.get("error", {}).get("message", "")) if r.body is Dictionary else ""
+		var message := _auth_message(r)
 		if message.begins_with("FEDERATED_USER_ID_ALREADY_LINKED") or message.begins_with("EMAIL_EXISTS"):
-			# This account already has a Sunstone account: sign in to it.
+			# That Google / Apple ID already has a Sunstone account: switch to it.
 			body.erase("idToken")
-			r = await _http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + _api_key,
-				body, _firebase_headers())
+			r = await _http(HTTPClient.METHOD_POST, IDENTITY + "signInWithIdp?key=" + _api_key, body, _firebase_headers())
 			switched = true
 		if r.code != 200:
 			if r.code == 0:
 				return "Couldn't reach %s right now. Try again in a moment." % provider
-			return "%s sign-in was refused (%s)." % [provider, message]
-	_state.refresh_token = r.body.get("refreshToken", _state.get("refresh_token", ""))
-	_state.jwt = "" # re-exchange: the server records the new provider
+			return "%s sign-in was refused (%s)." % [provider, _auth_message(r)]
+	print("[online] %s %s" % ["switched to the account of" if switched else "linked", provider])
+	return await _adopt_session(str(r.body.get("refreshToken", "")), provider)
+
+## Signs in to an existing email account. This phone switches to it; its
+## progress so far merges into that account's save.
+func email_sign_in(email: String, password: String) -> String:
+	var bad := _check_credentials(email, password)
+	if bad != "":
+		return bad
+	var r := await _http(HTTPClient.METHOD_POST, IDENTITY + "signInWithPassword?key=" + _api_key,
+		{"email": email.strip_edges(), "password": password, "returnSecureToken": true}, _firebase_headers())
+	if r.code != 200:
+		return _auth_error(r)
+	print("[online] signed in with email")
+	return await _adopt_session(str(r.body.get("refreshToken", "")), "your email")
+
+## Gives this guest an email and password: the same account, the same
+## progress, now reachable from any phone.
+func email_create(email: String, password: String) -> String:
+	var bad := _check_credentials(email, password)
+	if bad != "":
+		return bad
+	var token := await _firebase_id_token()
+	if token == "":
+		return "Can't reach the temple right now. Try again in a moment."
+	# signUp with the guest's idToken links the email to it (the same uid).
+	# accounts:update can't: with email enumeration protection on, Firebase
+	# refuses to set an email that way ("verify the new email first").
+	var r := await _http(HTTPClient.METHOD_POST, IDENTITY + "signUp?key=" + _api_key,
+		{"idToken": token, "email": email.strip_edges(), "password": password, "returnSecureToken": true}, _firebase_headers())
+	if r.code != 200:
+		return _auth_error(r)
+	print("[online] added an email to this account")
+	return await _adopt_session(str(r.body.get("refreshToken", _state.get("refresh_token", ""))), "your email")
+
+## Mails a password-reset link. Answers the same whether or not the email
+## has an account, so nobody can probe for accounts.
+func email_reset(email: String) -> String:
+	if not _looks_like_email(email):
+		return "Type the email you signed up with first."
+	var r := await _http(HTTPClient.METHOD_POST, IDENTITY + "sendOobCode?key=" + _api_key,
+		{"requestType": "PASSWORD_RESET", "email": email.strip_edges()}, _firebase_headers())
+	if r.code == 200 or _auth_message(r).begins_with("EMAIL_NOT_FOUND"):
+		return ""
+	return _auth_error(r)
+
+## Signs this phone out. Its progress goes to the cloud first; if it can't,
+## nothing happens (so nothing is lost). The caller then starts the phone
+## fresh: a new guest, a new save.
+func sign_out() -> String:
+	if is_guest():
+		return "This phone isn't signed in to an account."
+	await _flush_outbox()
+	if not _outbox.is_empty() or not await sync_save():
+		return "Can't reach the temple, so your latest progress isn't saved yet. Try again when you're online."
+	print("[online] signed out")
+	_state = {}
+	player = {}
+	_write_state()
+	return ""
+
+## Takes the session Firebase just handed us (another account, or this one
+## with a new sign-in method): our JWT again, which methods it has, then the
+## save merged both ways.
+func _adopt_session(refresh_token: String, what: String) -> String:
+	if refresh_token != "":
+		_state.refresh_token = refresh_token
+	_state.jwt = "" # re-exchange: the server records the account's new state
 	_write_state()
 	if not await ensure_session():
-		return "Linked with %s, but the temple can't be reached right now." % provider
-	print("[online] %s %s" % ["switched to" if switched else "linked", provider])
+		return "Signed in with %s, but the temple can't be reached right now." % what
+	await _refresh_links()
 	await sync_save()
+	account_changed.emit()
 	return ""
+
+## Asks Firebase which sign-in methods this account has (accounts:lookup).
+func _refresh_links() -> void:
+	var token := await _firebase_id_token()
+	if token == "":
+		return
+	var r := await _http(HTTPClient.METHOD_POST, IDENTITY + "lookup?key=" + _api_key, {"idToken": token}, _firebase_headers())
+	if r.code != 200 or not r.body is Dictionary or r.body.get("users", []).is_empty():
+		return
+	var found := {}
+	for p in r.body.users[0].get("providerUserInfo", []):
+		var id := str(p.get("providerId", ""))
+		if PROVIDERS.has(id):
+			var email := str(p.get("email", ""))
+			found[id] = email if email != "" else ("your Apple ID" if id == "apple.com" else "your account")
+	_state.links = found
+	_write_state()
+
+func _check_credentials(email: String, password: String) -> String:
+	if not _looks_like_email(email):
+		return "That doesn't look like an email address."
+	if password.length() < 6:
+		return "Passwords are at least 6 characters."
+	return ""
+
+static func _looks_like_email(email: String) -> bool:
+	var e := email.strip_edges()
+	var at := e.find("@")
+	return at > 0 and e.find(".", at) > at + 1 and not e.ends_with(".") and not " " in e
+
+static func _auth_message(r: Dictionary) -> String:
+	return str(r.body.get("error", {}).get("message", "")) if r.body is Dictionary else ""
+
+## Firebase's error codes, as sentences for a player.
+static func _auth_error(r: Dictionary) -> String:
+	if r.code == 0:
+		return "Can't reach the temple right now. Try again in a moment."
+	var m := _auth_message(r)
+	if m.begins_with("INVALID_LOGIN_CREDENTIALS") or m.begins_with("INVALID_PASSWORD") or m.begins_with("EMAIL_NOT_FOUND"):
+		return "That email and password don't match."
+	if m.begins_with("EMAIL_EXISTS"):
+		return "That email already has an account. Sign in instead."
+	if m.begins_with("WEAK_PASSWORD"):
+		return "Passwords are at least 6 characters."
+	if m.begins_with("INVALID_EMAIL"):
+		return "That doesn't look like an email address."
+	if m.begins_with("TOO_MANY_ATTEMPTS"):
+		return "Too many tries. Wait a little, then try again."
+	if m.begins_with("USER_DISABLED"):
+		return "This account has been switched off."
+	if m.begins_with("OPERATION_NOT_ALLOWED"):
+		return "Email sign-in isn't available right now."
+	if m.begins_with("CREDENTIAL_TOO_OLD"):
+		return "Please sign in again, then try that once more."
+	return "Sign-in was refused (%s)." % m
 
 # -------------------------------------------------------------- cloud save
 
@@ -340,10 +474,16 @@ func queue_sync() -> void:
 	await sync_save()
 
 ## Merges the cloud copy into the local save and writes the result back.
-func sync_save() -> void:
-	if _save == null or _sync_running:
-		return
+## True when the cloud holds this phone's progress afterwards. A call made
+## while one is running waits for it, then syncs again (it may have missed
+## something newer).
+func sync_save() -> bool:
+	if _save == null:
+		return false
+	while _sync_running:
+		await get_tree().process_frame
 	_sync_running = true
+	var ok := false
 	for attempt in 3:
 		var got := await api(HTTPClient.METHOD_GET, "/save")
 		if got.code == 0:
@@ -359,10 +499,12 @@ func sync_save() -> void:
 			print("[online] cloud save at revision %s" % put.body.get("revision", "?"))
 			_state.save_revision = int(put.body.get("revision", rev + 1))
 			_write_state()
+			ok = true
 			break
 		if put.code != 409:
 			break
 	_sync_running = false
+	return ok
 
 # --------------------------------------------------------------- analytics
 

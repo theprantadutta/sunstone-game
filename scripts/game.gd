@@ -153,7 +153,9 @@ func _ready() -> void:
 	ui.run_pressed.connect(_start_run)
 	ui.daily_pressed.connect(_start_daily)
 	ui.looks_changed.connect(_spawn_runner)
-	ui.account_deleted.connect(func():
+	# Signed out or deleted: a fresh save, then a new guest.
+	ui.account_reset.connect(func():
+		ads.no_ads = save.has_entitlement("no_ads")
 		_spawn_runner()
 		if state == State.TITLE:
 			ui.show_title(save)
@@ -177,6 +179,13 @@ func _ready() -> void:
 	store.setup(online, save)
 	store.products_changed.connect(func():
 		ads.no_ads = save.has_entitlement("no_ads"))
+	# Signed in to another account (or linked one): what it owns, its looks.
+	online.account_changed.connect(func():
+		store.restore_owned()
+		ads.no_ads = save.has_entitlement("no_ads")
+		if state == State.TITLE:
+			_spawn_runner()
+			ui.show_title(save))
 	# Progress from another phone arrived: show it.
 	online.save_merged.connect(func():
 		if state == State.TITLE:

@@ -120,7 +120,8 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
 ## Online (Firebase + sunstone-api)
 
 No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
-- Firebase project **`sunstone-95fce`** (Auth: anonymous + Google). The game talks
+- Firebase project **`sunstone-95fce`** (Auth: anonymous, Google, email/password;
+  Apple for iOS once the Mac work is done). The game talks
   to Firebase Auth over its REST API; the web API key comes from the Android app's
   `google-services.json` in this repo's root — **gitignored, never commit it**.
 - Google sign-in web client id (public):
@@ -129,7 +130,23 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   `DB:66:45:43:4B:46:84:35:E8:50:2E:B7:81:C0:15:1D:DE:98:A6:3C`
 - The server exchanges the Firebase ID token for its own JWT (`POST /api/v1/auth/firebase`).
 - Dev API base URL (LAN, the dev PC): `http://192.168.0.141:8395`. Hosted later at
-  `https://sunstone.pranta.dev`. Anonymous + Google sign-in are enabled and verified.
+  `https://sunstone.pranta.dev`.
+- **Accounts** (`online.gd`, Account page in `game_ui.gd`): everyone starts as a
+  guest. Settings → Account offers Google (Apple on iOS) and **Use email**:
+  - sign in to an email account (the phone switches to it, and the save merges);
+  - create one (`accounts:signUp` *with the guest's idToken*, which links the
+    email to the same uid; `accounts:update` is refused under email
+    enumeration protection);
+  - a reset link (`sendOobCode`).
+
+  **Sign out** syncs first, then the phone starts fresh as a new guest.
+  `online.links()` (from `accounts:lookup`) says which methods the account has.
+- **Test accounts** for store review: FREE `test.user@sunstone.pranta.dev` and
+  PREMIUM `test.user.premium@sunstone.pranta.dev` (Patron). The password is in
+  the private `../sunstone-api/CLAUDE.md`, never in this public repo. They're made
+  by `../sunstone-api/manage-test-users.cs` (`create` resets them).
+- Testing on the tablet: back up `files/` (save.json, online.json, outbox.json)
+  first and restore it after, or the demo accounts pick up local runs.
 
 ## Android plugins
 

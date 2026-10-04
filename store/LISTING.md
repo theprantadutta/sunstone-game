@@ -63,7 +63,7 @@ Settings → Account → Delete account):
 
 | Data type | Collected | Shared | Why |
 |---|---|---|---|
-| Email address | Yes, optional (only if the player links Google) | No | Account management |
+| Email address | Yes, optional (only if the player signs in with Google or an email) | No | Account management |
 | User IDs (Firebase uid, our player id) | Yes | No | Account management, app functionality |
 | Name (runner display name) | Yes, optional to change | No (shown on ranks in-app) | App functionality |
 | Purchase history | Yes | No | App functionality (granting purchases) |
@@ -77,6 +77,32 @@ Settings → Account → Delete account):
 - Can users request deletion? **Yes** — in the app and by email.
 - Account deletion URL (Play requires a web link too): *(host a page explaining:
   open Settings → Account → Delete account, or email prantadutta1997@gmail.com)*
+
+## App access (Play Console → App content → App access)
+
+Everything can be played without an account, but give reviewers both test
+accounts so they can check sign-in and the paid perks. Choose "All or some
+functionality is restricted" and add two sets of instructions:
+
+The password is in the private `sunstone-api/CLAUDE.md` (this repo is public).
+
+```
+Free account
+Username: test.user@sunstone.pranta.dev
+Password: <from sunstone-api/CLAUDE.md>
+Settings (top right) → Account → Use email → enter the email and password → Sign in.
+```
+
+```
+Premium account (owns "Patron of the temple": no ads between runs, the Obsidian hue, 2,500 sun-drops)
+Username: test.user.premium@sunstone.pranta.dev
+Password: <from sunstone-api/CLAUDE.md>
+Settings (top right) → Account → Use email → enter the email and password → Sign in.
+To switch accounts: Settings → Account → Sign out, then sign in with the other one.
+```
+
+Re-create or reset them any time with `dotnet run manage-test-users.cs` in
+`sunstone-api` (they need the hosted API to work in release builds).
 
 ## Ads
 

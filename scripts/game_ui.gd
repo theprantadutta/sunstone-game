@@ -15,7 +15,7 @@ signal home_pressed
 signal again_pressed
 signal settings_changed
 signal back_requested
-signal account_deleted
+signal account_reset ## signed out or deleted: the phone starts fresh
 signal looks_changed
 signal second_wind_accepted
 signal second_wind_declined
@@ -29,6 +29,7 @@ var _ranks: Control
 var _ranks_board := "dusk"
 var _ranks_body: Control
 var _account: Control
+var _email: Control
 var _legal: Control
 var _legal_doc := "privacy"
 var _top := 28.0 ## below the status bar / camera cutout
@@ -114,7 +115,7 @@ func _back() -> void:
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_legal, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
+	for page in [_legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -799,11 +800,13 @@ func _rank_row(body: Control, row: Dictionary, y: float) -> void:
 
 # --------------------------------------------------------------- account ---
 
-## Your runner name (rename it) and the way to delete your account.
+## Your runner name, how your progress is kept (guest, Google / Apple, or
+## email, and signing out), and deleting the account.
 func _open_account() -> void:
 	if _account:
 		_account.queue_free()
-	var m := _modal(890)
+	var guest := _online.is_guest()
+	var m := _modal(1004 if guest else 904)
 	_account = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 103
@@ -827,14 +830,14 @@ func _open_account() -> void:
 		status.text = err if err != "" else "Saved.")
 	page.add_child(save_name)
 	_rule(page, 426, 107)
-	# Keeping progress with Google (Apple on iOS): survives a new phone or a reinstall.
-	var provider := _online.provider_name()
-	var alone := "Your progress lives on this phone. Sign in with %s to keep it on any phone." % provider
-	var linked := _online.linked_as()
-	var kept := UiKit.wrapped("Kept with %s: %s" % [provider, linked] if linked != "" else alone,
+	# How progress is kept: a guest's lives on this phone only.
+	var kept := UiKit.wrapped(_online.linked_summary() if not guest
+			else "Your progress lives on this phone. Sign in to keep it on any phone.",
 		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 440), 486, 64)
 	page.add_child(kept)
-	if linked == "":
+	var y := 528.0
+	if guest:
+		var provider := _online.provider_name()
 		var link: Control # a GlyphButton, or Apple's own button on iOS; both emit `pressed`
 		if provider == "Apple":
 			link = _apple_button()
@@ -842,30 +845,54 @@ func _open_account() -> void:
 			var google := UiKit.GlyphButton.new("Sign in with Google", UiKit.GlyphButton.Kind.PRIMARY)
 			google.font_size = 26
 			link = google
-		link.position = Vector2(56, 510)
+		link.position = Vector2(56, y)
 		link.size = Vector2(488, 88)
 		link.connect("pressed", func():
 			kept.text = "Asking %s…" % provider
 			var err := await _online.link_account()
-			if err == "" and _online.linked_as() != "":
-				kept.text = "Kept with %s: %s" % [provider, _online.linked_as()]
-				link.visible = false
-				field.text = str(_online.player.get("name", ""))
-				_refresh_title()
+			if err == "" and not _online.is_guest():
+				_after_account_change()
 			else:
-				kept.text = err if err != "" else alone)
+				kept.text = err if err != "" else "Your progress lives on this phone. Sign in to keep it on any phone.")
 		page.add_child(link)
-	_rule(page, 616, 109)
+		var email := UiKit.GlyphButton.new("Use email", UiKit.GlyphButton.Kind.SECONDARY)
+		email.font_size = 26
+		email.position = Vector2(56, y + 100)
+		email.size = Vector2(488, 80)
+		email.pressed.connect(_open_email)
+		page.add_child(email)
+		y += 206
+	else:
+		var sign_out := UiKit.GlyphButton.new("Sign out", UiKit.GlyphButton.Kind.SECONDARY)
+		sign_out.font_size = 26
+		sign_out.position = Vector2(56, y)
+		sign_out.size = Vector2(488, 80)
+		sign_out.pressed.connect(func():
+			kept.text = "Saving your progress…"
+			var err := await _online.sign_out()
+			if err != "":
+				kept.text = err
+				return
+			_save.reset_all()
+			_save.save_to_disk()
+			kept.text = "Signed out. Sign in again any time to get your progress back."
+			account_reset.emit()
+			await get_tree().create_timer(1.6).timeout
+			if is_instance_valid(page):
+				_account.visible = false)
+		page.add_child(sign_out)
+		y += 106
+	_rule(page, y, 109)
 	page.add_child(UiKit.wrapped("Deleting your account removes your runs, ranks and cloud save from the server and starts this phone fresh.",
-		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 632), 486, 90))
+		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, y + 16), 486, 90))
 	var delete := UiKit.GlyphButton.new("Delete account", UiKit.GlyphButton.Kind.SECONDARY)
 	delete.font_size = 23
-	delete.position = Vector2(56, 750)
+	delete.position = Vector2(56, y + 134)
 	delete.size = Vector2(300, 84)
 	page.add_child(delete)
 	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 26
-	close.position = Vector2(370, 750)
+	close.position = Vector2(370, y + 134)
 	close.size = Vector2(174, 84)
 	close.pressed.connect(func(): _account.visible = false)
 	page.add_child(close)
@@ -882,13 +909,116 @@ func _open_account() -> void:
 			_save.reset_all()
 			_save.save_to_disk()
 			status.text = "Deleted. This phone starts fresh."
-			account_deleted.emit()
+			account_reset.emit()
 			await get_tree().create_timer(1.4).timeout
 			_account.visible = false
 			if _settings:
 				_settings.visible = false
 		else:
 			status.text = "Can't reach the temple right now. Try again later.")
+	page.open()
+
+## Signed in, linked or switched: the Account page shows the new state and
+## the title the account's name and progress.
+func _after_account_change() -> void:
+	_refresh_title()
+	if _settings and is_instance_valid(_settings) and _settings.visible:
+		_open_settings() # it shows the runner's name; built first so Account stays on top
+	_open_account()
+
+# ----------------------------------------------------------------- email ---
+
+## Email and password: sign in to an account, create one (this guest's
+## progress moves into it), or get a reset link.
+func _open_email() -> void:
+	if _email:
+		_email.queue_free()
+	var m := _modal(866)
+	_email = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 131
+	_headline(page, "Use email")
+	page.add_child(UiKit.wrapped("Sign in to your account, or create one to keep this phone's progress.",
+		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 140), 486, 64))
+	var email_label := UiKit.label("Email", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	email_label.position = Vector2(58, 214)
+	page.add_child(email_label)
+	var email := UiKit.text_field("")
+	email.max_length = 254
+	email.placeholder_text = "you@example.com"
+	email.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
+	email.add_theme_font_size_override("font_size", 28)
+	email.add_theme_color_override("font_placeholder_color", Color(UiKit.INK, 0.35))
+	email.position = Vector2(56, 250)
+	email.size = Vector2(488, 72)
+	page.add_child(email)
+	var password_label := UiKit.label("Password", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	password_label.position = Vector2(58, 336)
+	page.add_child(password_label)
+	var password := UiKit.text_field("")
+	password.max_length = 128
+	password.secret = true
+	password.placeholder_text = "at least 6 characters"
+	password.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
+	password.add_theme_font_size_override("font_size", 28)
+	password.add_theme_color_override("font_placeholder_color", Color(UiKit.INK, 0.35))
+	password.position = Vector2(56, 372)
+	password.size = Vector2(488, 72)
+	page.add_child(password)
+	var note := UiKit.wrapped("", UiKit.text_font(800), 23, UiKit.CINNABAR, Vector2(58, 456), 486, 60)
+	page.add_child(note)
+	var sign_in := UiKit.GlyphButton.new("Sign in", UiKit.GlyphButton.Kind.PRIMARY)
+	sign_in.font_size = 28
+	sign_in.position = Vector2(56, 540)
+	sign_in.size = Vector2(488, 92)
+	page.add_child(sign_in)
+	var create := UiKit.GlyphButton.new("Create account", UiKit.GlyphButton.Kind.SECONDARY)
+	create.font_size = 26
+	create.position = Vector2(56, 644)
+	create.size = Vector2(488, 80)
+	page.add_child(create)
+	var forgot := UiKit.GlyphButton.new("Forgot password?", UiKit.GlyphButton.Kind.SECONDARY)
+	forgot.font_size = 21
+	forgot.position = Vector2(56, 738)
+	forgot.size = Vector2(300, 74)
+	page.add_child(forgot)
+	var back := UiKit.GlyphButton.new("Back", UiKit.GlyphButton.Kind.SECONDARY)
+	back.font_size = 24
+	back.position = Vector2(370, 738)
+	back.size = Vector2(174, 74)
+	back.pressed.connect(func(): _email.visible = false)
+	page.add_child(back)
+	var busy := [false]
+	# One request at a time; the keyboard goes away so the answer shows.
+	var run := func(waiting: String, work: Callable) -> void:
+		if busy[0]:
+			return
+		busy[0] = true
+		email.release_focus()
+		password.release_focus()
+		DisplayServer.virtual_keyboard_hide()
+		note.text = waiting
+		var err: String = await work.call()
+		busy[0] = false
+		if err != "":
+			note.text = err
+			return
+		_email.visible = false
+		_after_account_change()
+	sign_in.pressed.connect(func(): run.call("Signing in…",
+		func() -> String: return await _online.email_sign_in(email.text, password.text)))
+	create.pressed.connect(func(): run.call("Creating your account…",
+		func() -> String: return await _online.email_create(email.text, password.text)))
+	forgot.pressed.connect(func():
+		if busy[0]:
+			return
+		busy[0] = true
+		note.text = "Sending…"
+		var err := await _online.email_reset(email.text)
+		busy[0] = false
+		note.text = err if err != "" else "If that email has an account, a reset link is on its way.")
+	email.text_submitted.connect(func(_t: String): password.grab_focus())
+	password.text_submitted.connect(func(_t: String): sign_in.pressed.emit())
 	page.open()
 
 # ----------------------------------------------------------------- legal ---
