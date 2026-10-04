@@ -13,3 +13,6 @@ android-plugins/*/.gradle/
 android-plugins/*/local.properties
 ads_config.json
 override.cfg
+
+# raw device screenshots for tools/make_store_art.py
+store/raw/

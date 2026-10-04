@@ -1,7 +1,13 @@
 # Play Store listing — Sunstone: Dusk Run
 
 Everything to paste into Play Console. Art is in this folder:
-`feature-graphic.png` (1024×500) and `screenshots/01–06.png` (1080×2160, phone).
+- `feature-graphic.png` (1024×500);
+- `screenshots/phone/01–08.png` (1080×2160) for the phone slot;
+- `screenshots/tablet/01–08.png` (1080×1728), which works for both the 7-inch and 10-inch tablet slots.
+
+Rebuild them with `python tools/make_store_art.py`, from the raw shots in `raw/`
+(gitignored). For a lived-in look, the shots used a showcase save and
+temporary ranks runners, deleted again afterwards.
 App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## App details

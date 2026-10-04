@@ -1,10 +1,14 @@
 """Builds the Play Store art from raw device screenshots, in the Codex style.
 
-    python tools/make_store_art.py <folder with raw screenshots>
+    python tools/make_store_art.py [store/raw]
 
-Writes store/screenshots/NN.png (1080x2160 — Play's 2:1 limit) and
-store/feature-graphic.png (1024x500). Raw screenshots come from a phone
-(1080 wide) via `adb exec-out screencap -p`.
+Reads <raw>/phone/*.png (a 1080-wide phone) and <raw>/tablet/*.png (the Tab A9,
+800 wide), taken with `adb exec-out screencap -p`, and writes:
+  store/screenshots/phone/NN.png   1080x2160 (Play's 2:1 limit)
+  store/screenshots/tablet/NN.png  1080x1728 (fits Play's 7- and 10-inch slots;
+                                   the tablet screen stays at native size)
+  store/feature-graphic.png        1024x500
+Raw shots live in store/raw/ (gitignored).
 """
 import os
 import sys
@@ -23,15 +27,18 @@ OCHRE = (227, 168, 47)
 DUSK_TOP = (42, 27, 61)
 DUSK_LOW = (240, 154, 94)
 
-# (raw file, caption, small line) — in store order.
+# (raw file, caption, small line) — in store order (Play shows up to 8).
 SHOTS = [
-    ("02_sunset_2.png", "Run into the night", "The sun sets on every run."),
-    ("03_night_2.png", "Keep the Sunstone lit", "Your only light. The jaguars wait in the dark."),
+    ("02_sunset.png", "Run into the night", "The sun sets on every run."),
+    ("03b_chase.png", "Outrun the jaguars", "Stone guardians that move in the dark."),
+    ("03d_flare.png", "Tap to flare", "Turn the jaguars back to stone."),
+    ("03_night.png", "Keep the Sunstone lit", "Your only light on the causeway."),
     ("01_title.png", "Steal the Sunstone", "A painted Maya temple at dusk."),
-    ("05_daily.png", "One dusk for everyone", "A new causeway every day."),
+    ("05_ranks.png", "Race the world", "Ranks for the daily dusk, the week, all time."),
     ("06_glyphs.png", "Earn twenty glyphs", "Every one drawn like a scribe's sign."),
-    ("07_market.png", "Dress your explorer", "Charms, garbs and hues for sun-drops."),
+    ("07_market_garbs.png", "Dress your explorer", "Charms, garbs and hues for sun-drops."),
 ]
+SIZES = {"phone": (1080, 2160, 330), "tablet": (1080, 1728, 300)} # width, height, caption band
 
 
 def paper(w, h):
@@ -56,23 +63,31 @@ def rule(d, x0, x1, y, width=6):
     d.line([(x0, y), (x1, y)], fill=CINNABAR, width=width)
 
 
+def fitted(path, text, size, width, weight=None):
+    """The font at [size], shrunk until [text] fits in [width]."""
+    while True:
+        f = ImageFont.truetype(path, size)
+        if weight:
+            f.set_variation_by_axes([weight])
+        if ImageDraw.Draw(Image.new("RGB", (1, 1))).textlength(text, font=f) <= width or size <= 20:
+            return f
+        size -= 2
+
+
 def centered(d, text, font, cx, y, fill):
     w = d.textlength(text, font=font)
     d.text((cx - w / 2, y), text, font=font, fill=fill)
 
 
-def screenshot(raw, caption, line):
-    W, H = 1080, 2160
+def screenshot(raw, caption, line, kind="phone"):
+    W, H, band_h = SIZES[kind]
     canvas = gradient(W, H)
-    band_h = 330
     band = paper(W, band_h)
     bd = ImageDraw.Draw(band)
     rule(bd, 60, W - 60, 36)
     rule(bd, 60, W - 60, band_h - 36)
-    centered(bd, caption, ImageFont.truetype(DELA, 78), W / 2, 78, INK)
-    small = ImageFont.truetype(NUNITO, 40)
-    small.set_variation_by_axes([900])
-    centered(bd, line, small, W / 2, 196, CINNABAR)
+    centered(bd, caption, fitted(DELA, caption, 78, W - 140), W / 2, band_h * 0.236, INK)
+    centered(bd, line, fitted(NUNITO, line, 40, W - 140, 900), W / 2, band_h * 0.594, CINNABAR)
     canvas.paste(band, (0, 0))
     shot = Image.open(raw).convert("RGB")
     # Fit the phone screen below the band, with an ink frame.
@@ -129,11 +144,16 @@ def feature(raw_sunset):
 
 
 def main():
-    raw_dir = sys.argv[1]
-    os.makedirs(os.path.join(OUT, "screenshots"), exist_ok=True)
-    for i, (name, caption, line) in enumerate(SHOTS, 1):
-        screenshot(os.path.join(raw_dir, name), caption, line).save(os.path.join(OUT, "screenshots", "%02d.png" % i))
-    feature(os.path.join(raw_dir, "02_sunset_2.png")).save(os.path.join(OUT, "feature-graphic.png"))
+    raw_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(OUT, "raw")
+    for kind in SIZES:
+        src = os.path.join(raw_dir, kind)
+        if not os.path.isdir(src):
+            continue
+        dst = os.path.join(OUT, "screenshots", kind)
+        os.makedirs(dst, exist_ok=True)
+        for i, (name, caption, line) in enumerate(SHOTS, 1):
+            screenshot(os.path.join(src, name), caption, line, kind).save(os.path.join(dst, "%02d.png" % i))
+    feature(os.path.join(raw_dir, "phone", "02_sunset.png")).save(os.path.join(OUT, "feature-graphic.png"))
     print("store art written to", os.path.abspath(OUT))
 
 

@@ -97,7 +97,8 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
   `dumpsys SurfaceFlinger --latency '<SurfaceView layer>'` — every interval
   should be one vsync.
 - **Dusk dev switches:** `files/dev_dusk` (e.g. `1.0`) starts runs at that much
-  night; `files/dev_light` (e.g. `0.3`) sets the starting light.
+  night; `files/dev_light` (e.g. `0.3`) sets the starting light; `files/dev_noflare`
+  stops the autopilot flaring, so the jaguars close in (chase screenshots).
 - **Perf switches** (dev): with autopilot on, logcat prints fps / frame-time /
   draw calls every 2 s. Flag files in `files/` toggle features without a rebuild:
   `perf_noglow`, `perf_noshadow`, `perf_nomsaa`, `perf_nosky`, `perf_noui`,
@@ -191,8 +192,10 @@ them **untyped via ClassDB**; never name them as types.
   `61:D9:FE:78:02:71:C8:1E:9C:4E:3A:1B:12:0C:A1:A0:2C:6D:32:96`.
 - Release builds call `https://sunstone.pranta.dev` (debug: the LAN dev API).
 - Store copy, Data safety / content rating answers, IAP product table and the
-  release checklist: **`store/LISTING.md`**. Art: `store/` — regenerate with
-  `python tools/make_store_art.py <folder of raw phone screenshots>`.
+  release checklist: **`store/LISTING.md`**. Art: `store/screenshots/{phone,tablet}/`
+  and `store/feature-graphic.png`. Regenerate with `python tools/make_store_art.py`
+  from raw shots in `store/raw/{phone,tablet}/` (gitignored, same file names as
+  `SHOTS` in the tool).
 - Privacy policy, terms and refund policy: `legal/{privacy,terms,refund}.md` (shown in-game
   under Settings → Privacy & terms; host the same files for the stores).
 

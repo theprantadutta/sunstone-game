@@ -117,6 +117,9 @@ var _swiped := false
 ## `-- --title` holds on the title screen.
 ## On a device, `adb shell run-as <pkg> touch files/autopilot` switches it on.
 var _autopilot := OS.get_cmdline_user_args().has("--autopilot") or FileAccess.file_exists("user://autopilot")
+## Dev: `files/dev_noflare` stops the autopilot flaring, so the jaguars close in
+## (for screenshots of the chase; tap to flare by hand).
+var _dev_noflare := FileAccess.file_exists("user://dev_noflare")
 
 func _ready() -> void:
 	save.load_from_disk()
@@ -1182,7 +1185,7 @@ func _drive(seg: World.Segment) -> void:
 		var ahead: float = g.x - s
 		if ahead > 0.0 and ahead < 2.2 and y <= 0.01:
 			_swipe(Vector2.UP)
-	if _freeze_t <= 0.0 and light >= FLARE_COST and (chaser_gap < 5.0 or (light < DARK_LIGHT and chaser_gap < 10.0)):
+	if not _dev_noflare and _freeze_t <= 0.0 and light >= FLARE_COST and (chaser_gap < 5.0 or (light < DARK_LIGHT and chaser_gap < 10.0)):
 		_flare()
 	# Drift toward the nearest sun-drop when the lane over is clear.
 	if lane != lane_target or s > seg.length - TURN_WINDOW - 1.0:
