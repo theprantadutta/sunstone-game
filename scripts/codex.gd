@@ -79,6 +79,9 @@ uniform vec3 night_lo : source_color = vec3(0.07, 0.09, 0.23);
 uniform vec3 night_hi : source_color = vec3(0.17, 0.21, 0.45);
 uniform vec3 ring_col : source_color = vec3(0.72, 0.2, 0.16);
 uniform vec3 stone_col : source_color = vec3(1.0, 0.8, 0.45);
+uniform sampler2D grain : filter_linear, repeat_enable;
+uniform float grain_amount = 1.0;
+uniform float grain_scale = 256.0;
 uniform vec3 sun_dir = vec3(-0.4, 0.9, 0.22);
 
 varying vec3 wpos;
@@ -114,6 +117,9 @@ void fragment() {
 	col = mix(night, col, m);
 	col = mix(col, ring_col, edge);
 	col = mix(col, fade_col, smoothstep(fade_near, fade_far, distance(CAMERA_POSITION_WORLD, wpos)));
+	// The bark-paper grain of the page, in screen space so it never swims.
+	vec3 g = texture(grain, SCREEN_UV * VIEWPORT_SIZE / grain_scale).rgb;
+	col *= mix(vec3(1.0), g, grain_amount);
 	ALBEDO = col;
 }
 """ % _PAINT_UNIFORMS
@@ -226,6 +232,15 @@ static func _empty_lights() -> PackedVector4Array:
 ## Sunstone's circle; [amb] = radius of the dusk/dawn flood around it (0 at
 ## night, huge in daylight); [lights] = up to eight (x, y, z, radius) braziers;
 ## [fade] = the colour far things melt into.
+## The paper grain multiplied over the painted world (white = no change).
+## [amount] 0 switches it off.
+static func set_grain(tex: Texture2D, amount := 1.0, scale := 256.0) -> void:
+	_ensure()
+	for m in [_world, _world_flat]:
+		m.set_shader_parameter("grain", tex)
+		m.set_shader_parameter("grain_amount", amount)
+		m.set_shader_parameter("grain_scale", scale)
+
 ## The tint of the Sunstone's light (its hue from the Market).
 static func set_stone_color(c: Color) -> void:
 	_ensure()

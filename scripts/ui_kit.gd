@@ -328,6 +328,15 @@ class GlyphButton:
 		resized.connect(_layout)
 		_layout()
 
+	## Switches primary/secondary in place (tabs), without rebuilding.
+	func set_kind(k: Kind) -> void:
+		if k == kind:
+			return
+		kind = k
+		if _label:
+			_label.add_theme_color_override("font_color", UiKit.STUCCO if kind == Kind.PRIMARY else UiKit.INK)
+		queue_redraw()
+
 	func _layout() -> void:
 		_label.position = Vector2(0, (DEPTH - 2.0 if _down else 0.0) - 2.0)
 		_label.size = Vector2(size.x, size.y - DEPTH)

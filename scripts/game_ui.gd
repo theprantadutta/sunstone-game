@@ -191,6 +191,13 @@ func _back() -> void:
 	_last_back_frame = frame
 	back_requested.emit()
 
+## True while a page covers the world (any menu page, pause, results).
+func page_open() -> bool:
+	for page in [_legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
+		if page and is_instance_valid(page) and page.visible:
+			return true
+	return false
+
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
 	for page in [_legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
@@ -232,6 +239,7 @@ func setup(save: SaveData, online: Online, ads: Ads, store: Store) -> void:
 	_dark.stretch_mode = TextureRect.STRETCH_SCALE
 	_dark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_dark.modulate.a = 0.0
+	_dark.visible = false
 	_root().add_child(_dark)
 	_root().move_child(_dark, 0)
 	_dark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -239,6 +247,7 @@ func setup(save: SaveData, online: Online, ads: Ads, store: Store) -> void:
 	_flare_rect.color = Color("#FFE6A8")
 	_flare_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_flare_rect.modulate.a = 0.0
+	_flare_rect.visible = false
 	_root().add_child(_flare_rect)
 	_flare_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
@@ -451,6 +460,9 @@ func set_light(value: float, night: float, chaser_gap: float) -> void:
 	_meter.gap = chaser_gap
 	# The world closes in from the edges as the light fails at night.
 	_dark.modulate.a = clampf((0.45 - value) / 0.45, 0.0, 1.0) * lerpf(0.5, 0.9, night)
+	# A full-screen layer costs a whole pass of fill even when clear: draw it
+	# only when it shows.
+	_dark.visible = _dark.modulate.a > 0.01
 
 func show_hint(text: String, dir: Vector2) -> void:
 	_hint.show_hint(text, dir)
@@ -464,8 +476,10 @@ func flash_danger() -> void:
 ## A warm white burst for the flare.
 func flash_flare() -> void:
 	_flare_rect.modulate.a = 0.55
+	_flare_rect.visible = true
 	var tw := create_tween()
 	tw.tween_property(_flare_rect, "modulate:a", 0.0, 0.45)
+	tw.tween_callback(func(): _flare_rect.visible = false)
 
 # ---------------------------------------------------------------- pages ---
 
@@ -1260,6 +1274,8 @@ var _preview_root: Node3D
 var _preview_runner: RunnerModel
 var _shop_action: UiKit.GlyphButton
 var _shop_caption: Label
+var _shop_tabs: Array[UiKit.GlyphButton] = []
+var _preview_box: SubViewportContainer
 
 ## The shop: runners, outfits, hats and stone hues to try on and buy (for
 ## sun-drops or real money), charms, boosts, and the treasury. Tabs switch
@@ -1272,6 +1288,24 @@ func _open_market() -> void:
 	var page: UiKit.Page = m[1]
 	page.seed = 71
 	_headline(page, "Shop")
+	# Tabs and the 3D preview live as long as the page: switching shelves only
+	# rebuilds the cards (rebuilding everything froze a phone for ~0.1 s).
+	_shop_tabs.clear()
+	for i in MARKET_TABS.size():
+		var row := 0 if i < 4 else 1
+		var col := i if i < 4 else i - 4
+		var tab := UiKit.GlyphButton.new(MARKET_TABS[i],
+			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
+		tab.font_size = 19
+		tab.position = Vector2(56 + col * 124, 136 + row * 76)
+		tab.size = Vector2(116, 68)
+		tab.pressed.connect(func():
+			if _market_tab != i:
+				_market_tab = i
+				_fill_market())
+		page.add_child(tab)
+		_shop_tabs.append(tab)
+	_make_preview(page)
 	_market_body = Control.new()
 	_market_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_market_body.size = Vector2(600, 1100)
@@ -1288,16 +1322,46 @@ func _open_market() -> void:
 	page.open()
 
 func _free_preview() -> void:
-	if _preview and is_instance_valid(_preview):
-		_preview.get_parent().queue_free()
+	if _preview_box and is_instance_valid(_preview_box):
+		_preview_box.queue_free()
+	_preview_box = null
 	_preview = null
 	_preview_runner = null
 
-func _fill_market() -> void:
+## The preview: a little 3D world of its own inside the page, where the
+## runner turns wearing whatever card is selected.
+func _make_preview(page: Control) -> void:
 	_free_preview()
+	_preview_box = SubViewportContainer.new()
+	_preview_box.stretch = true
+	_preview_box.position = Vector2(56, 296)
+	_preview_box.size = Vector2(488, 300)
+	_preview_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page.add_child(_preview_box)
+	_preview = SubViewport.new()
+	_preview.own_world_3d = true
+	_preview.transparent_bg = true
+	_preview.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_preview_box.add_child(_preview)
+	_preview_root = Node3D.new()
+	_preview.add_child(_preview_root)
+	var cam := Camera3D.new()
+	cam.keep_aspect = Camera3D.KEEP_HEIGHT
+	cam.fov = 26.0
+	_preview.add_child(cam)
+	cam.position = Vector3(0, 0.95, -3.9)
+	cam.look_at(Vector3(0, 0.86, 0))
+
+func _fill_market() -> void:
 	for c in _market_body.get_children():
 		c.queue_free()
 	var body := _market_body
+	for i in _shop_tabs.size():
+		_shop_tabs[i].set_kind(UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
+	var looks: bool = MARKET_TABS[_market_tab] in ["Runners", "Outfits", "Hats", "Stones"]
+	if _preview_box:
+		_preview_box.visible = looks
+		_preview.render_target_update_mode = SubViewport.UPDATE_ALWAYS if looks else SubViewport.UPDATE_DISABLED
 	var held := UiKit.label(UiKit.thousands(_save.bank), UiKit.display_font(), 30, UiKit.INK)
 	held.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	held.position = Vector2(300, 52)
@@ -1306,18 +1370,6 @@ func _fill_market() -> void:
 	var drop := UiKit.DropGlyph.new(32)
 	drop.position = Vector2(508, 58)
 	body.add_child(drop)
-	for i in MARKET_TABS.size():
-		var row := 0 if i < 4 else 1
-		var col := i if i < 4 else i - 4
-		var tab := UiKit.GlyphButton.new(MARKET_TABS[i],
-			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
-		tab.font_size = 19
-		tab.position = Vector2(56 + col * 124, 136 + row * 76)
-		tab.size = Vector2(116, 68)
-		tab.pressed.connect(func():
-			_market_tab = i
-			_fill_market())
-		body.add_child(tab)
 	var shelf: String = MARKET_TABS[_market_tab]
 	match shelf:
 		"Charms": _fill_charms(body)
@@ -1358,26 +1410,6 @@ func _fill_shelf(body: Control, shelf: String) -> void:
 	var items := Shop.shelf(shelf, _save)
 	if not _shop_sel.has(shelf):
 		_shop_sel[shelf] = _worn(shelf)
-	# The preview: its own little 3D world inside the page.
-	var box := SubViewportContainer.new()
-	box.stretch = true
-	box.position = Vector2(56, 296)
-	box.size = Vector2(488, 300)
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	body.add_child(box)
-	_preview = SubViewport.new()
-	_preview.own_world_3d = true
-	_preview.transparent_bg = true
-	_preview.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	box.add_child(_preview)
-	_preview_root = Node3D.new()
-	_preview.add_child(_preview_root)
-	var cam := Camera3D.new()
-	cam.keep_aspect = Camera3D.KEEP_HEIGHT
-	cam.fov = 26.0
-	_preview.add_child(cam)
-	cam.position = Vector3(0, 0.95, -3.9)
-	cam.look_at(Vector3(0, 0.86, 0))
 	_shop_caption = UiKit.label("", UiKit.display_font(), 26, UiKit.INK)
 	_shop_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_shop_caption.position = Vector2(56, 598)

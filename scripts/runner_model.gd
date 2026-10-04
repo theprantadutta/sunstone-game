@@ -88,10 +88,10 @@ func _ready() -> void:
 	var knees: Array[Node3D] = []
 	for side in [-1.0, 1.0]:
 		var hip := _joint(_body, Vector3(0.085 * side * build, -0.02, 0))
-		_part(hip, func(m: Mesher):
+		_part(hip, _key("thigh", [_col("trousers", TROUSERS)]), func(m: Mesher):
 			m.capsule(Models.at(Vector3(0, -0.3, 0)), 0.066, 0.078, 0.32, _col("trousers", TROUSERS)))
 		var knee := _joint(hip, Vector3(0, -0.27, 0))
-		_part(knee, func(m: Mesher):
+		_part(knee, _key("shin", [_col("trousers", TROUSERS), _col("shoe", SHOE)]), func(m: Mesher):
 			m.capsule(Models.at(Vector3(0, -0.25, 0)), 0.056, 0.064, 0.27, _col("trousers", TROUSERS))
 			# A big rounded shoe with a pale sole.
 			var shoe := _col("shoe", SHOE)
@@ -104,7 +104,7 @@ func _ready() -> void:
 
 	# --- torso ---
 	_torso = _joint(_body, Vector3.ZERO)
-	_part(_torso, func(m: Mesher):
+	_part(_torso, _key("torso", [_col("shirt", SHIRT), _col("trousers", TROUSERS), _col("pack", PACK), _col("scarf", SCARF), build]), func(m: Mesher):
 		var shirt := _col("shirt", SHIRT)
 		var w := build
 		m.ellipsoid(Models.at(Vector3(0, 0.0, 0)), Vector3(0.15 * w, 0.1, 0.12), _col("trousers", TROUSERS), 6, 12)
@@ -125,10 +125,10 @@ func _ready() -> void:
 
 	# --- head ---
 	_head = _joint(_torso, Vector3(0, 0.43, 0))
-	_part(_head, func(m: Mesher): _build_head(m))
+	_part(_head, _key("head", [str(look), _col("hat", HAT), _col("band", HAT_BAND)]), func(m: Mesher): _build_head(m))
 	_lids = Node3D.new()
 	_head.add_child(_lids)
-	_part(_lids, func(m: Mesher):
+	_part(_lids, _key("lids", [skin]), func(m: Mesher):
 		for side in [-1.0, 1.0]:
 			m.ellipsoid(_on_face(0.53, side * 0.36, 0.012), Vector3(0.047, 0.056, 0.014), skin.darkened(0.06), 4, 10, false)
 			m.box(_on_face(0.53, side * 0.36, 0.027), Vector3(0.07, 0.006, 0.01), DARK, false, false))
@@ -139,11 +139,11 @@ func _ready() -> void:
 	var elbows: Array[Node3D] = []
 	for side in [-1.0, 1.0]:
 		var sh := _joint(_torso, Vector3(0.175 * side * build, 0.36, 0))
-		_part(sh, func(m: Mesher):
+		_part(sh, _key("upper", [_col("shirt", SHIRT)]), func(m: Mesher):
 			m.capsule(Models.at(Vector3(0, -0.2, 0)), 0.045, 0.058, 0.22, _col("shirt", SHIRT)))
 		var el := _joint(sh, Vector3(0, -0.18, 0))
 		var holds_stone: bool = side > 0
-		_part(el, func(m: Mesher):
+		_part(el, _key("fore", [_col("shirt", SHIRT), skin, side, _col("gem", Models.GOLD)]), func(m: Mesher):
 			m.capsule(Models.at(Vector3(0, -0.17, 0)), 0.04, 0.047, 0.18, skin)
 			m.ellipsoid(Models.at(Vector3(0, -0.2, -0.01)), Vector3(0.058, 0.062, 0.055), skin, 6, 10) # mitten hand
 			m.ellipsoid(Models.at(Vector3(-side * 0.045, -0.18, -0.03)), Vector3(0.022, 0.03, 0.022), skin, 4, 8) # thumb
@@ -335,11 +335,26 @@ func _joint(parent: Node3D, pos: Vector3) -> Node3D:
 	parent.add_child(j)
 	return j
 
-func _part(parent: Node3D, build: Callable) -> void:
-	var m := Mesher.new()
-	m.soft = true
-	build.call(m)
-	parent.add_child(m.to_instance())
+## Built meshes, keyed by part and by every look/outfit value that part
+## uses. Trying on a hat rebuilds only the head; trying it on again is free.
+static var _meshes := {}
+
+func _part(parent: Node3D, key: String, build: Callable) -> void:
+	if not _meshes.has(key):
+		var m := Mesher.new()
+		m.soft = true
+		build.call(m)
+		_meshes[key] = m.commit()
+	var mi := MeshInstance3D.new()
+	mi.mesh = _meshes[key]
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+
+func _key(part: String, colors: Array) -> String:
+	var k := part
+	for c in colors:
+		k += "|" + (c.to_html() if c is Color else str(c))
+	return k
 
 func start_fall() -> void:
 	pose = Pose.FALL

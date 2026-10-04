@@ -121,6 +121,24 @@ var _dev_noflare := FileAccess.file_exists("user://dev_noflare")
 var _dev_start := FileAccess.get_file_as_string("user://dev_start").to_float() if FileAccess.file_exists("user://dev_start") else 0.0
 var _auto_touch := false
 var _auto_tx := 0.0
+## Profiling: a build with the "profile" feature (export preset "Android
+## Profile") — or `files/profile_tour` on a debug build — tours every screen
+## and runs through every House by itself, printing frame stats per phase
+## ("[profile] ..." in logcat). The runner can't die during the tour.
+var _tour := OS.has_feature("profile") or FileAccess.file_exists("user://profile_tour")
+var _invincible := false
+var _tour_seed := 0 ## the tour plays the same road every time
+var _page_scaled := false
+var _render_scale := 1.0
+var _ph := ""
+var _ph_frames := 0
+var _ph_time := 0.0
+var _ph_max := 0.0
+var _ph_j20 := 0
+var _ph_j33 := 0
+var _ph_draws := 0.0
+var _ph_prims := 0.0
+var _ph_proc := 0.0
 var _fps_t := 0.0
 var _prof_n := 0
 var _prof_max_dt := 0.0
@@ -214,8 +232,12 @@ func _ready() -> void:
 	if FileAccess.file_exists("user://perf_noworld"):
 		world.visible = false
 	_dev_perf_flags()
+	if not FileAccess.file_exists("user://perf_hz"):
+		_lock_refresh()
 	_go_title()
-	if _autopilot:
+	if _tour:
+		_run_tour()
+	elif _autopilot:
 		get_tree().create_timer(1.5).timeout.connect(_start_run)
 
 # ------------------------------------------------------------- states ---
@@ -227,7 +249,7 @@ func _reset_run() -> void:
 	for b in _bats:
 		b.node.queue_free()
 	_bats.clear()
-	world.reset(MayaCalendar.seed_for(daily_key) if daily_key != "" else randi())
+	world.reset(MayaCalendar.seed_for(daily_key) if daily_key != "" else (_tour_seed if _tour_seed != 0 else randi()))
 	s = START_S
 	x = 0.0
 	y = 0.0
@@ -330,7 +352,7 @@ func _resume() -> void:
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 
 func _die(cause: String, fell := false, caught := false) -> void:
-	if state != State.RUNNING:
+	if state != State.RUNNING or _invincible:
 		return
 	state = State.DYING
 	death_cause = cause
@@ -497,7 +519,9 @@ func _spawn_runner() -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	world.spin(delta)
-	if _autopilot:
+	if _tour:
+		_tour_frame(delta)
+	elif _autopilot:
 		_profile(delta)
 	match state:
 		State.TITLE:
@@ -518,6 +542,12 @@ func _process(delta: float) -> void:
 	_place_halo(delta)
 	_place_motes()
 	_apply_shake(delta)
+	# Behind an open page the world is dimmed: render it at half resolution
+	# and give the page the GPU.
+	var page := ui.page_open()
+	if page != _page_scaled:
+		_page_scaled = page
+		get_viewport().scaling_3d_scale = 0.5 if page else _render_scale
 
 func _step_run(delta: float) -> void:
 	_run_time += delta
@@ -589,6 +619,8 @@ func _step_run(delta: float) -> void:
 	if state != State.RUNNING:
 		return
 	_step_bats(delta, h, at)
+	if _invincible:
+		light = maxf(light, 0.25)
 	if light <= 0.0 and s > 0.0 and not at.dawn:
 		if save.use_boost("shield"):
 			light = 0.4
@@ -651,6 +683,8 @@ func _hint(key: String, text: String) -> void:
 
 ## Returns true when the run just ended.
 func _check_hazards() -> bool:
+	if _invincible:
+		return false
 	var z := -s
 	if absf(world.u_of(x, z)) > world.width(s) / 2.0 - 0.12:
 		_die("Stepped off the road into Xibalba", true)
@@ -1102,21 +1136,11 @@ func _make_environment() -> void:
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
-	# The page: bark-paper grain over the whole 3D view (under the UI).
-	var layer := CanvasLayer.new()
-	layer.layer = 1
-	add_child(layer)
-	var grain := TextureRect.new()
-	grain.texture = _grain_texture()
-	grain.stretch_mode = TextureRect.STRETCH_TILE
-	grain.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var mat := CanvasItemMaterial.new()
-	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_MUL
-	grain.material = mat
-	layer.add_child(grain)
-	grain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	if FileAccess.file_exists("user://perf_nograin"):
-		layer.visible = false
+	# The page: bark-paper grain, multiplied in by the world's own shader (a
+	# separate full-screen layer cost a whole pass of fill on big phones).
+	# 256 px of grain per tile at the UI's scale.
+	var ui_scale := get_viewport().get_visible_rect().size.x / 720.0
+	Codex.set_grain(_grain_texture(), 0.0 if FileAccess.file_exists("user://perf_nograin") else 1.0, 256.0 * maxf(ui_scale, 1.0) * float(DisplayServer.screen_get_size().x) / get_viewport().get_visible_rect().size.x)
 	_build_sky()
 
 ## The painted sky behind the temple (seen from the title shot), in the
@@ -1210,6 +1234,133 @@ func _drive() -> void:
 	_auto_tx = clampf(tx, cx - w / 2.0 + 0.8, cx + w / 2.0 - 0.8)
 	_auto_touch = want
 
+# --------------------------------------------------------------- profiling ---
+
+func _tour_frame(delta: float) -> void:
+	if _ph == "":
+		return
+	_ph_frames += 1
+	_ph_time += delta
+	_ph_max = maxf(_ph_max, delta)
+	if delta > 0.020:
+		_ph_j20 += 1
+	if delta > 0.034:
+		_ph_j33 += 1
+	_ph_draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	_ph_prims += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+	_ph_proc += Performance.get_monitor(Performance.TIME_PROCESS)
+
+## Ends the phase being measured (printing it) and starts [name].
+func _phase(name: String) -> void:
+	if _ph != "" and _ph_frames > 0:
+		var n := float(_ph_frames)
+		print("[profile] %-16s fps %5.1f  avg %5.1fms  worst %5.1fms  >20ms %3d  >34ms %3d  draws %4d  prims %4dk  script %4.1fms  mem %dMB" % [
+			_ph, n / _ph_time, _ph_time / n * 1000.0, _ph_max * 1000.0, _ph_j20, _ph_j33,
+			int(_ph_draws / n), int(_ph_prims / n / 1000.0), _ph_proc / n * 1000.0,
+			int(Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0)])
+	_ph = name
+	_ph_frames = 0
+	_ph_time = 0.0
+	_ph_max = 0.0
+	_ph_j20 = 0
+	_ph_j33 = 0
+	_ph_draws = 0.0
+	_ph_prims = 0.0
+	_ph_proc = 0.0
+
+func _wait(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+
+## The tour: title, every shop shelf, every page, runs through each House
+## (and a dawn), the results page — twice, so the second lap shows the game
+## warm (shaders compiled, caches full).
+func _run_tour() -> void:
+	print("[profile] screen %s, refresh %.0f Hz, renderer %s" % [
+		str(DisplayServer.screen_get_size()), DisplayServer.screen_get_refresh_rate(),
+		RenderingServer.get_current_rendering_method()])
+	await _wait(3.0)
+	_tour_seed = 777
+	for lap in 2:
+		print("[profile] --- lap %d ---" % (lap + 1))
+		_phase("title")
+		await _wait(5.0)
+		for i in Shop.SHELVES.size():
+			ui._market_tab = i
+			if i == 0:
+				ui._open_market()
+			else:
+				ui._fill_market()
+			_phase("shop:" + Shop.SHELVES[i])
+			await _wait(3.0)
+		ui._market.visible = false
+		ui._free_preview()
+		for page in [["glyphs", ui._open_glyphs], ["records", ui._open_records], ["daily", ui._open_daily],
+				["offerings", ui._open_offerings], ["settings", ui._open_settings], ["ranks", ui._open_ranks]]:
+			page[1].call()
+			_phase(page[0])
+			await _wait(3.0)
+			ui.close_modal()
+		_phase("title-again")
+		await _wait(2.0)
+		_autopilot = true
+		_invincible = true
+		for start in [0.0, 140.0, 280.0, 400.0, 455.0, 625.0, 795.0]:
+			_dev_start = start
+			_start_run()
+			_phase("run@%dm" % int(start))
+			await _wait(12.0)
+			_phase("")
+			_go_title()
+			await _wait(1.0)
+		# The end of a run: the results page.
+		_invincible = false
+		_dev_start = 30.0
+		_start_run()
+		await _wait(2.0)
+		_die("Profiling")
+		await _wait(1.4)
+		if state == State.OFFER or state == State.DYING:
+			_finish_run()
+		_phase("results")
+		await _wait(4.0)
+		_phase("")
+		_autopilot = false
+		_go_title()
+		await _wait(1.0)
+	# What the GPU spends its time on: the same stretch of road with one
+	# feature off at a time.
+	print("[profile] --- experiments (same road) ---")
+	_autopilot = true
+	_invincible = true
+	for exp in ["base", "msaa-2x", "no-msaa", "no-grain", "no-ink", "scale-0.8", "base"]:
+		_set_experiment(exp, true)
+		_dev_start = 140.0
+		_start_run()
+		await _wait(1.5)
+		_phase("exp:" + exp)
+		await _wait(9.0)
+		_phase("")
+		_set_experiment(exp, false)
+		_go_title()
+		await _wait(1.0)
+	_autopilot = false
+	_invincible = false
+	print("[profile] done")
+
+func _set_experiment(name: String, on: bool) -> void:
+	match name:
+		"no-msaa":
+			get_viewport().msaa_3d = Viewport.MSAA_DISABLED if on else Viewport.MSAA_4X
+		"msaa-2x":
+			get_viewport().msaa_3d = Viewport.MSAA_2X if on else Viewport.MSAA_4X
+		"no-grain":
+			Codex.set_grain(_grain_texture(), 0.0 if on else 1.0)
+		"no-ink":
+			Codex.world().next_pass = null if on else Codex.outline()
+			Codex.glow().next_pass = null if on else Codex.outline()
+		"scale-0.8":
+			get_viewport().scaling_3d_scale = 0.8 if on else 1.0
+
 func _profile(delta: float) -> void:
 	_fps_t += delta
 	_prof_n += 1
@@ -1234,6 +1385,19 @@ func _profile(delta: float) -> void:
 		_prof_n = 0
 		_prof_max_dt = 0.0
 
+## Asks a 90/120 Hz screen to run at 60 Hz, so every frame shows for the
+## same time (a game rendering 60–80 fps on a 90 Hz screen judders).
+func _lock_refresh() -> void:
+	var hz := DisplayServer.screen_get_refresh_rate()
+	if hz > 61.0 and Engine.has_singleton("SunstoneGoogleSignIn"):
+		# (Android plugin objects don't list their methods to has_method().)
+		var plugin := Engine.get_singleton("SunstoneGoogleSignIn")
+		var rates := str(plugin.call("setRefreshRate", 60.0))
+		print("[sunstone] display offers %s Hz; asked for 60" % rates)
+		if "60" in rates.split(","):
+			# The screen will run at 60: render exactly that, evenly.
+			Engine.max_fps = 60
+
 ## Dev-only perf switches, read from user:// flag files so a device build can be
 ## profiled without rebuilding: perf_nomsaa, perf_novsync, perf_scale (file
 ## contents = 3D render scale, e.g. 0.8), perf_nograin.
@@ -1243,4 +1407,5 @@ func _dev_perf_flags() -> void:
 	if FileAccess.file_exists("user://perf_novsync"):
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	if FileAccess.file_exists("user://perf_scale"):
-		get_viewport().scaling_3d_scale = clampf(FileAccess.get_file_as_string("user://perf_scale").to_float(), 0.5, 1.0)
+		_render_scale = clampf(FileAccess.get_file_as_string("user://perf_scale").to_float(), 0.5, 1.0)
+		get_viewport().scaling_3d_scale = _render_scale

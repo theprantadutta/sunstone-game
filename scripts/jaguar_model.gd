@@ -81,10 +81,22 @@ func _ready() -> void:
 		m.box(Models.at(Vector3(0, 0.36, -0.1)), Vector3(0.08, 0.1, 0.08), ROSETTE))
 	_eyes.visible = not frozen
 
+## Every jaguar looks the same, so each part's mesh is built once and shared:
+## spawning one in the middle of a run costs nothing.
+static var _meshes := {}
+var _part_n := 0
+
 func _part(parent: Node3D, build: Callable) -> void:
-	var m := Mesher.new()
-	build.call(m)
-	parent.add_child(m.to_instance())
+	_part_n += 1
+	var key := _part_n
+	if not _meshes.has(key):
+		var m := Mesher.new()
+		build.call(m)
+		_meshes[key] = m.commit()
+	var mi := MeshInstance3D.new()
+	mi.mesh = _meshes[key]
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
 
 ## Gallop: front and back legs move in pairs, the spine rocks, the tail lashes.
 func animate(delta: float, speed: float) -> void:

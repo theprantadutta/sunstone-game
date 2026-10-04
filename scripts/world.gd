@@ -160,9 +160,12 @@ func ensure(s: float) -> void:
 
 ## Attaches chunks whose worker has finished; call once a frame.
 func poll() -> void:
+	# One per frame: uploading a chunk's mesh is the costly part, and two in
+	# one frame make a stutter.
 	for c in _chunks:
 		if c.task >= 0 and WorkerThreadPool.is_task_completed(c.task):
 			_finish(c)
+			return
 
 func _free(c: Chunk) -> void:
 	if c.task >= 0:
