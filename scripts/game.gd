@@ -17,7 +17,7 @@ const DRAIN_EMBER := 0.014 ## light per second, let go
 const DRAIN_BLAZE := 0.075 ## extra light per second, blazing
 const DROP_LIGHT := 0.055
 const DAWN_GIFT := 0.35 ## light the sunrise gives back
-const STEER_SPAN := 17.6 ## metres a finger crossing the whole screen moves him
+const STEER_SPAN := 11.5 ## metres a finger crossing the whole screen moves him
 const DROP_R := 0.85
 const CATCH_R := 0.75
 const JAG_CREEP := 3.0 ## m/s, a waking jaguar coming at you
@@ -575,12 +575,12 @@ func _step_run(delta: float) -> void:
 		var vp_w := get_viewport().get_visible_rect().size.x
 		var tu := _anchor_u + (_finger - _anchor_finger) / vp_w * STEER_SPAN
 		var tx := world.point(s + speed * 0.1, tu).x
-		x += (tx - x) * minf(1.0, delta * 11.0)
+		x += (tx - x) * minf(1.0, delta * 8.0)
 	elif _key_left or _key_right:
 		var ku := world.u_of(x, -s) + ((1.0 if _key_right else 0.0) - (1.0 if _key_left else 0.0)) * 6.5 * delta
 		x = world.point(s + speed * 0.1, ku).x
 	else:
-		x += (world.center(s + speed * 0.15) - x) * minf(1.0, delta * 6.0)
+		x += (world.center(s + speed * 0.15) - x) * minf(1.0, delta * 4.0)
 	_x_vel = (x - old_x) / maxf(delta, 0.0001)
 	_x_vel_s = lerpf(_x_vel_s, _x_vel, 1.0 - exp(-8.0 * delta))
 
