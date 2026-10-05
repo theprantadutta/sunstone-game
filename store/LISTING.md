@@ -3,7 +3,7 @@
 Everything to paste into Play Console. Art is in this folder:
 - `feature-graphic.png` (1024×500);
 - `screenshots/phone/01–08.png` (1080×2160) for the phone slot;
-- `screenshots/tablet/01–08.png` (1080×1728), which works for both the 7-inch and 10-inch tablet slots.
+- `screenshots/tablet-7in/01–08.png` and `screenshots/tablet-10in/01–08.png` (1080×1920, 9:16 as both slots require).
 
 Rebuild them with `python tools/make_store_art.py`, from the raw shots in `raw/`
 (gitignored). For a lived-in look, the shots used a showcase save and
