@@ -6,8 +6,9 @@ Everything to paste into Play Console. Art is in this folder:
 - `screenshots/tablet-7in/01–08.png` and `screenshots/tablet-10in/01–08.png` (1080×1920, 9:16 as both slots require).
 
 Rebuild them with `python tools/make_store_art.py`, from the raw shots in `raw/`
-(gitignored). For a lived-in look, the shots used a showcase save and
-temporary ranks runners, deleted again afterwards.
+(gitignored). The raw shots come from the game's store-shots mode: on a debug
+build, `adb shell run-as com.pranta.sunstone touch files/dev_shots`, launch, and
+screencap each frame it freezes (it prints `[shot] <name>`); it never touches the save.
 App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## App details
