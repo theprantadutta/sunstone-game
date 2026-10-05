@@ -87,6 +87,9 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     render(1024).save(os.path.join(OUT, "icon.png"))
     render(192).save(os.path.join(OUT, "icon_192.png"))
+    # The Play Store's own icon: 512x512, 32-bit PNG, full square (Play rounds it).
+    render(1024).convert("RGBA").resize((512, 512), Image.LANCZOS).save(
+        os.path.join(os.path.dirname(__file__), "..", "store", "icon-512.png"), optimize=True)
     # Adaptive icon: the mark inside the 66% safe zone, sky as its own layer.
     render(432, background=False, scale=0.62).save(os.path.join(OUT, "adaptive_foreground.png"))
     sky(432).save(os.path.join(OUT, "adaptive_background.png"))
