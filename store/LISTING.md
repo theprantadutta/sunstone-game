@@ -22,30 +22,57 @@ App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## Short description (80 max)
 
-```
-Run a Maya causeway at dusk. Keep the Sunstone lit. Outrun the stone jaguars.
-```
+Carry the sun through the Maya underworld. Hold to blaze, let go to hide.
 
-## Full description
+## Full description (4000 max)
 
-```
-The sun is setting over the temple, and you have just stolen the Sunstone.
+Every night, the sun goes down into Xibalba, the Maya underworld, and must cross it to rise again at dawn. Tonight, you carry it.
 
-Every run starts at sunset and runs into the night. As the light fades, the glowing stone in your hand becomes the only light on the causeway — and the stone jaguars that guard the temple only move in the dark. Gather sun-drops to keep the Sunstone lit. When the jaguars close in, tap to flare it and turn them back to stone.
+Sunstone: Dusk Run is a one-thumb runner unlike any other. Your Sunstone is the only light on a winding causeway through the dark, and you decide how bright it burns.
 
-Swipe to change lanes and turn the corners, jump fallen logs, slide under the arches, and see how far into the night you can run.
+HOLD TO BLAZE
+Touch and hold and the Sunstone blazes. Colour floods back into the world, you can steer across the road, and the stone jaguars freeze where they stand. But a blaze burns your light fast.
 
-• A run that changes as you go: sunset, twilight, moonrise, deep night
-• The Daily dusk: one causeway for everyone each day, named by the Maya calendar
-• Twenty glyphs to earn, each drawn like a scribe's sign
-• Daily offerings from the temple that wait for you if you miss a day
-• Charms, explorer garbs and stone hues to spend your sun-drops on
-• Ranks for the daily dusk, today, this week and all time
-• Your progress follows you: sign in with Google to keep it on any phone
-• Plays offline; the ranks catch up when you're back
+LET GO TO HIDE
+Let go and the stone dims to embers. Your light lasts, and the road leads you on. But in the dark, the jaguars wake, and you'll see their eyes coming.
 
-A painted Maya world at dusk, and a codex-styled interface you won't find in any other runner.
-```
+A WORLD PAINTED BY YOUR LIGHT
+Sunstone looks like a Maya codex come to life. Outside your light, the underworld is bare ink on night paper. Inside it, everything is painted in cinnabar, ochre and Maya blue. Every blaze paints the world back in.
+
+THE HOUSES OF XIBALBA
+Each night is three Houses from the Popol Vuh, each with its own rules and its own look:
+- House of Jaguars: stone guardians that only move in the dark
+- House of Bats: they hunt bright light, so blaze too long and they swoop in
+- House of Gloom: even your embers barely glow
+- House of Knives: obsidian blades in the road
+- House of Cold: your light drains faster
+- House of Fire: braziers, lava, and what waits between them
+
+MAKE IT TO DAWN
+Survive the three Houses and the sun rises. Then the next night begins, faster and harder, with new Houses. How many dawns can you reach?
+
+SUN-DROPS AND SUN-STRINGS
+Sun-drops feed your light. Most lie off the middle of the road, so taking them means steering, and steering means blazing. Take a whole trail for a Sun-string bonus.
+
+MORE TO PLAY FOR
+- Daily dusk: the same road for everyone, once a day, named for its day in the Maya calendar
+- Ranks: race players everywhere on the daily dusk, the week and all time
+- Twenty glyphs to earn, each drawn like a scribe's sign
+- Offerings: a gift for every day you come back
+- Records of your deepest night, longest run and more
+
+YOUR RUNNER, YOUR WAY
+Choose your runner, then dress them in outfits and hats, and pick the colour of your Sunstone's light. Try everything on in a live 3D preview before you buy. Charms make your light last longer, and boosts can save a run: an Ember shield relights your stone, a Jaguar ward turns a pouncing jaguar to stone.
+
+SEASONS IN THE UNDERWORLD
+Special nights arrive with the seasons, with new scenery, new looks and new surprises.
+
+MADE FOR ONE THUMB
+Simple to pick up, hard to master. Play in short bursts or chase one more dawn. Your progress is saved to your account, so sign in with Google to keep it on any phone.
+
+Sunstone: Dusk Run is free to play. It contains ads and optional in-app purchases. You can remove ads with a one-time purchase.
+
+Carry the sun. Make it to dawn.
 
 ## Content rating (IARC questionnaire)
 
