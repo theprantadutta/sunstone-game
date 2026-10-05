@@ -62,12 +62,15 @@ var _pending := {} ## chunk index → {drops, obstacles, pits, braziers, jaguars
 var _coin_mesh: ArrayMesh
 var _coin_angle := 0.0
 var _trail_id := 0
+var attached := 0 ## chunks that have joined the scene (profiling)
+var _parts: Array[Chunk] = [] ## chunks with pieces still to join
 
 func reset(run_seed: int) -> void:
 	for c in _chunks:
 		_free(c)
 	_chunks.clear()
 	_pending.clear()
+	_parts.clear()
 	seed = run_seed
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([run_seed, "path"])
@@ -160,8 +163,17 @@ func ensure(s: float) -> void:
 
 ## Attaches chunks whose worker has finished; call once a frame.
 func poll() -> void:
-	# One per frame: uploading a chunk's mesh is the costly part, and two in
-	# one frame make a stutter.
+	# One upload per frame: the rest of a chunk already on its way first, then
+	# the next finished chunk.
+	while not _parts.is_empty():
+		var p: Chunk = _parts.front()
+		if p.node == null or not is_instance_valid(p.node) or p.baked.is_empty():
+			_parts.pop_front()
+			continue
+		_attach_part(p)
+		if p.baked.is_empty():
+			_parts.pop_front()
+		return
 	for c in _chunks:
 		if c.task >= 0 and WorkerThreadPool.is_task_completed(c.task):
 			_finish(c)
@@ -353,7 +365,12 @@ const DECOR := {
 ## Builds a chunk's geometry. Runs on a worker thread: touches nothing but the
 ## chunk, a fresh Mesher and the pure shape functions above.
 func _bake(c: Chunk) -> void:
+	# Four meshes, joined to the scene one per frame: the road, the scenery on
+	# each side, the dangers. One big upload made a phone miss frames.
 	var m := Mesher.new()
+	var left := Mesher.new()
+	var right_m := Mesher.new()
+	var items := Mesher.new()
 	var r := RandomNumberGenerator.new()
 	r.seed = c.seed
 	var mid := c.s0 + CHUNK / 2.0
@@ -366,26 +383,26 @@ func _bake(c: Chunk) -> void:
 			_road_row(m, c, row_s, h, r)
 		row_s += ROW
 	if c.s1 > 0.0:
-		_decor(m, c, h, r)
+		_decor([left, right_m], c, h, r)
 	for o in c.obstacles:
 		var s: float = o.s
 		var basis := Basis.looking_at(forward(s), Vector3.UP).rotated(Vector3.UP, o.rot)
 		match o.kind:
-			"stela": Models.fallen_stela(m, Models.at(o.pos, basis), o.seed)
-			"blades": Models.blades(m, Models.at(o.pos, basis), o.seed)
+			"stela": Models.fallen_stela(items, Models.at(o.pos, basis), o.seed)
+			"blades": Models.blades(items, Models.at(o.pos, basis), o.seed)
 	for b in c.braziers:
 		if b.curb:
-			Models.brazier(m, Models.at(b.pos + Vector3(0, 0.09, 0)), b.get("seed", 0))
+			Models.brazier(items, Models.at(b.pos + Vector3(0, 0.09, 0)), b.get("seed", 0))
 	for g in c.gates:
 		var w := width(g.s)
 		var hh: Dictionary = Themes.house(g.id)
 		for side in [-1.0, 1.0]:
 			var pos := point(g.s, side * (w / 2.0 + CURB_W + 1.4), FLOOR_Y)
 			var basis := Basis.looking_at(-side * right(g.s), Vector3.UP)
-			Models.gate_pylon(m, Models.at(pos, basis.scaled(Vector3.ONE * 1.3)), hh.accent, c.seed + int(side))
+			Models.gate_pylon(items, Models.at(pos, basis.scaled(Vector3.ONE * 1.3)), hh.accent, c.seed + int(side))
 	if c.index == floori(PLAZA_BACK / CHUNK):
-		Models.start_temple(m, Models.at(Vector3(0, 0, -PLAZA_BACK)))
-	c.baked = m.bake()
+		Models.start_temple(items, Models.at(Vector3(0, 0, -PLAZA_BACK)))
+	c.baked = [m.bake(), left.bake(), right_m.bake(), items.bake()]
 
 ## One 2 m row of road: paving stones (missing over a pit), the bed under
 ## them, and the painted walls down to the floor on both sides.
@@ -461,7 +478,7 @@ func _pit(m: Mesher, s0: float, s1: float, f0: float, f1: float, w0: float, w1: 
 	for wq in walls:
 		m.block([wq[0], wq[1], wq[2], wq[3], wq[0] + lift, wq[1] + lift, wq[2] + lift, wq[3] + lift], Color("#241612"), false, false)
 
-func _decor(m: Mesher, c: Chunk, h: Dictionary, r: RandomNumberGenerator) -> void:
+func _decor(sides: Array, c: Chunk, h: Dictionary, r: RandomNumberGenerator) -> void:
 	var set_id: String = h.decor if c.s0 >= 0.0 else "jungle"
 	for side in [-1.0, 1.0]:
 		for band in [["near", 0.5, 3.6, 1.0, 1.9, 0.9], ["mid", 3.8, 9.0, 2.4, 3.8, 0.8], ["far", 9.5, 21.0, 3.0, 5.0, 0.75]]:
@@ -469,7 +486,7 @@ func _decor(m: Mesher, c: Chunk, h: Dictionary, r: RandomNumberGenerator) -> voi
 			while s < c.s1:
 				if s > 1.0 and r.randf() < band[5]:
 					var kind := _pick(Themes.decor(DECOR, set_id, band[0]), r)
-					_place(m, kind, s, side, r.randf_range(band[1], band[2]), r)
+					_place(sides[0] if side < 0.0 else sides[1], kind, s, side, r.randf_range(band[1], band[2]), r)
 				s += r.randf_range(band[3], band[4])
 	# Vines and roots spilling down the causeway walls.
 	if set_id in ["jungle", "jaguars", "bats"]:
@@ -479,13 +496,14 @@ func _decor(m: Mesher, c: Chunk, h: Dictionary, r: RandomNumberGenerator) -> voi
 			while s < c.s1:
 				if s > 0.5 and r.randf() < 0.55:
 					var top := point(s, side * (width(s) / 2.0 + CURB_W + 0.02), CURB_H)
-					Models.vines(m, Models.at(top, Basis.looking_at(side * right(s), Vector3.UP)), r.randi(), vine_col)
+					Models.vines(sides[0] if side < 0.0 else sides[1], Models.at(top, Basis.looking_at(side * right(s), Vector3.UP)), r.randi(), vine_col)
 				s += r.randf_range(1.6, 3.2)
 	if c.s0 > 0.0 and r.randf() < 0.2:
 		var side := -1.0 if r.randf() < 0.5 else 1.0
 		var s := r.randf_range(c.s0, c.s1)
 		var pos := point(s, side * (width(s) / 2.0 + r.randf_range(26.0, 36.0)), FLOOR_Y)
 		var faces := Basis.looking_at(-side * right(s), Vector3.UP)
+		var m: Mesher = sides[0] if side < 0.0 else sides[1]
 		if set_id in ["jungle", "jaguars", "fire"]:
 			Models.pyramid(m, Models.at(pos, faces), r.randf_range(0.8, 1.2))
 		elif set_id == "bats":
@@ -578,11 +596,8 @@ func _place(m: Mesher, kind: String, s: float, side: float, d: float, r: RandomN
 ## Main thread: turns the baked arrays into nodes.
 func _attach(c: Chunk) -> void:
 	var node := Node3D.new()
-	var mi := MeshInstance3D.new()
-	mi.mesh = Mesher.from_arrays(c.baked)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.add_child(mi)
-	c.baked = []
+	c.node = node
+	_attach_part(c)
 	if not c.drops.is_empty():
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -593,9 +608,25 @@ func _attach(c: Chunk) -> void:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.add_child(mmi)
 		c.drop_mm = mm
-	c.node = node
 	add_child(node)
+	attached += 1
 	_spin(c)
+	if not c.baked.is_empty():
+		_parts.append(c)
+
+## Joins the next baked piece of [c] to its node.
+func _attach_part(c: Chunk) -> void:
+	var piece: Array = c.baked.pop_front()
+	var empty := true
+	for surf in piece:
+		if not surf.is_empty():
+			empty = false
+	if empty:
+		return
+	var mi := MeshInstance3D.new()
+	mi.mesh = Mesher.from_arrays(piece)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	c.node.add_child(mi)
 
 ## Spins every sun-drop and hides the taken ones; call once a frame.
 func spin(delta: float) -> void:

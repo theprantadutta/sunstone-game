@@ -139,6 +139,10 @@ var _ph_j33 := 0
 var _ph_draws := 0.0
 var _ph_prims := 0.0
 var _ph_proc := 0.0
+## What happened in a frame, so a slow one can say why ("[spike]" lines).
+var _events: PackedStringArray = []
+var _prev_events: PackedStringArray = []
+var _attached_seen := 0
 var _fps_t := 0.0
 var _prof_n := 0
 var _prof_max_dt := 0.0
@@ -244,8 +248,9 @@ func _ready() -> void:
 
 func _reset_run() -> void:
 	for j in _jags:
-		j.node.queue_free()
+		_drop_jaguar(j.node)
 	_jags.clear()
+	_jag_queue.clear()
 	for b in _bats:
 		b.node.queue_free()
 	_bats.clear()
@@ -394,7 +399,7 @@ func _second_wind(paid_by_ad := false) -> void:
 				o["hit"] = true
 	for j in _jags.duplicate():
 		if Vector2(j.pos.x - x, j.pos.z + s).length() < 14.0:
-			j.node.queue_free()
+			_drop_jaguar(j.node)
 			_jags.erase(j)
 	for b in _bats:
 		b.flee = true
@@ -518,9 +523,16 @@ func _spawn_runner() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
-	world.spin(delta)
 	if _tour:
+		# A frame's delta arrives one frame late: the work that made it slow
+		# was logged in the frame before.
+		_prev_events = _events
+		_events = []
 		_tour_frame(delta)
+	world.spin(delta)
+	if _tour and world.attached != _attached_seen:
+		_events.append("chunk")
+		_attached_seen = world.attached
 	elif _autopilot:
 		_profile(delta)
 	match state:
@@ -615,6 +627,7 @@ func _step_run(delta: float) -> void:
 	if _shield_t <= 0.0 and _check_hazards():
 		return
 	_collect()
+	_spawn_queued_jaguar()
 	_step_jaguars(delta, h, at)
 	if state != State.RUNNING:
 		return
@@ -650,13 +663,16 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 		return
 	var first := _house_key == ""
 	_house_key = key
+	if _tour:
+		_events.append("house")
 	if at.dawn:
 		ui.show_banner("Dawn", "Night %d survived" % at.n)
 		sfx.play(Sfx.DAWN)
 		light = minf(light + DAWN_GIFT, 1.0)
 		for j in _jags:
-			j.node.queue_free()
+			_drop_jaguar(j.node)
 		_jags.clear()
+		_jag_queue.clear()
 		for b in _bats:
 			b.flee = true
 		return
@@ -738,12 +754,32 @@ func _is_lit(p: Vector3) -> bool:
 
 func _on_chunk(c: World.Chunk) -> void:
 	for spawn in c.jaguars:
-		_add_jaguar(spawn.pos)
+		_jag_queue.append(spawn.pos)
+
+## Jaguars wait in a queue and join one per frame; gone ones are kept to be
+## used again rather than freed and rebuilt.
+var _jag_queue: Array[Vector3] = []
+var _jag_pool: Array[JaguarModel] = []
+
+func _spawn_queued_jaguar() -> void:
+	if not _jag_queue.is_empty():
+		_add_jaguar(_jag_queue.pop_front())
+
+func _drop_jaguar(node: JaguarModel) -> void:
+	node.visible = false
+	_jag_pool.append(node)
 
 func _add_jaguar(pos: Vector3) -> void:
-	var node := JaguarModel.new()
-	node.scale = Vector3.ONE * 1.15
-	add_child(node)
+	if _tour:
+		_events.append("jaguar")
+	var node: JaguarModel
+	if not _jag_pool.is_empty():
+		node = _jag_pool.pop_back()
+		node.visible = true
+	else:
+		node = JaguarModel.new()
+		node.scale = Vector3.ONE * 1.15
+		add_child(node)
 	node.position = pos
 	node.rotation.y = randf() * TAU
 	node.frozen = true
@@ -757,7 +793,7 @@ func _step_jaguars(delta: float, h: Dictionary, at: Dictionary) -> void:
 		var p: Vector3 = j.pos
 		var ahead := -p.z - s
 		if ahead < -16.0:
-			j.node.queue_free()
+			_drop_jaguar(j.node)
 			_jags.erase(j)
 			continue
 		if ahead > 32.0:
@@ -825,6 +861,8 @@ func _step_bats(delta: float, h: Dictionary, at: Dictionary) -> void:
 			_attraction = 0.3
 			var node := BatModel.new()
 			add_child(node)
+			if _tour:
+				_events.append("bat")
 			_bats.append({"node": node, "rel": Vector3(randf_range(-6.0, 6.0), 4.5, -randf_range(16.0, 21.0)),
 				"vel": Vector3.ZERO, "gone": false, "flee": false, "life": 0.0})
 			sfx.play(Sfx.BAT)
@@ -1245,6 +1283,8 @@ func _tour_frame(delta: float) -> void:
 		return
 	_ph_frames += 1
 	_ph_time += delta
+	if delta > 0.025:
+		print("[spike] %5.1fms %-12s %s" % [delta * 1000.0, _ph, ",".join(_prev_events) if not _prev_events.is_empty() else "-"])
 	_ph_max = maxf(_ph_max, delta)
 	if delta > 0.020:
 		_ph_j20 += 1

@@ -206,7 +206,33 @@ func close_modal() -> bool:
 			return true
 	return false
 
+## Draws every letter once, invisibly, at the sizes the game uses, so a
+## banner, a pop or the results page never stalls rasterising glyphs mid-run.
+class FontWarmup:
+	extends Control
+	var frames := 0
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+	func _draw() -> void:
+		var text := ""
+		for c in range(32, 127):
+			text += char(c)
+		text += "áéíóúñ·’—…"
+		var y := 10.0
+		for size in [16, 19, 21, 22, 24, 26, 28, 30, 32, 34, 36, 38, 42, 46, 48, 52, 88, 92]:
+			draw_string(UiKit.display_font(), Vector2(0, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1, 1, 1, 0.004))
+			y += 4.0
+		for weight in [800, 900]:
+			for size in [20, 21, 22, 23, 24, 26, 28, 30, 32, 34]:
+				draw_string(UiKit.text_font(weight), Vector2(0, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1, 1, 1, 0.004))
+				y += 4.0
+	func _process(_delta: float) -> void:
+		frames += 1
+		if frames > 3:
+			queue_free()
+
 func setup(save: SaveData, online: Online, ads: Ads, store: Store) -> void:
+	_root().add_child(FontWarmup.new())
 	_save = save
 	_online = online
 	_ads = ads
