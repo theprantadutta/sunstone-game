@@ -127,6 +127,11 @@ var _auto_tx := 0.0
 ## ("[profile] ..." in logcat). The runner can't die during the tour.
 var _tour := OS.has_feature("profile") or FileAccess.file_exists("user://profile_tour")
 var _invincible := false
+## Dev: `files/dev_shots` stages the store screenshots one by one (default
+## look, no event, can't die), freezing each and printing "[shot] name" so
+## the host can screencap it. The save is never touched.
+var _shots := FileAccess.file_exists("user://dev_shots")
+var _force_blaze := -1.0 ## >= 0 overrides the thumb's blaze (shots)
 var _tour_seed := 0 ## the tour plays the same road every time
 var _page_scaled := false
 var _render_scale := 1.0
@@ -239,7 +244,9 @@ func _ready() -> void:
 	if not FileAccess.file_exists("user://perf_hz"):
 		_lock_refresh()
 	_go_title()
-	if _tour:
+	if _shots:
+		_run_shots()
+	elif _tour:
 		_run_tour()
 	elif _autopilot:
 		get_tree().create_timer(1.5).timeout.connect(_start_run)
@@ -315,7 +322,7 @@ func _start_run() -> void:
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 	sfx.play(Sfx.ROAR)
 	online.track("run_start", {"mode": "daily" if daily_key != "" else "free", "runs": save.runs})
-	if save.tutorial_runs < 2:
+	if save.tutorial_runs < 2 and not _shots:
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if state == State.RUNNING and _hold_total < 0.5:
 				ui.show_hint("Touch and hold: the Sunstone blazes and you can steer", Vector2.ZERO))
@@ -511,7 +518,7 @@ func _spawn_runner() -> void:
 		old_pose = runner.pose
 		runner.queue_free()
 	var hue := Market.find(Market.HUES, save.hue)
-	runner = Shop.dress(save.character, save.garb, save.hat, save.hue)
+	runner = Shop.dress(save.character, save.garb, save.hat, save.hue) if not _shots else Shop.dress("explorer", "explorer", "own", "sun")
 	runner.pose = old_pose
 	runner.scale = Vector3.ONE * 1.2
 	add_child(runner)
@@ -577,6 +584,8 @@ func _step_run(delta: float) -> void:
 	var steering := _touching or _key_left or _key_right or (_autopilot and _auto_touch)
 	var touching := steering or _key_blaze
 	var want := 1.0 if touching and light > 0.0 else 0.0
+	if _force_blaze >= 0.0:
+		want = _force_blaze
 	blaze += (want - blaze) * minf(1.0, delta * (9.0 if want > blaze else 5.0))
 	if touching and not _was_touching:
 		_run_flares += 1
@@ -692,7 +701,7 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 			_hint("bats", "Bats hunt bright light: let go and they lose you")
 
 func _hint(key: String, text: String) -> void:
-	if _hints.has(key):
+	if _hints.has(key) or _shots:
 		return
 	_hints[key] = true
 	ui.show_hint(text, Vector2.ZERO)
@@ -1404,6 +1413,95 @@ func _set_experiment(name: String, on: bool) -> void:
 			Codex.glow().next_pass = null if on else Codex.outline()
 		"scale-0.8":
 			get_viewport().scaling_3d_scale = 0.8 if on else 1.0
+
+# ------------------------------------------------------------ store shots ---
+
+## Freezes the frame for the host to capture, then carries on.
+func _hold(name: String) -> void:
+	get_tree().paused = true
+	print("[shot] " + name)
+	await get_tree().create_timer(3.0, true, false, true).timeout
+	get_tree().paused = false
+
+func _shot_run(start: float, blaze: float, light_v: float) -> void:
+	_go_title()
+	_dev_start = start
+	_autopilot = true
+	_invincible = true
+	_force_blaze = blaze
+	_start_run()
+	_intro_t = 1.0
+	light = light_v
+
+## Jaguars staged round the runner: [offsets] are (across, ahead) metres.
+func _shot_jaguars(offsets: Array) -> void:
+	for o in offsets:
+		_add_jaguar(Vector3(x + o.x, 0.0, -(s + o.y)))
+
+func _run_shots() -> void:
+	Themes.choose_event("none")
+	_spawn_runner()
+	_tour_seed = 2024
+	await _wait(4.0)
+	_go_title()
+	await _wait(4.0)
+	await _hold("01_title")
+	# Blazing in the House of Jaguars: they stand frozen in the light.
+	_shot_run(180.0, 1.0, 0.95)
+	await _wait(1.2)
+	_shot_jaguars([Vector2(-2.4, 2.5), Vector2(2.6, 4.0), Vector2(-1.2, 6.5), Vector2(3.4, 9.5)])
+	await _wait(1.8)
+	await _hold("02_blaze")
+	# Embers: eyes in the dark, coming.
+	_shot_run(200.0, 0.0, 0.8)
+	await _wait(2.5)
+	_shot_jaguars([Vector2(-3.0, 7.0), Vector2(3.4, 9.0), Vector2(0.4, 12.5), Vector2(-4.2, 14.5), Vector2(4.6, 15.5)])
+	await _wait(0.35)
+	await _hold("03_dark")
+	# The House of Bats: a blaze, and they come.
+	_shot_run(300.0, 1.0, 0.8)
+	await _wait(2.5)
+	for k in 4:
+		var node := BatModel.new()
+		add_child(node)
+		var rel: Vector3 = [Vector3(-2.2, 4.2, 1.5), Vector3(2.6, 3.6, 0.0), Vector3(-0.6, 3.0, -2.5), Vector3(3.2, 4.8, -4.0)][k]
+		_bats.append({"node": node, "rel": rel, "vel": Vector3.ZERO, "gone": false, "flee": false, "life": 0.0})
+		node.scale = Vector3.ONE * 2.0
+	await _wait(0.25)
+	await _hold("04_bats")
+	# The House of Fire, wherever this seed puts it.
+	var fire_s := 0.0
+	for n in range(2, 6):
+		var plan := Nights.plan(n, _tour_seed)
+		var k := plan.find("fire")
+		if k >= 0:
+			fire_s = Nights.house_starts(n)[k] + 30.0
+			break
+	_shot_run(fire_s, 0.6, 0.9)
+	await _wait(3.5)
+	await _hold("05_fire")
+	# Dawn.
+	_shot_run(Nights.start(2) - 22.0, 0.0, 0.7)
+	await _wait(0.9)
+	await _hold("06_dawn")
+	_force_blaze = -1.0
+	_invincible = false
+	_autopilot = false
+	_go_title()
+	await _wait(1.5)
+	# The shop, Ixchel in the preview.
+	ui._market_tab = 0
+	ui._shop_sel["Runners"] = "ixchel"
+	ui._open_market()
+	await _wait(2.5)
+	await _hold("07_shop")
+	ui._market.visible = false
+	ui._free_preview()
+	ui._open_glyphs()
+	await _wait(1.5)
+	await _hold("08_glyphs")
+	ui.close_modal()
+	print("[shot] done")
 
 func _profile(delta: float) -> void:
 	_fps_t += delta

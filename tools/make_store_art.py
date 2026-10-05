@@ -29,14 +29,14 @@ DUSK_LOW = (240, 154, 94)
 
 # (raw file, caption, small line) — in store order (Play shows up to 8).
 SHOTS = [
-    ("02_sunset.png", "Run into the night", "The sun sets on every run."),
-    ("03b_chase.png", "Outrun the jaguars", "Stone guardians that move in the dark."),
-    ("03d_flare.png", "Tap to flare", "Turn the jaguars back to stone."),
-    ("03_night.png", "Keep the Sunstone lit", "Your only light on the causeway."),
-    ("01_title.png", "Steal the Sunstone", "A painted Maya temple at dusk."),
-    ("05_ranks.png", "Race the world", "Ranks for the daily dusk, the week, all time."),
-    ("06_glyphs.png", "Earn twenty glyphs", "Every one drawn like a scribe's sign."),
-    ("07_market_garbs.png", "Dress your explorer", "Charms, garbs and hues for sun-drops."),
+    ("01_title.png", "Carry the sun", "Through the Maya underworld, one night at a time."),
+    ("02_blaze.png", "Hold to blaze", "Your light paints the world back in."),
+    ("03_dark.png", "Let go and hide", "Embers save light. The dark closes in."),
+    ("04_bats.png", "Bats hunt the light", "Blaze too long and they swoop in."),
+    ("05_fire.png", "Six Houses of Xibalba", "Gloom, Knives, Cold, Jaguars, Bats and Fire."),
+    ("06_dawn.png", "Make it to dawn", "Then the next night begins."),
+    ("07_shop.png", "Choose your runner", "Runners, outfits, hats and stones."),
+    ("08_glyphs.png", "Earn twenty glyphs", "Every one drawn like a scribe's sign."),
 ]
 SIZES = {"phone": (1080, 2160, 330), "tablet": (1080, 1728, 300)} # width, height, caption band
 
@@ -102,16 +102,16 @@ def screenshot(raw, caption, line, kind="phone"):
     return canvas
 
 
-def feature(raw_sunset):
+def feature(raw_run):
     W, H = 1024, 500
     img = gradient(W, H)
-    shot = Image.open(raw_sunset).convert("RGB")
-    # A slice of the sunset run on the right.
+    shot = Image.open(raw_run).convert("RGB")
+    # A slice of a run on the right: the Sunstone's painted circle in the night.
     # Scale so the 470 px slot is filled edge to edge, then take the runner's band.
     scale = 470 / (shot.width * 0.62)
     s = shot.resize((int(shot.width * scale), int(shot.height * scale)), Image.LANCZOS)
     left = (s.width - 470) // 2
-    top = min(int(s.height * 0.32), s.height - H)
+    top = min(int(s.height * 0.36), s.height - H)
     crop = s.crop((left, top, left + 470, top + H))
     img.paste(crop, (W - 470, 0))
     d = ImageDraw.Draw(img)
@@ -153,7 +153,7 @@ def main():
         os.makedirs(dst, exist_ok=True)
         for i, (name, caption, line) in enumerate(SHOTS, 1):
             screenshot(os.path.join(src, name), caption, line, kind).save(os.path.join(dst, "%02d.png" % i))
-    feature(os.path.join(raw_dir, "phone", "02_sunset.png")).save(os.path.join(OUT, "feature-graphic.png"))
+    feature(os.path.join(raw_dir, "phone", "02_blaze.png")).save(os.path.join(OUT, "feature-graphic.png"))
     print("store art written to", os.path.abspath(OUT))
 
 
