@@ -239,7 +239,7 @@ them **untyped via ClassDB**; never name them as types.
   `61:D9:FE:78:02:71:C8:1E:9C:4E:3A:1B:12:0C:A1:A0:2C:6D:32:96`.
 - Release builds call `https://sunstone.pranta.dev` (debug: the LAN dev API).
 - Store copy, Data safety / content rating answers, IAP product table and the
-  release checklist: **`store/LISTING.md`**. Art: `store/screenshots/{phone,tablet}/`
+  release checklist: **`store/LISTING.md`**. Art: `store/screenshots/{phone,tablet-7in,tablet-10in}/`
   and `store/feature-graphic.png`. Regenerate with `python tools/make_store_art.py`
   from raw shots in `store/raw/{phone,tablet}/` (gitignored, same file names as
   `SHOTS` in the tool).

@@ -5,8 +5,8 @@
 Reads <raw>/phone/*.png (a 1080-wide phone) and <raw>/tablet/*.png (the Tab A9,
 800 wide), taken with `adb exec-out screencap -p`, and writes:
   store/screenshots/phone/NN.png   1080x2160 (Play's 2:1 limit)
-  store/screenshots/tablet/NN.png  1080x1728 (fits Play's 7- and 10-inch slots;
-                                   the tablet screen stays at native size)
+  store/screenshots/tablet-7in/NN.png   1080x1920 (9:16, as Play's 7-inch and
+  store/screenshots/tablet-10in/NN.png  10-inch tablet slots both require)
   store/feature-graphic.png        1024x500
 Raw shots live in store/raw/ (gitignored).
 """
@@ -38,7 +38,10 @@ SHOTS = [
     ("07_shop.png", "Choose your runner", "Runners, outfits, hats and stones."),
     ("08_glyphs.png", "Earn twenty glyphs", "Every one drawn like a scribe's sign."),
 ]
-SIZES = {"phone": (1080, 2160, 330), "tablet": (1080, 1728, 300)} # width, height, caption band
+SIZES = {"phone": (1080, 2160, 330), "tablet": (1080, 1920, 320)} # width, height, caption band
+# Where each set goes: Play wants tablet shots in two slots (7- and 10-inch),
+# both 9:16; one 1080x1920 set meets both rules.
+DESTS = {"phone": ["phone"], "tablet": ["tablet-7in", "tablet-10in"]}
 
 
 def paper(w, h):
@@ -149,10 +152,12 @@ def main():
         src = os.path.join(raw_dir, kind)
         if not os.path.isdir(src):
             continue
-        dst = os.path.join(OUT, "screenshots", kind)
-        os.makedirs(dst, exist_ok=True)
         for i, (name, caption, line) in enumerate(SHOTS, 1):
-            screenshot(os.path.join(src, name), caption, line, kind).save(os.path.join(dst, "%02d.png" % i))
+            img = screenshot(os.path.join(src, name), caption, line, kind)
+            for folder in DESTS[kind]:
+                dst = os.path.join(OUT, "screenshots", folder)
+                os.makedirs(dst, exist_ok=True)
+                img.save(os.path.join(dst, "%02d.png" % i))
     feature(os.path.join(raw_dir, "phone", "02_blaze.png")).save(os.path.join(OUT, "feature-graphic.png"))
     print("store art written to", os.path.abspath(OUT))
 
