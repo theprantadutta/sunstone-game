@@ -8,6 +8,12 @@ import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import android.os.Build
+import android.view.Surface
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewGroup
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,8 +73,12 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
      * Asks the display to run at [hz] (the game passes 60). On a phone with a
      * 90 or 120 Hz screen a game rendering 60–80 fps would otherwise land its
      * frames unevenly (judder); at 60 Hz every frame shows for the same time.
-     * Picks the display mode with the same resolution closest to [hz]. Returns
-     * the refresh rates the display offers, e.g. "60,90".
+     *
+     * Many phones list only their fast mode and offer 60 Hz as an
+     * "alternative rate" of it, so pinning a display mode isn't enough: the
+     * game's own drawing surface asks for [hz] (Surface.setFrameRate, Android
+     * 11+), and the window prefers [hz] too. Returns every rate the display
+     * offers, alternatives included, e.g. "60,90".
      */
     @UsedByGodot
     fun setRefreshRate(hz: Float): String {
@@ -76,15 +86,38 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
         val display = if (Build.VERSION.SDK_INT >= 30) act.display else @Suppress("DEPRECATION") act.windowManager.defaultDisplay
         val modes = display?.supportedModes ?: return ""
         val current = display.mode
-        val best = modes
-            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-            .minByOrNull { kotlin.math.abs(it.refreshRate - hz) }
+        val rates = mutableSetOf<Int>()
+        for (m in modes) {
+            rates.add(m.refreshRate.roundToInt())
+            if (Build.VERSION.SDK_INT >= 31) m.alternativeRefreshRates.forEach { rates.add(it.roundToInt()) }
+        }
+        // A real mode at [hz] with this resolution, if the display lists one.
+        val exact = modes.firstOrNull {
+            it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight &&
+                abs(it.refreshRate - hz) < 1f
+        }
         act.runOnUiThread {
             val lp = act.window.attributes
-            if (best != null) lp.preferredDisplayModeId = best.modeId
+            if (exact != null) lp.preferredDisplayModeId = exact.modeId
             lp.preferredRefreshRate = hz
             act.window.attributes = lp
+            if (Build.VERSION.SDK_INT >= 30) {
+                findSurface(act.window.decorView)?.holder?.surface?.let {
+                    if (it.isValid) it.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
+                }
+            }
         }
-        return modes.map { it.refreshRate.toInt() }.distinct().sorted().joinToString(",")
+        return rates.sorted().joinToString(",")
+    }
+
+    /** The game's drawing surface: the first SurfaceView under [v]. */
+    private fun findSurface(v: View): SurfaceView? {
+        if (v is SurfaceView) return v
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) {
+                findSurface(v.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
     }
 }

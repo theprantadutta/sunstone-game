@@ -1041,6 +1041,10 @@ func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
 			_pause()
+		NOTIFICATION_APPLICATION_RESUMED:
+			# Android forgets a surface's frame-rate wish when it comes back.
+			if not FileAccess.file_exists("user://perf_hz"):
+				_lock_refresh()
 
 ## Android back (routed through the UI layer, which keeps listening while the
 ## tree is paused): pause, resume, close a modal, or leave.
