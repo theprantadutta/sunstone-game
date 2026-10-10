@@ -12,6 +12,9 @@ extends Node3D
 
 enum State { TITLE, RUNNING, PAUSED, DYING, OFFER, RESULTS }
 
+## The rules a run is played by, sent with it (sunstone-api RunRules): 1 was
+## hold to blaze, 2 is the lanes. Bump it when old scores stop being comparable.
+const RULESET := 2
 const START_S := -3.0
 const DRAIN := 0.02 ## light per second
 const FLARE_COST := 0.15 ## light a flare spends
@@ -29,6 +32,9 @@ const WALL_CLEAR := 0.5 ## feet higher than this clear a low wall
 const STUMBLE_LIGHT := 0.12 ## light lost when he clips something
 const STUMBLE_WINDOW := 6.0 ## a second stumble this soon is the end
 const RUNNER_HALF := 0.35 ## half his width, for clipping
+const DASH_M := 300.0 ## the head start: metres the sun carries him...
+const DASH_MUL := 2.6 ## ...at this many times his speed...
+const DASH_Y := 3.1 ## ...this high, over every stela and lintel
 const DROP_LIGHT := 0.014 ## a sun-drop keeps the stone burning, barely
 const DAWN_GIFT := 0.35 ## light the sunrise gives back
 const DROP_R := 0.85
@@ -105,6 +111,8 @@ var _pack := PACK_FAR ## how far behind him the jaguar pack runs
 var _pack_nodes: Array[JaguarModel] = []
 var _pack_u: Array[float] = [] ## each cat's place across the road, eased
 var _pack_caught := false
+var _dash_to := 0.0 ## > 0 while the head start carries him: where it ends
+var _head_start := 0.0 ## metres the head start carried him this run
 var _run_time := 0.0
 var _second_wind_used := false
 var _shield_t := 0.0
@@ -239,6 +247,7 @@ func _ready() -> void:
 		if state == State.TITLE:
 			ui.show_title(save)
 		online.start(save))
+	ui.dash_pressed.connect(_dash)
 	ui.second_wind_accepted.connect(_second_wind)
 	ui.second_wind_by_ad.connect(func(): _second_wind(true))
 	ui.second_wind_declined.connect(func():
@@ -322,6 +331,8 @@ func _reset_run() -> void:
 	_stumble_t = 99.0
 	_pack = PACK_FAR + 6.0
 	_pack_caught = false
+	_dash_to = 0.0
+	_head_start = 0.0
 	_sight = 1000.0
 	_run_time = 0.0
 	_second_wind_used = false
@@ -372,11 +383,31 @@ func _start_run() -> void:
 		world.ensure(s)
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 	sfx.play(Sfx.ROAR)
+	# The head start is offered for the first moments (not on the daily dusk,
+	# where everyone runs the same road from the same start).
+	if save.boosts("dash") > 0 and daily_key == "" and not _shots and not _tour and not _autopilot:
+		ui.show_dash(save.boosts("dash"))
+		get_tree().create_timer(3.5).timeout.connect(ui.hide_dash)
 	online.track("run_start", {"mode": "daily" if daily_key != "" else "free", "runs": save.runs})
 	if not _shots:
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if state == State.RUNNING:
 				_hint("swipe", "Swipe left and right to change lanes", false))
+
+## The head start: the sun lifts him over the road and carries him DASH_M
+## metres, then sets him down where the road is clear.
+func _dash() -> void:
+	if state != State.RUNNING or _dash_to > 0.0 or _head_start > 0.0 or s > 40.0:
+		return
+	if not save.use_boost("dash"):
+		return
+	save.save_to_disk()
+	_dash_to = maxf(s, 0.0) + DASH_M
+	_head_start = 0.0
+	ui.hide_dash()
+	ui.flash_flare()
+	sfx.play(Sfx.FLARE)
+	online.track("boost", {"id": "dash"})
 
 ## Today's dusk: the same road for everyone, fixed for the whole run even if
 ## the date turns while running.
@@ -520,6 +551,8 @@ func _finish_run() -> void:
 		"mode": "daily" if daily_key != "" else "free", "dailyKey": daily_key if daily_key != "" else null,
 		"distance": metres, "drops": coins, "flares": _run_flares, "durationMs": int(_run_time * 1000.0),
 		"dusk": snappedf(dusk, 0.001), "cause": death_cause,
+		"ruleset": RULESET, "jumps": _jumps, "slides": _slides, "stumbles": _stumbles,
+		"headStart": int(_head_start),
 	})
 	online.track("run_end", {"mode": "daily" if daily_key != "" else "free", "distance": metres, "drops": coins,
 		"flares": _run_flares, "cause": death_cause, "second_wind": _second_wind_used, "glyphs": new_glyphs.size(),
@@ -636,7 +669,19 @@ func _step_run(delta: float) -> void:
 	_intro_t = minf(_intro_t + delta / 1.1, 1.0)
 	var at := Nights.locate(maxf(s, 0.0))
 	speed = Nights.speed(at.n, at.t)
+	var dashing := _dash_to > 0.0
+	if dashing:
+		speed *= DASH_MUL
+	var s_before := s
 	s += speed * delta
+	if dashing:
+		_head_start += (s - s_before) * (1.0 - 1.0 / DASH_MUL)
+		# Set down only where the road ahead is clear for a moment.
+		if s >= _dash_to and not world.clear(s + 2.0, [-1, 0, 1], speed / DASH_MUL * 1.4):
+			_dash_to = s + 4.0
+		if s >= _dash_to:
+			_dash_to = 0.0
+			_shield_t = 1.2
 	distance = maxf(s, 0.0)
 	world.ensure(s)
 	var h: Dictionary = Themes.house("dusk") if s < 0.0 else Nights.house(s, world.seed)
@@ -652,7 +697,7 @@ func _step_run(delta: float) -> void:
 	blaze += (want - blaze) * minf(1.0, delta * (12.0 if want > blaze else 3.0))
 
 	# The light drains by itself; flares spend it in lumps.
-	if s > 0.0 and not at.dawn:
+	if s > 0.0 and not at.dawn and not dashing:
 		light -= DRAIN * h.drain * Market.drain_scale(save) * delta
 	light = clampf(light, 0.0, 1.0)
 	var glow: float = h.ember * GLOW * (0.4 + 0.6 * sqrt(light))
@@ -673,7 +718,16 @@ func _step_run(delta: float) -> void:
 	var old_x := x
 	_u += (World.lane_u(_lane) - _u) * minf(1.0, delta * LANE_EASE)
 	x = world.point(s, _u).x
-	if y > 0.0 or vy > 0.0:
+	if dashing:
+		y = lerpf(y, DASH_Y, 1.0 - exp(-4.0 * delta))
+		vy = 0.0
+		_lane = 0
+		_lane_from = 0
+		_force_blaze = 1.0
+	elif _force_blaze == 1.0 and _head_start > 0.0:
+		_force_blaze = -1.0
+		vy = -0.01 # fall back to the road
+	if not dashing and (y > 0.0 or vy > 0.0 or vy < 0.0):
 		vy -= GRAVITY * delta
 		y += vy * delta
 		if y <= 0.0:
@@ -691,6 +745,8 @@ func _step_run(delta: float) -> void:
 	_check_houses(at, h)
 	_shield_t = maxf(_shield_t - delta, 0.0)
 	_growl_cd = maxf(_growl_cd - delta, 0.0)
+	if dashing:
+		_shield_t = maxf(_shield_t, 0.3)
 	if _shield_t <= 0.0 and _check_hazards():
 		return
 	_collect()
@@ -791,7 +847,7 @@ const COACH := {
 	"dodge": "Swipe left or right to go round",
 }
 func _teach() -> void:
-	if _shots or _autopilot or _tour:
+	if _shots or _autopilot or _tour or _dash_to > 0.0:
 		return
 	if _coach != "":
 		# The danger went by without the move: let time run again.

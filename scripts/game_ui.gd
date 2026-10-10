@@ -10,6 +10,7 @@ extends CanvasLayer
 signal run_pressed
 signal daily_pressed
 signal pause_pressed
+signal dash_pressed
 signal resume_pressed
 signal home_pressed
 signal again_pressed
@@ -46,6 +47,7 @@ var _banner: Banner
 var _drops: Label
 var _meter: UiKit.SunMeter
 var _hint: UiKit.HintStrip
+var _dash_btn: UiKit.GlyphButton
 var _danger: UiKit.DangerFlash
 var _pause: Control
 var _settings: Control
@@ -443,6 +445,28 @@ func _build_hud() -> void:
 	_hint = UiKit.HintStrip.new()
 	_hud.add_child(_hint)
 	_pin(_hint, Rect2(0.5, 0.74, 0, 0), Rect2(-270, 0, 540, 112))
+
+	# The head start, offered for the first moments of a run.
+	_dash_btn = UiKit.GlyphButton.new("Head start")
+	_hud.add_child(_dash_btn)
+	_pin(_dash_btn, Rect2(0.5, 0.88, 0, 0), Rect2(-170, -50, 340, 96))
+	_dash_btn.pressed.connect(func(): dash_pressed.emit())
+	_dash_btn.visible = false
+
+## Offers the head start ([count] held) for a few seconds.
+func show_dash(count: int) -> void:
+	_dash_btn.text = "Head start  ×%d" % count if count > 1 else "Head start"
+	if _dash_btn._label:
+		_dash_btn._label.text = _dash_btn.text
+	_dash_btn.modulate.a = 1.0
+	_dash_btn.visible = true
+
+func hide_dash() -> void:
+	if not _dash_btn.visible:
+		return
+	var tw := _dash_btn.create_tween()
+	tw.tween_property(_dash_btn, "modulate:a", 0.0, 0.25)
+	tw.tween_callback(func(): _dash_btn.visible = false)
 
 ## [day_name] is the tzolk'in day during a daily dusk, "" otherwise.
 func show_hud(day_name := "") -> void:

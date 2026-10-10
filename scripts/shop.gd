@@ -54,6 +54,8 @@ const BOOSTS := [
 		"text": "The first time the Sunstone goes out, it relights."},
 	{"id": "ward", "title": "Jaguar ward", "drops": 300,
 		"text": "The first jaguar to catch you turns to stone instead."},
+	{"id": "dash", "title": "Head start", "drops": 400,
+		"text": "The sun carries you over the first 300 m."},
 ]
 
 ## Real-money items in the treasury (consumable packs and bundles). The

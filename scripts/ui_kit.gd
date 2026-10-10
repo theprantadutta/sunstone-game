@@ -334,7 +334,8 @@ class GlyphButton:
 			return
 		kind = k
 		if _label:
-			_label.add_theme_color_override("font_color", UiKit.STUCCO if kind == Kind.PRIMARY else UiKit.INK)
+			# The colour lives in the label's settings (which beat theme colours).
+			_label.label_settings.font_color = UiKit.STUCCO if kind == Kind.PRIMARY else UiKit.INK
 		queue_redraw()
 
 	func _layout() -> void:
