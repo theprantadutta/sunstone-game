@@ -486,11 +486,14 @@ func set_night(n: int, house: String, t: float, dawn: bool) -> void:
 	_dawn.set_progress(1.0 if dawn else t, dawn)
 
 ## A short line that pops under the sun meter: "Sun-string +3".
+var _pops_live := 0 ## pops on screen now: a new one sits under the last
 func pop(text: String) -> void:
 	var l := UiKit.label(text, UiKit.display_font(), 34, UiKit.OCHRE_LIGHT, 10)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hud.add_child(l)
-	_pin(l, TOP_CENTER, Rect2(-260, _top + 230, 520, 60))
+	_pin(l, TOP_CENTER, Rect2(-260, _top + 230 + 52 * (_pops_live % 3), 520, 60))
+	_pops_live += 1
+	l.tree_exited.connect(func(): _pops_live = maxi(_pops_live - 1, 0))
 	l.pivot_offset = Vector2(260, 30)
 	l.scale = Vector2.ONE * 0.6
 	var tw := l.create_tween()

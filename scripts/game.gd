@@ -1896,9 +1896,10 @@ func _until(cond: Callable, timeout: float) -> void:
 		t += get_process_delta_time()
 
 ## Jaguars staged round the runner: [offsets] are (across, ahead) metres.
-func _shot_jaguars(offsets: Array) -> void:
+## [on_road]: x is a place across the road (u) rather than from him.
+func _shot_jaguars(offsets: Array, on_road := false) -> void:
 	for o in offsets:
-		_add_jaguar(Vector3(x + o.x, 0.0, -(s + o.y)))
+		_add_jaguar(world.point(s + o.y, o.x) if on_road else Vector3(x + o.x, 0.0, -(s + o.y)))
 
 func _run_shots() -> void:
 	Themes.choose_event("none")
@@ -1909,18 +1910,23 @@ func _run_shots() -> void:
 	await _wait(4.0)
 	await _hold("01_title")
 	# A leap over a low wall, mid-air.
-	_shot_run(60.0, 0.35, 0.85)
-	await _until(func(): return y > 0.95 and vy < 1.0 and world.occupant(s + 1.0, _lane, 1.5).get("kind", "") in ["wall", "pit"], 20.0)
+	_shot_run(70.0, 0.35, 0.85)
+	await _wait(2.5) # past the House banner
+	await _until(func(): return y > 0.75 and vy > 0.0 and world.occupant(s + 1.0, _lane, 0.6).get("kind", "") in ["wall", "pit"], 25.0)
 	await _hold("02_leap")
 	# A flare in the House of Jaguars: they stand frozen in the light.
-	_shot_run(180.0, 1.0, 0.95)
-	await _wait(1.2)
-	_shot_jaguars([Vector2(-2.4, 5.5), Vector2(2.6, 7.0), Vector2(-1.2, 10.5), Vector2(3.4, 13.5)])
-	await _wait(1.8)
+	_shot_run(186.0, 1.0, 0.95)
+	await _wait(3.6) # past the House banner
+	# In the lanes he isn't in, so none stands where he runs.
+	var others: Array = [-1, 0, 1].filter(func(l): return l != _lane)
+	_shot_jaguars([Vector2(World.lane_u(others[0]), 8.0), Vector2(World.lane_u(others[1]), 10.0),
+		Vector2(World.lane_u(others[0]), 15.0), Vector2(World.lane_u(_lane), 19.0)], true)
+	await _wait(0.15)
 	await _hold("03_flare")
 	# The light failing, the pack at his heels.
 	_shot_run(120.0, 0.0, 0.18)
 	_dev_pack = true
+	_pack = PACK_NEAR
 	await _wait(2.6)
 	light = 0.18
 	await _hold("04_pack")
