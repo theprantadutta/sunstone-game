@@ -10,15 +10,17 @@ extends Node3D
 ## The road's centre wanders left and right ([center]); its width belongs to
 ## the House it passes through ([width]).
 ##
-## What the road holds (drops, dangers, braziers, jaguars) is dealt in order
-## from one seeded stream as chunks are made, so a seed always deals the same
-## road — the daily dusk is the same for everyone.
+## The paved road holds three lanes (lane −1, 0, +1 at u = lane × LANE_W).
+## What it holds (drops, dangers, braziers, jaguars) is dealt row by row, in
+## order, from one seeded stream as chunks are made, so a seed always deals the
+## same road — the daily dusk is the same for everyone. Every row leaves a way
+## through: a free lane, or a jump, or a slide.
 
 signal chunk_added(chunk: Chunk)
 
 const CHUNK := 12.0
 const ROW := 2.0
-const COLS := 5
+const COLS := 6 ## paving stones across: two per lane
 const FLOOR_Y := -2.6
 const CURB_W := 0.45
 const CURB_H := 0.22
@@ -28,6 +30,15 @@ const PLAZA_W := 16.0
 const PLAZA_BACK := -16.0
 const DROP_Y := 0.65
 const BRAZIER_R := 3.2
+const ALL := 9 ## an obstacle's lane when it spans the road (a lintel)
+## How tall each danger stands (m): a low wall is jumped, a lintel slid under,
+## the rest go round. [depth] is its length along the road.
+const DANGER := {
+	"stela": {"depth": 0.7, "jump": false, "slide": false},
+	"blades": {"depth": 0.8, "jump": false, "slide": false},
+	"wall": {"depth": 0.5, "jump": true, "slide": false},
+	"lintel": {"depth": 0.6, "jump": false, "slide": true},
+}
 
 class Chunk:
 	extends RefCounted
@@ -35,7 +46,7 @@ class Chunk:
 	var s0 := 0.0
 	var s1 := 0.0
 	var drops: Array[Dictionary] = [] ## {s, pos: Vector3, taken}
-	var obstacles: Array[Dictionary] = [] ## {kind, s, pos, r, rot, seed}
+	var obstacles: Array[Dictionary] = [] ## {kind, s, lane (ALL = every lane), depth, pos, seed}
 	var pits: Array[Dictionary] = [] ## {s0, s1, c0, c1}: road cells missing
 	var braziers: Array[Dictionary] = [] ## {pos, r, curb}
 	var jaguars: Array[Dictionary] = [] ## spawn points {s, pos}
@@ -105,6 +116,10 @@ func forward(s: float) -> Vector3:
 
 func point(s: float, u := 0.0, y := 0.0) -> Vector3:
 	return Vector3(center(s), y, -s) + right(s) * u
+
+## The centre of [lane] (−1, 0, 1) across the road, in metres.
+static func lane_u(lane: int) -> float:
+	return lane * Nights.LANE_W
 
 func width(s: float) -> float:
 	if s < 0.0:
@@ -252,75 +267,119 @@ func _near_gate(s: float) -> bool:
 			return true
 	return false
 
-## Deals what the road holds, in order, up to [upto].
+## Deals what the road holds, row by row, up to [upto]. Rows come about a
+## second apart at the speed the runner will have there (closer as the nights
+## go on), so there is always time to read one and move.
 func _deal_until(upto: float) -> void:
 	while _next_ev < upto:
 		var s := _next_ev
 		var at := Nights.locate(maxf(s, 0.0))
 		var prog: float = (at.n - 1) + at.t
-		_next_ev += _ev.randf_range(5.6, 8.5) / (1.0 + 0.07 * prog)
+		var v := Nights.speed(at.n, at.t)
+		_next_ev += v * _ev.randf_range(0.95, 1.45) / (1.0 + 0.06 * minf(prog, 6.0))
 		if s < Nights.START_CLEAR:
+			if s > 8.0:
+				_drop_line(s, 0, 5)
 			continue
 		if at.dawn:
-			if _ev.randf() < 0.5:
-				_trail(s)
+			if _ev.randf() < 0.6:
+				_drop_line(s, _ev.randi_range(-1, 1), 6)
 			continue
-		if s > Nights.start(at.n) + Nights.length(at.n) - 6.0 or _near_gate(s):
+		if s > Nights.start(at.n) + Nights.length(at.n) - 8.0 or _near_gate(s):
 			continue
 		var h := Nights.house(s, seed)
-		var weights := [["drop", h.w_drop], ["obst", h.w_obst], ["jag", h.w_jag], ["brazier", h.w_brazier]]
+		var mix: Dictionary = h.mix
 		var total := 0.0
-		for wt in weights:
-			total += wt[1]
+		for k in mix:
+			total += mix[k]
 		var roll := _ev.randf() * total
 		var pick := "drop"
-		for wt in weights:
-			roll -= wt[1]
+		for k in mix:
+			roll -= mix[k]
 			if roll <= 0.0:
-				pick = wt[0]
+				pick = k
 				break
-		var side := -1.0 if _ev.randf() < 0.5 else 1.0
-		var w := width(s)
-		match pick:
-			"drop":
-				_trail(s)
-			"obst":
-				var kseed := _ev.randi()
-				if Nights.house_id(s, seed) == "knives" or _ev.randf() < 0.2:
-					var u := _ev.randf_range(-0.2, 0.2) * w
-					_put("obstacles", s, {"kind": "blades", "s": s, "pos": point(s, u), "r": 0.75, "rot": 0.0, "seed": kseed})
-				elif _ev.randf() < 0.55:
-					var u := _ev.randf_range(-0.14, 0.14) * w
-					_put("obstacles", s, {"kind": "stela", "s": s, "pos": point(s, u), "r": 0.95, "rot": _ev.randf_range(-0.35, 0.35), "seed": kseed})
-				else:
-					var row_s := floorf(s / ROW) * ROW
-					var frac := side * _ev.randf_range(0.05, 0.26)
-					var col := clampi(roundi((frac + 0.5) * COLS - 0.5), 0, COLS - 1)
-					var c1 := col
-					if _ev.randf() < 0.4:
-						c1 = clampi(col + (1 if col < COLS / 2 else -1), 0, COLS - 1)
-					_put("pits", row_s, {"s0": row_s, "s1": row_s + ROW, "c0": mini(col, c1), "c1": maxi(col, c1)})
-			"jag":
-				var n := 2 if _ev.randf() < 0.3 + 0.1 * at.n else 1
-				for k in n:
-					var sd := side if k == 0 else -side
-					var js := s + _ev.randf_range(-1.2, 1.2)
-					var pos := point(js, sd * (width(js) / 2.0 + _ev.randf_range(-0.4, 0.3)))
-					_put("jaguars", js, {"s": js, "pos": pos})
-			"brazier":
-				_put("braziers", s, {"pos": point(s, side * (w / 2.0 + CURB_W / 2.0), CURB_H), "r": BRAZIER_R, "curb": true, "seed": _ev.randi()})
+		_row(pick, s, prog)
 
-## A trail of five sun-drops drifting from the middle toward one side — taking
-## them all means steering, and steering means blazing.
-func _trail(s: float) -> void:
-	var side := -1.0 if _ev.randf() < 0.5 else 1.0
-	var a := _ev.randf_range(-0.05, 0.05)
-	var b := side * _ev.randf_range(0.22, 0.34)
+## One row of road: [pick] is what the House's mix chose; harder nights mix
+## more into a row. Always leaves a way through.
+func _row(pick: String, s: float, prog: float) -> void:
+	var lanes := [-1, 0, 1]
+	_shuffle(lanes)
+	# How likely the row carries a second danger (night 1: rarely).
+	var busy := clampf(0.12 + 0.13 * prog, 0.0, 0.7)
+	match pick:
+		"drop":
+			_drop_line(s, lanes[0], 6)
+		"stela", "blades":
+			# One lane blocked, or two; never three.
+			var n := 2 if _ev.randf() < busy else 1
+			for i in n:
+				_danger(pick, s, lanes[i])
+			if n == 2 and _ev.randf() < busy:
+				# The open lane holds a low wall: jump it there.
+				_danger("wall", s, lanes[2])
+				_drop_arc(s, lanes[2])
+			elif _ev.randf() < 0.5:
+				_drop_line(s - 2.0, lanes[n], 5)
+		"wall":
+			var n := 1 + int(_ev.randf() < busy) + int(_ev.randf() < busy * 0.6)
+			for i in n:
+				_danger("wall", s, lanes[i])
+			_drop_arc(s, lanes[0])
+		"lintel":
+			_danger("lintel", s, ALL)
+			if _ev.randf() < busy:
+				_danger("stela", s, lanes[0])
+			elif _ev.randf() < 0.5:
+				_drop_line(s - 3.0, lanes[1], 5)
+		"pit":
+			var row_s := floorf(s / ROW) * ROW
+			var n := 1 + int(_ev.randf() < 0.35 + busy) + int(_ev.randf() < busy)
+			var picked := lanes.slice(0, n)
+			for lane in picked:
+				var c0: int = (int(lane) + 1) * 2
+				_put("pits", row_s, {"s0": row_s, "s1": row_s + ROW, "c0": c0, "c1": c0 + 1})
+			_drop_arc(row_s + ROW / 2.0, picked[0])
+		"jag":
+			var side := -1.0 if _ev.randf() < 0.5 else 1.0
+			var n := 2 if _ev.randf() < 0.25 + 0.1 * prog else 1
+			for k in n:
+				var sd := side if k == 0 else -side
+				var js := s + _ev.randf_range(-1.2, 1.2)
+				var pos := point(js, sd * (width(js) / 2.0 + _ev.randf_range(-0.2, 0.3)))
+				_put("jaguars", js, {"s": js, "pos": pos})
+		"brazier":
+			var side := -1.0 if _ev.randf() < 0.5 else 1.0
+			_put("braziers", s, {"pos": point(s, side * (width(s) / 2.0 + CURB_W / 2.0), CURB_H), "r": BRAZIER_R, "curb": true, "seed": _ev.randi()})
+			_drop_line(s - 2.0, int(side), 5)
+
+func _danger(kind: String, s: float, lane: int) -> void:
+	var u := 0.0 if lane == ALL else lane_u(lane)
+	_put("obstacles", s, {"kind": kind, "s": s, "lane": lane, "depth": DANGER[kind].depth,
+		"pos": point(s, u), "seed": _ev.randi()})
+
+func _shuffle(a: Array) -> void:
+	for i in range(a.size() - 1, 0, -1):
+		var j := _ev.randi_range(0, i)
+		var tmp = a[i]
+		a[i] = a[j]
+		a[j] = tmp
+
+## A line of [n] sun-drops down one lane.
+func _drop_line(s: float, lane: int, n: int) -> void:
+	_trail_id += 1
+	for i in n:
+		var si := s + i * 1.6
+		_put("drops", si, {"s": si, "pos": point(si, lane_u(lane), DROP_Y), "taken": false, "trail": _trail_id})
+
+## Five sun-drops arched over a jump at [s] in [lane]: they follow the leap.
+func _drop_arc(s: float, lane: int) -> void:
 	_trail_id += 1
 	for i in 5:
-		var si := s + i * 1.3
-		_put("drops", si, {"s": si, "pos": point(si, lerpf(a, b, i / 4.0) * width(si), DROP_Y), "taken": false, "trail": _trail_id})
-	_next_ev += 3.0
+		var k := (i - 2) / 2.0
+		var si := s + k * 2.6
+		_put("drops", si, {"s": si, "pos": point(si, lane_u(lane), DROP_Y + 1.0 * (1.0 - k * k)), "taken": false, "trail": _trail_id})
 
 # ----------------------------------------------------------------- build ---
 
@@ -386,10 +445,13 @@ func _bake(c: Chunk) -> void:
 		_decor([left, right_m], c, h, r)
 	for o in c.obstacles:
 		var s: float = o.s
-		var basis := Basis.looking_at(forward(s), Vector3.UP).rotated(Vector3.UP, o.rot)
+		var basis := Basis.looking_at(forward(s), Vector3.UP)
+		var xf := Models.at(o.pos, basis)
 		match o.kind:
-			"stela": Models.fallen_stela(items, Models.at(o.pos, basis), o.seed)
-			"blades": Models.blades(items, Models.at(o.pos, basis), o.seed)
+			"stela": Models.lane_stela(items, xf, o.seed)
+			"blades": Models.lane_blades(items, xf, o.seed)
+			"wall": Models.low_wall(items, xf, Nights.LANE_W - 0.25, h.accent, o.seed)
+			"lintel": Models.lintel(items, xf, width(s) + 2.0 * CURB_W, h.accent, o.seed)
 	for b in c.braziers:
 		if b.curb:
 			Models.brazier(items, Models.at(b.pos + Vector3(0, 0.09, 0)), b.get("seed", 0))

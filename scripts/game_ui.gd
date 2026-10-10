@@ -1830,7 +1830,7 @@ func _open_records() -> void:
 		["Distance run", "%.1f km" % (_save.total_distance / 1000.0)],
 		["Sun-drops gathered", UiKit.thousands(_save.total_drops)],
 		["Most in one run", UiKit.thousands(_save.best_drops)],
-		["Blazes", UiKit.thousands(_save.flares)],
+		["Flares", UiKit.thousands(_save.flares)],
 		["Deepest night", night_name(_save.best) if _save.runs > 0 else "-"],
 		["Time in Xibalba", duration_text(_save.play_seconds)],
 	]

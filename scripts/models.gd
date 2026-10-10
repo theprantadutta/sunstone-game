@@ -485,6 +485,59 @@ static func fallen_stela(m: Mesher, xf: Transform3D, seed: int) -> void:
 static func blades(m: Mesher, xf: Transform3D, seed: int) -> void:
 	obsidian(m, xf, 0.9, seed)
 
+# The lane dangers. Each fills one lane (local X across it) except the lintel,
+# which spans the road. Heights matter: a low wall is jumped, a lintel slid
+# under, a stela or blades gone round.
+
+## A carved stela standing in a lane, too tall to jump: go round.
+static func lane_stela(m: Mesher, xf: Transform3D, seed: int) -> void:
+	m.box(sub(xf, Vector3(0, 0.12, 0)), Vector3(2.0, 0.24, 0.9), STONE_DARK)
+	m.box(sub(xf, Vector3(0, 1.2, 0)), Vector3(1.7, 2.0, 0.55), STONE)
+	m.box(sub(xf, Vector3(0, 2.28, 0)), Vector3(1.85, 0.18, 0.65), CINNABAR)
+	m.prism(sub(xf, Vector3(0, 2.37, 0)), 0.75, 0.45, 0.3, 6, STONE_LIGHT)
+	for row in 2:
+		for col in 3:
+			carve(m, sub(xf, Vector3((col - 1) * 0.5, 1.75 - row * 0.75, 0.28), Basis(Vector3.UP, PI)), 0.4, 0.6, seed + row * 3 + col)
+
+## Obsidian blades across a lane: too sharp and tall to jump.
+static func lane_blades(m: Mesher, xf: Transform3D, seed: int) -> void:
+	var r := _rng(seed)
+	m.box(sub(xf, Vector3(0, 0.08, 0)), Vector3(2.0, 0.16, 0.8), BASALT)
+	for i in 6:
+		var x := -0.85 + i * 0.34 + r.randf_range(-0.06, 0.06)
+		var lean := Basis(Vector3.FORWARD, r.randf_range(-0.25, 0.25)) * Basis(Vector3.RIGHT, r.randf_range(-0.2, 0.2))
+		var h := r.randf_range(1.5, 2.2)
+		var base := sub(xf, Vector3(x, 0.1, r.randf_range(-0.15, 0.15)), lean)
+		m.prism(base, 0.17, 0.0, h, 3, OBSIDIAN if i % 2 == 0 else OBSIDIAN.lightened(0.12))
+		m.box(sub(base, Vector3(0.04, h * 0.35, 0)), Vector3(0.02, h * 0.45, 0.02), OBSIDIAN_SHINE, false, false)
+
+## A knee-high wall of carved blocks across a lane, [w] wide: jump it.
+static func low_wall(m: Mesher, xf: Transform3D, w: float, accent: Color, seed: int) -> void:
+	var r := _rng(seed)
+	var n := 3
+	for i in n:
+		var bw := w / n
+		var x := -w / 2.0 + bw * (i + 0.5)
+		m.box(sub(xf, Vector3(x, 0.28, 0)), Vector3(bw - 0.04, 0.56, 0.5), STONE.lerp(STONE_DARK, r.randf() * 0.5))
+	m.box(sub(xf, Vector3(0, 0.6, 0)), Vector3(w + 0.06, 0.1, 0.56), accent)
+	m.box(sub(xf, Vector3(0, 0.3, 0.26)), Vector3(w, 0.08, 0.02), CINNABAR, false, false)
+	m.box(sub(xf, Vector3(0, 0.3, -0.26)), Vector3(w, 0.08, 0.02), CINNABAR, false, false)
+
+## A stone lintel on two piers across the whole road, [w] between the piers'
+## inner faces: its beam hangs at head height — slide under it.
+static func lintel(m: Mesher, xf: Transform3D, w: float, accent: Color, seed: int) -> void:
+	for side in [-1.0, 1.0]:
+		var px: float = side * (w / 2.0 + 0.35)
+		m.box(sub(xf, Vector3(px, -0.3, 0)), Vector3(0.7, 5.0, 0.8), STONE)
+		m.box(sub(xf, Vector3(px, 1.9, 0)), Vector3(0.74, 0.12, 0.84), accent)
+	# The beam: bottom at 1.05 m.
+	m.box(sub(xf, Vector3(0, 1.45, 0)), Vector3(w + 1.6, 0.8, 0.7), STONE_LIGHT)
+	m.box(sub(xf, Vector3(0, 1.1, 0)), Vector3(w + 1.6, 0.1, 0.74), CINNABAR)
+	m.box(sub(xf, Vector3(0, 1.82, 0)), Vector3(w + 1.7, 0.12, 0.78), accent)
+	var k := int(w / 1.1)
+	for i in k:
+		carve(m, sub(xf, Vector3(-w / 2.0 + (i + 0.5) * w / k, 1.75, 0.36), Basis(Vector3.UP, PI)), 0.55, 0.52, seed + i)
+
 ## A pylon that marks the way into a House: a tall painted pier with the
 ## House's glyph toward the road and a fire on top. [face] points at the road.
 static func gate_pylon(m: Mesher, xf: Transform3D, accent: Color, seed: int) -> void:

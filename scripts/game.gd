@@ -1,23 +1,36 @@
 extends Node3D
 ## Sunstone — carry the sun through Xibalba. Owns the state machine (title →
-## running → dying → results), the run itself (hold to blaze and steer, let go
-## for embers), the light, the jaguars and bats, the camera, and hands numbers
-## to the UI.
+## running → dying → results), the run itself (three lanes: swipe to move,
+## jump and slide, tap to flare), the light, the jaguars and bats, the camera,
+## and hands numbers to the UI.
 ##
-## One thumb, one decision: how bright to be. Holding blazes the Sunstone —
-## colour floods back into the world, the jaguars freeze to stone, you can
-## steer — but it burns light and draws the bats. Letting go dims it to embers:
-## the road leads you, the light lasts, and the dark closes in.
+## The thumb rests between moves. Swipes dodge: left and right change lane, up
+## jumps low walls and pits, down slides under lintels. A tap flares the
+## Sunstone — its light thrown far down the road, the jaguars frozen to stone —
+## but each flare spends light, and light is all that keeps the dark away.
+## Hitting a danger head-on ends the run.
 
 enum State { TITLE, RUNNING, PAUSED, DYING, OFFER, RESULTS }
 
 const START_S := -3.0
-const BLAZE_R := 8.4 ## metres of light at full blaze
-const DRAIN_EMBER := 0.014 ## light per second, let go
-const DRAIN_BLAZE := 0.075 ## extra light per second, blazing
-const DROP_LIGHT := 0.055
+const DRAIN := 0.016 ## light per second
+const FLARE_COST := 0.15 ## light a flare spends
+const FLARE_TIME := 2.2 ## seconds a flare burns
+const FLARE_CD := 0.45 ## seconds before the next flare
+const FLARE_R := 11.0 ## metres of light at the height of a flare...
+const FLARE_AHEAD := 8.0 ## ...centred this far down the road
+const GLOW := 2.1 ## the stone's own light, times the House's ember radius
+const LANE_EASE := 17.0 ## how fast he crosses to a new lane
+const JUMP_V := 8.0 ## m/s up: a 1.2 m, 0.6 s leap
+const GRAVITY := 26.0
+const DIVE_V := -18.0 ## swiping down in the air drops him like a stone
+const SLIDE_T := 0.65
+const WALL_CLEAR := 0.5 ## feet higher than this clear a low wall
+const STUMBLE_LIGHT := 0.12 ## light lost when he clips something
+const STUMBLE_WINDOW := 6.0 ## a second stumble this soon is the end
+const RUNNER_HALF := 0.35 ## half his width, for clipping
+const DROP_LIGHT := 0.05
 const DAWN_GIFT := 0.35 ## light the sunrise gives back
-const STEER_SPAN := 11.5 ## metres a finger crossing the whole screen moves him
 const DROP_R := 0.85
 const CATCH_R := 0.75
 const JAG_CREEP := 3.0 ## m/s, a waking jaguar coming at you
@@ -34,9 +47,11 @@ const MOTES := {
 	"knives": [Color("#FF8A6A"), 0.1, 0.06], "cold": [Color("#FFFFFF"), -0.9, 0.08],
 	"fire": [Color("#FFA040"), 0.9, 0.07],
 }
-const CAM_UP := 13.0
-const CAM_BACK := 9.5
-const CAM_AHEAD := 6.0
+const CAM_UP := 6.6
+const CAM_BACK := 6.6
+const CAM_AHEAD := 10.0
+const SWIPE_MIN := 0.045 ## of the screen's short side: a move this long is a swipe
+const TAP_MAX_T := 0.3 ## seconds: a touch shorter than this, that didn't swipe, flares
 const NIGHT_BG := Color("#0E1230")
 const DUSK_BG := Color("#B9765A")
 const DAWN_BG := Color("#E7AE72")
@@ -63,12 +78,23 @@ var speed := 0.0
 var distance := 0.0
 var coins := 0 ## sun-drops this run
 var light := 1.0 ## the Sunstone's charge, 0..1
-var blaze := 0.0 ## 0 = embers, 1 = blazing
+var blaze := 0.0 ## how much of a flare is burning, 0..1
 var light_r := 2.0 ## metres of light around him right now
 var amb := AMB_FULL ## daylight radius (dusk and dawn)
 var daily_key := "" ## set while running the daily dusk ("yyyy-mm-dd")
 var death_cause := ""
-var _run_flares := 0 ## how many times he blazed
+var _run_flares := 0 ## how many times he flared
+var _jumps := 0
+var _slides := 0
+var _stumbles := 0
+var _lane := 0 ## the lane he's in or heading for: −1, 0, 1
+var _lane_from := 0 ## the lane he left (a clip sends him back)
+var _u := 0.0 ## metres across the road, easing toward his lane
+var _slide_t := 0.0
+var _flare_t := 0.0
+var _flare_cd := 0.0
+var _stumble_t := 99.0 ## seconds since the last stumble
+var _light_c := Vector3.ZERO ## the centre of his circle of light
 var _run_time := 0.0
 var _second_wind_used := false
 var _shield_t := 0.0
@@ -82,11 +108,8 @@ var _x_vel_s := 0.0 ## smoothed: what his heading and lean follow
 var _yaw := 0.0
 var _lean := 0.0
 var _attraction := 0.0 ## how much the bats want you
-var _dark_t := 0.0 ## how long you've been dim
 var _house_key := ""
 var _hints := {}
-var _hold_total := 0.0
-var _was_touching := false
 var _growl_cd := 0.0
 var _jags: Array[Dictionary] = [] ## {node, pos, frozen, linger}
 var _bats: Array[Dictionary] = [] ## {node, rel, vel, gone, flee, life}
@@ -104,23 +127,19 @@ var _shake := 0.0
 var _time := 0.0
 
 # --- touch ---
-var _touching := false
 var _touch_index := -1
-var _anchor_finger := 0.0
-var _anchor_u := 0.0 ## where across the road he was when the thumb went down
-var _finger := 0.0
-var _key_left := false
-var _key_right := false
-var _key_blaze := false
+var _touch_from := Vector2.ZERO ## where the current swipe began
+var _touch_t0 := 0.0
+var _swiped := false
+var _slide_queued := false
 
 ## Dev-only: `-- --autopilot` (or `files/autopilot` on a device) plays by itself.
 var _autopilot := OS.get_cmdline_user_args().has("--autopilot") or FileAccess.file_exists("user://autopilot")
-## Dev: `files/dev_noflare` — the autopilot never blazes unless it must steer.
+## Dev: `files/dev_noflare` — the autopilot never flares.
 var _dev_noflare := FileAccess.file_exists("user://dev_noflare")
 ## Dev: `files/dev_start` holding metres starts every run that far along.
 var _dev_start := FileAccess.get_file_as_string("user://dev_start").to_float() if FileAccess.file_exists("user://dev_start") else 0.0
-var _auto_touch := false
-var _auto_tx := 0.0
+var _auto_cd := 0.0
 ## Profiling: a build with the "profile" feature (export preset "Android
 ## Profile") — or `files/profile_tour` on a debug build — tours every screen
 ## and runs through every House by itself, printing frame stats per phase
@@ -131,7 +150,7 @@ var _invincible := false
 ## look, no event, can't die), freezing each and printing "[shot] name" so
 ## the host can screencap it. The save is never touched.
 var _shots := FileAccess.file_exists("user://dev_shots")
-var _force_blaze := -1.0 ## >= 0 overrides the thumb's blaze (shots)
+var _force_blaze := -1.0 ## >= 0 holds a flare at that strength (shots)
 var _tour_seed := 0 ## the tour plays the same road every time
 var _page_scaled := false
 var _render_scale := 1.0
@@ -274,6 +293,16 @@ func _reset_run() -> void:
 	amb = AMB_FULL
 	death_cause = ""
 	_run_flares = 0
+	_jumps = 0
+	_slides = 0
+	_stumbles = 0
+	_lane = 0
+	_lane_from = 0
+	_u = 0.0
+	_slide_t = 0.0
+	_flare_t = 0.0
+	_flare_cd = 0.0
+	_stumble_t = 99.0
 	_run_time = 0.0
 	_second_wind_used = false
 	_shield_t = 0.0
@@ -286,13 +315,9 @@ func _reset_run() -> void:
 	_yaw = 0.0
 	_lean = 0.0
 	_attraction = 0.0
-	_dark_t = 0.0
 	_house_key = ""
 	_strings.clear()
 	_hints.clear()
-	_hold_total = 0.0
-	_was_touching = false
-	_touching = false
 	_touch_index = -1
 	_cam_x = 0.0
 	runner.rotation = Vector3.ZERO
@@ -324,8 +349,8 @@ func _start_run() -> void:
 	online.track("run_start", {"mode": "daily" if daily_key != "" else "free", "runs": save.runs})
 	if save.tutorial_runs < 2 and not _shots:
 		get_tree().create_timer(0.9).timeout.connect(func():
-			if state == State.RUNNING and _hold_total < 0.5:
-				ui.show_hint("Touch and hold: the Sunstone blazes and you can steer", Vector2.ZERO))
+			if state == State.RUNNING:
+				_hint("swipe", "Swipe left and right to change lanes"))
 
 ## Today's dusk: the same road for everyone, fixed for the whole run even if
 ## the date turns while running.
@@ -349,7 +374,6 @@ func _pause() -> void:
 	if state != State.RUNNING:
 		return
 	state = State.PAUSED
-	_touching = false
 	_touch_index = -1
 	get_tree().paused = true
 	ui.show_pause()
@@ -359,7 +383,6 @@ func _resume() -> void:
 		return
 	get_tree().paused = false
 	state = State.RUNNING
-	_touching = false
 	_touch_index = -1
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 
@@ -368,6 +391,8 @@ func _die(cause: String, fell := false, caught := false) -> void:
 		return
 	state = State.DYING
 	death_cause = cause
+	if _autopilot:
+		print("[sunstone] died at %.0f m (%.1f m/s): %s" % [s, speed, cause])
 	_fell = fell
 	_caught = caught
 	_death_t = 0.0
@@ -395,15 +420,21 @@ func _second_wind(paid_by_ad := false) -> void:
 	_second_wind_used = true
 	online.track("second_wind", {"distance": int(distance)})
 	if _fell:
-		if world.in_pit(x, -s):
-			s += World.ROW * 1.5
-		x = world.center(s)
-		if world.in_pit(x, -s):
-			s += World.ROW * 1.5
+		s += World.ROW * 1.5
 	for c in world.chunks():
 		for o in c.obstacles:
-			if absf(o.s - s) < 3.0:
+			if absf(o.s - s) < 6.0:
 				o["hit"] = true
+	# Back on his feet in a lane with no hole under it.
+	for lane in [_lane, 0, -1, 1]:
+		if not world.in_pit(world.point(s, World.lane_u(lane)).x, -s):
+			_lane = lane
+			break
+	_lane_from = _lane
+	_u = World.lane_u(_lane)
+	x = world.point(s, _u).x
+	_slide_t = 0.0
+	_stumble_t = 99.0
 	for j in _jags.duplicate():
 		if Vector2(j.pos.x - x, j.pos.z + s).length() < 14.0:
 			_drop_jaguar(j.node)
@@ -416,7 +447,6 @@ func _second_wind(paid_by_ad := false) -> void:
 	_shield_t = 1.5
 	_fell = false
 	_caught = false
-	_dark_t = 0.0
 	runner.pose = RunnerModel.Pose.RUN
 	runner.rotation = Vector3.ZERO
 	state = State.RUNNING
@@ -578,29 +608,22 @@ func _step_run(delta: float) -> void:
 	world.ensure(s)
 	var h: Dictionary = Themes.house("dusk") if s < 0.0 else Nights.house(s, world.seed)
 
-	# The thumb: holding blazes (and steers), letting go dims to embers.
 	if _autopilot:
-		_drive()
-	var steering := _touching or _key_left or _key_right or (_autopilot and _auto_touch)
-	var touching := steering or _key_blaze
-	var want := 1.0 if touching and light > 0.0 else 0.0
+		_drive(delta)
+	# A flare burns for a moment, then the light falls back to the stone.
+	_flare_t = maxf(_flare_t - delta, 0.0)
+	_flare_cd = maxf(_flare_cd - delta, 0.0)
+	var want := clampf(_flare_t / 0.6, 0.0, 1.0)
 	if _force_blaze >= 0.0:
 		want = _force_blaze
-	blaze += (want - blaze) * minf(1.0, delta * (9.0 if want > blaze else 5.0))
-	if touching and not _was_touching:
-		_run_flares += 1
-		sfx.play(Sfx.BLAZE if light > 0.05 else Sfx.FIZZLE)
-	if touching:
-		_hold_total += delta
-	elif _was_touching and _hold_total > 1.0 and save.tutorial_runs < 2:
-		_hint("release", "Let go to save light: the road leads you, but the dark comes closer")
-	_was_touching = touching
+	blaze += (want - blaze) * minf(1.0, delta * (12.0 if want > blaze else 3.0))
 
-	# The light: embers barely drain, a blaze burns.
+	# The light drains by itself; flares spend it in lumps.
 	if s > 0.0 and not at.dawn:
-		light -= (DRAIN_EMBER + DRAIN_BLAZE * blaze) * h.drain * Market.drain_scale(save) * delta
+		light -= DRAIN * h.drain * Market.drain_scale(save) * delta
 	light = clampf(light, 0.0, 1.0)
-	light_r = lerpf(h.ember, BLAZE_R, blaze) * (0.5 + 0.5 * sqrt(light))
+	var glow: float = h.ember * GLOW * (0.4 + 0.6 * sqrt(light))
+	light_r = lerpf(glow, FLARE_R, blaze)
 	if light < 0.12:
 		_was_low = true
 	elif _was_low and light > 0.5:
@@ -612,21 +635,22 @@ func _step_run(delta: float) -> void:
 	else:
 		amb = (1.0 - smoothstep(0.0, 0.09 if at.n == 1 else 0.05, at.t)) * AMB_FULL
 
-	# Steering: while touching he keeps his place across the road and the thumb
-	# moves him over; let go and the road leads him back to its middle.
+	# His lane, the leap and the slide.
 	var old_x := x
-	if _autopilot and _auto_touch:
-		x += (_auto_tx - x) * minf(1.0, delta * 11.0)
-	elif _touching:
-		var vp_w := get_viewport().get_visible_rect().size.x
-		var tu := _anchor_u + (_finger - _anchor_finger) / vp_w * STEER_SPAN
-		var tx := world.point(s + speed * 0.1, tu).x
-		x += (tx - x) * minf(1.0, delta * 8.0)
-	elif _key_left or _key_right:
-		var ku := world.u_of(x, -s) + ((1.0 if _key_right else 0.0) - (1.0 if _key_left else 0.0)) * 6.5 * delta
-		x = world.point(s + speed * 0.1, ku).x
-	else:
-		x += (world.center(s + speed * 0.15) - x) * minf(1.0, delta * 4.0)
+	_u += (World.lane_u(_lane) - _u) * minf(1.0, delta * LANE_EASE)
+	x = world.point(s, _u).x
+	if y > 0.0 or vy > 0.0:
+		vy -= GRAVITY * delta
+		y += vy * delta
+		if y <= 0.0:
+			y = 0.0
+			vy = 0.0
+			runner.land()
+			if _slide_queued:
+				_slide_queued = false
+				_slide()
+	_slide_t = maxf(_slide_t - delta, 0.0)
+	_stumble_t += delta
 	_x_vel = (x - old_x) / maxf(delta, 0.0001)
 	_x_vel_s = lerpf(_x_vel_s, _x_vel, 1.0 - exp(-8.0 * delta))
 
@@ -652,11 +676,19 @@ func _step_run(delta: float) -> void:
 		else:
 			_die("The Sunstone went out")
 			return
-	if save.tutorial_runs < 2 and light < 0.35:
-		_hint("drops", "Sun-drops feed the stone: steer through them")
+	if save.tutorial_runs < 2:
+		if light < 0.35:
+			_hint("drops", "Sun-drops feed the stone: run through them")
+		elif _run_time > 9.0:
+			_hint("flare", "Tap to flare: the light reaches far ahead, but it costs light")
 
-	runner.pose = RunnerModel.Pose.RUN
-	runner.raise = blaze
+	if y > 0.02:
+		runner.pose = RunnerModel.Pose.JUMP
+	elif _slide_t > 0.0:
+		runner.pose = RunnerModel.Pose.SLIDE
+	else:
+		runner.pose = RunnerModel.Pose.RUN
+	runner.raise = blaze if _slide_t <= 0.0 else 0.0
 	runner.animate(delta, speed)
 	_place_runner(delta)
 	_update_camera(delta)
@@ -696,9 +728,9 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 	if save.tutorial_runs < 2:
 		var id: String = Nights.plan(at.n, world.seed)[at.house]
 		if id == "jaguars":
-			_hint("jaguars", "Jaguars move only in the dark: blaze and they turn to stone")
+			_hint("jaguars", "Jaguars move only in the dark: flare and they turn to stone")
 		elif id == "bats":
-			_hint("bats", "Bats hunt bright light: let go and they lose you")
+			_hint("bats", "Bats hunt bright light: flare less and they lose you")
 
 func _hint(key: String, text: String) -> void:
 	if _hints.has(key) or _shots:
@@ -706,27 +738,67 @@ func _hint(key: String, text: String) -> void:
 	_hints[key] = true
 	ui.show_hint(text, Vector2.ZERO)
 
-## Returns true when the run just ended.
+const CAUSES := {
+	"stela": "Ran into a stela", "blades": "Cut on obsidian blades",
+	"wall": "Tripped over a low wall", "lintel": "Hit a stone lintel",
+}
+
+## Returns true when the run just ended. Meeting a danger's front face in
+## its lane ends the run; clipping one from the side while changing lanes is a
+## stumble, and he's thrown back to the lane he left.
 func _check_hazards() -> bool:
 	if _invincible:
 		return false
 	var z := -s
-	if absf(world.u_of(x, z)) > world.width(s) / 2.0 - 0.12:
-		_die("Stepped off the road into Xibalba", true)
-		return true
-	if world.in_pit(x, z):
+	if y <= 0.05 and world.in_pit(x, z):
 		_die("Fell into a pit", true)
 		return true
+	var step := speed * get_process_delta_time() * 1.5 + 0.15
 	for c in world.chunks():
 		if c.s1 < s - 2.0 or c.s0 > s + 2.0:
 			continue
 		for o in c.obstacles:
 			if o.get("hit", false):
 				continue
-			var p: Vector3 = o.pos
-			if Vector2(p.x - x, p.z - z).length() < o.r:
-				_die("Ran into a fallen stela" if o.kind == "stela" else "Cut on obsidian blades")
+			var front: float = o.s - o.depth / 2.0
+			if s < front or s > front + o.depth + 0.2:
+				continue
+			var d: Dictionary = World.DANGER[o.kind]
+			if d.jump and y > WALL_CLEAR:
+				continue
+			if d.slide and _slide_t > 0.0 and y < 0.3:
+				continue
+			var head_on := s - front < step
+			if o.lane == World.ALL:
+				_die(CAUSES[o.kind])
 				return true
+			var gap := absf(_u - World.lane_u(o.lane))
+			if gap >= Nights.LANE_W * 0.4 + RUNNER_HALF:
+				continue
+			o["hit"] = true
+			if head_on and gap < 0.8:
+				_die(CAUSES[o.kind])
+				return true
+			if _stumble():
+				return true
+	return false
+
+## Clipped something: thrown back to the lane he came from, light knocked out
+## of the stone. Twice in a short while and the dark has him. Returns true when
+## that ended the run.
+func _stumble() -> bool:
+	_stumbles += 1
+	_lane = _lane_from
+	_shake = 0.35
+	sfx.play(Sfx.STUMBLE)
+	sfx.vibrate(save, 50)
+	ui.flash_danger()
+	if _stumble_t < STUMBLE_WINDOW:
+		_die("Stumbled twice, and the dark took him")
+		return true
+	_stumble_t = 0.0
+	light = maxf(0.0, light - STUMBLE_LIGHT)
+	ui.pop("Stumble!")
 	return false
 
 func _collect() -> void:
@@ -734,15 +806,15 @@ func _collect() -> void:
 		if c.s1 < s - 2.0 or c.s0 > s + 2.0:
 			continue
 		for d in c.drops:
-			if d.taken:
+			if d.taken or absf(d.s - s) > 0.8:
 				continue
 			var p: Vector3 = d.pos
-			if Vector2(p.x - x, p.z + s).length() < DROP_R:
+			if absf(world.u_of(p.x, p.z) - _u) < 0.9 and absf(p.y - (y + 0.7)) < 0.95:
 				d.taken = true
 				coins += 1
 				light = minf(light + DROP_LIGHT * Market.drop_scale(save), 1.0)
 				sfx.play(Sfx.COIN)
-				# The whole string of five: a bonus for steering well.
+				# A whole line: a bonus for staying on it.
 				var tid: int = d.get("trail", 0)
 				if tid > 0:
 					_strings[tid] = _strings.get(tid, 0) + 1
@@ -753,8 +825,8 @@ func _collect() -> void:
 						sfx.play(Sfx.BLAZE)
 
 func _is_lit(p: Vector3) -> bool:
-	var d := Vector2(p.x - x, p.z + s).length()
-	if d < light_r * 0.92 or d < amb:
+	var d := Vector2(p.x - _light_c.x, p.z - _light_c.z).length()
+	if d < light_r * 0.92 or Vector2(p.x - x, p.z + s).length() < amb:
 		return true
 	for l in _lights:
 		if l.w > 0.0 and Vector2(p.x - l.x, p.z - l.z).length() < l.w:
@@ -801,7 +873,8 @@ func _step_jaguars(delta: float, h: Dictionary, at: Dictionary) -> void:
 	for j in _jags.duplicate():
 		var p: Vector3 = j.pos
 		var ahead := -p.z - s
-		if ahead < -16.0:
+		if ahead < -1.5:
+			# Passed: gone, so nothing stands between him and the camera.
 			_drop_jaguar(j.node)
 			_jags.erase(j)
 			continue
@@ -842,14 +915,6 @@ func _step_jaguars(delta: float, h: Dictionary, at: Dictionary) -> void:
 				continue
 			_die("Caught by a jaguar in the dark", false, true)
 			return
-	# Stay dim too long and one finds your trail from behind.
-	if blaze < 0.3 and s > Nights.START_CLEAR and not at.dawn:
-		_dark_t += delta
-	else:
-		_dark_t = maxf(0.0, _dark_t - delta * 2.0)
-	if _dark_t > 2.2 and randf() < delta * 0.5 * h.w_jag:
-		_dark_t = 0.8
-		_add_jaguar(Vector3(x + randf_range(-2.4, 2.4), 0.0, -(s - 9.0)))
 
 func _nearest_jaguar() -> float:
 	var best := 24.0
@@ -966,7 +1031,9 @@ func _push_codex() -> void:
 	var at := Nights.locate(maxf(s, 0.0))
 	var bg := NIGHT_BG.lerp(DAWN_BG if at.dawn else DUSK_BG, day * 0.85)
 	_env.background_color = bg
-	Codex.update(Vector4(x, 0.0, -s, light_r), amb, _lights, bg, _time)
+	# A flare throws the circle of light down the road.
+	_light_c = Vector3(x, 0.0, -s) + world.forward(maxf(s, 0.0)) * FLARE_AHEAD * blaze
+	Codex.update(Vector4(_light_c.x, 0.0, _light_c.z, light_r), amb, _lights, bg, _time)
 
 func _make_halo() -> void:
 	var grad := Gradient.new()
@@ -1057,32 +1124,101 @@ func _place_halo(_delta: float) -> void:
 
 # --------------------------------------------------------------- input ---
 
+## One thumb: a swipe is a move (one per touch), a short touch that didn't
+## swipe is a flare.
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			if _touch_index == -1:
 				_touch_index = event.index
-				_touching = true
-				_anchor_finger = event.position.x
-				_finger = event.position.x
-				_anchor_u = world.u_of(x, -s)
+				_touch_from = event.position
+				_touch_t0 = Time.get_ticks_msec() / 1000.0
+				_swiped = false
 		elif event.index == _touch_index:
-			_touching = false
 			_touch_index = -1
+			if not _swiped:
+				_track_swipe(event.position)
+			if not _swiped and Time.get_ticks_msec() / 1000.0 - _touch_t0 < TAP_MAX_T:
+				_flare()
 	elif event is InputEventScreenDrag:
-		if event.index == _touch_index:
-			_finger = event.position.x
-	elif event is InputEventKey and not event.echo:
+		if event.index == _touch_index and not _swiped:
+			_track_swipe(event.position)
+	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_LEFT, KEY_A:
-				_key_left = event.pressed
+				_move(-1)
 			KEY_RIGHT, KEY_D:
-				_key_right = event.pressed
-			KEY_SPACE, KEY_UP, KEY_W:
-				_key_blaze = event.pressed
+				_move(1)
+			KEY_UP, KEY_W:
+				_jump()
+			KEY_DOWN, KEY_S:
+				_slide()
+			KEY_SPACE:
+				_flare()
 			KEY_ESCAPE, KEY_P:
-				if event.pressed:
-					_pause()
+				_pause()
+
+func _track_swipe(pos: Vector2) -> void:
+	var d := pos - _touch_from
+	var vp := get_viewport().get_visible_rect().size
+	if d.length() < SWIPE_MIN * minf(vp.x, vp.y):
+		return
+	_swiped = true
+	if absf(d.x) > absf(d.y):
+		_move(1 if d.x > 0.0 else -1)
+	elif d.y < 0.0:
+		_jump()
+	else:
+		_slide()
+
+func _move(dir: int) -> void:
+	if state != State.RUNNING:
+		return
+	var to := clampi(_lane + dir, -1, 1)
+	if to == _lane:
+		# Against the curb: a bump, nothing more.
+		_shake = maxf(_shake, 0.12)
+		return
+	_lane_from = _lane
+	_lane = to
+	sfx.play(Sfx.LANE)
+
+func _jump() -> void:
+	if state != State.RUNNING or y > 0.0 or vy > 0.0:
+		return
+	_slide_t = 0.0
+	_slide_queued = false
+	vy = JUMP_V
+	_jumps += 1
+	sfx.play(Sfx.JUMP)
+
+## On the ground: a slide. In the air: dive back down and slide on landing.
+func _slide() -> void:
+	if state != State.RUNNING:
+		return
+	if y > 0.0 or vy > 0.0:
+		vy = minf(vy, DIVE_V)
+		_slide_queued = true
+		return
+	if _slide_t <= 0.0:
+		_slides += 1
+		sfx.play(Sfx.SLIDE)
+	_slide_t = SLIDE_T
+
+## A tap: the Sunstone flares, throwing its light far down the road. It costs
+## light, so with too little left it only fizzles.
+func _flare() -> void:
+	if state != State.RUNNING or _flare_cd > 0.0:
+		return
+	_flare_cd = FLARE_CD
+	if light <= FLARE_COST + 0.03 and not _invincible:
+		sfx.play(Sfx.FIZZLE)
+		ui.pop("Too little light")
+		return
+	light = maxf(light - FLARE_COST, 0.02)
+	_flare_t = FLARE_TIME
+	_run_flares += 1
+	sfx.play(Sfx.FLARE)
 
 func _notification(what: int) -> void:
 	match what:
@@ -1120,7 +1256,7 @@ func _place_runner(delta := -1.0) -> void:
 	# Both follow a smoothed velocity, eased again, so frame-time noise never
 	# reaches his body.
 	var dxds := clampf(_x_vel_s / maxf(speed, 1.0), -1.0, 1.0)
-	var target_yaw := atan2(-dxds, 1.0)
+	var target_yaw := atan2(-dxds * 0.45, 1.0)
 	var target_lean := clampf(-_x_vel_s * 0.025, -0.22, 0.22)
 	if delta < 0.0:
 		_yaw = target_yaw
@@ -1136,7 +1272,7 @@ func _place_runner(delta := -1.0) -> void:
 ## around him is always in view. It drifts toward him, not all the way, so
 ## steering reads as movement. [delta] < 0 snaps.
 func _chase(delta: float) -> Array:
-	var want := lerpf(world.center(maxf(s, 0.0)), x, 0.55)
+	var want := lerpf(world.center(maxf(s, 0.0)), x, 0.7)
 	_cam_x = want if delta < 0.0 else lerpf(_cam_x, want, 1.0 - exp(-4.0 * delta))
 	var base := Vector3(_cam_x, 0.0, -s)
 	return [base + Vector3(0.0, CAM_UP, CAM_BACK), base + Vector3(0.0, 0.0, -CAM_AHEAD)]
@@ -1232,58 +1368,74 @@ static func _grain_texture() -> Texture2D:
 
 # ------------------------------------------------------------ autopilot ---
 
-## A simple bot for device checks: dodges what's ahead, takes drops when it
-## can, blazes when a jaguar wakes, lets go when bats come.
-func _drive() -> void:
-	var tx := world.center(s + speed * 0.15)
-	var steer := false
+## A simple bot for device checks: reads each lane ahead, changes lane round
+## what blocks it, jumps walls and pits, slides under lintels, takes sun-drop
+## lines when it's safe, and flares when a jaguar wakes.
+func _drive(delta: float) -> void:
+	_auto_cd = maxf(_auto_cd - delta, 0.0)
+	var look := speed * 0.8 + 3.0
+	# Per lane: [metres to the nearest danger, what it needs].
+	var lanes := {-1: [99.0, ""], 0: [99.0, ""], 1: [99.0, ""]}
+	var drops := {-1: 99.0, 0: 99.0, 1: 99.0}
 	for c in world.chunks():
-		if c.s1 < s - 1.0 or c.s0 > s + 9.0:
+		if c.s1 < s - 2.0 or c.s0 > s + look + 2.0:
 			continue
 		for o in c.obstacles:
-			var ahead: float = o.s - s
-			var p: Vector3 = o.pos
-			if ahead > -0.6 and ahead < 6.5 and absf(p.x - x) < o.r + 0.9:
-				var side := -1.0 if world.u_of(p.x, p.z) > 0.0 else 1.0
-				tx = p.x + side * (o.r + 1.4)
-				steer = true
-		for pit in c.pits:
-			var ahead: float = pit.s0 + 1.0 - s
-			if ahead > -1.2 and ahead < 6.5:
-				var w := world.width(pit.s0)
-				var u0: float = (float(pit.c0) / World.COLS - 0.5) * w
-				var u1: float = (float(pit.c1 + 1) / World.COLS - 0.5) * w
-				var pu := world.u_of(x, -s)
-				if pu > u0 - 0.9 and pu < u1 + 0.9:
-					var go := u0 - 1.2 if absf(u0) < absf(u1) or u1 > w / 2.0 - 1.5 else u1 + 1.2
-					if u0 < -w / 2.0 + 1.5:
-						go = u1 + 1.2
-					tx = world.point(pit.s0 + 1.0, go).x
-					steer = true
-	if not steer and light < 0.92:
-		for c in world.chunks():
-			if c.s1 < s or c.s0 > s + 8.0:
+			if o.get("hit", false):
 				continue
-			for d in c.drops:
-				var ahead: float = d.s - s
-				if not d.taken and ahead > 1.0 and ahead < 6.0 and absf(d.pos.x - x) > 0.35:
-					tx = d.pos.x
-					steer = true
-					break
-			if steer:
+			var ahead: float = o.s - o.depth / 2.0 - s
+			if ahead < -o.depth - 0.3 or ahead > look:
+				continue
+			var d: Dictionary = World.DANGER[o.kind]
+			var need := "jump" if d.jump else ("slide" if d.slide else "block")
+			for lane in ([-1, 0, 1] if o.lane == World.ALL else [o.lane]):
+				if ahead < lanes[lane][0]:
+					lanes[lane] = [ahead, need]
+		for pit in c.pits:
+			var ahead: float = pit.s0 - s
+			if ahead < -World.ROW or ahead > look:
+				continue
+			var lane: int = pit.c0 / 2 - 1
+			if ahead < lanes[lane][0]:
+				lanes[lane] = [ahead, "jump"]
+		for d in c.drops:
+			var ahead: float = d.s - s
+			if not d.taken and ahead > 0.5 and ahead < look:
+				var lane := clampi(roundi(world.u_of(d.pos.x, d.pos.z) / Nights.LANE_W), -1, 1)
+				drops[lane] = minf(drops[lane], ahead)
+	var here: Array = lanes[_lane]
+	# Blocked ahead: go round, to the side lane that's clear longest.
+	if here[1] == "block":
+		var best := _lane
+		var best_d := -1.0
+		for to in [_lane - 1, _lane + 1]:
+			if to < -1 or to > 1:
+				continue
+			var l: Array = lanes[to]
+			var free: float = 99.0 if l[1] != "block" else l[0]
+			if l[0] < 1.0 and l[0] > -2.0 and l[1] == "block":
+				continue # alongside it: changing now would clip it
+			if free > best_d:
+				best_d = free
+				best = to
+		if best != _lane:
+			_move(best - _lane)
+			_auto_cd = 0.25
+	elif here[1] == "jump" and here[0] < speed * 0.2 + 0.4 and here[0] > -0.5:
+		_jump()
+	elif here[1] == "slide" and here[0] < speed * 0.3 + 0.6:
+		_slide()
+	elif _auto_cd <= 0.0 and drops[_lane] > 50.0:
+		# Nothing here: drift toward a line of sun-drops if its lane is clear.
+		for to in [_lane - 1, _lane + 1]:
+			if to < -1 or to > 1:
+				continue
+			if drops[to] < look and lanes[to][0] > drops[to] + 4.0 and absf(lanes[to][0]) > 2.0:
+				_move(to - _lane)
+				_auto_cd = 0.6
 				break
-	var danger := _nearest_jaguar() < 8.0
-	var bats_near := false
-	for b in _bats:
-		if not b.gone and b.rel.length() < 6.0:
-			bats_near = true
-	var want := steer or (danger and not _dev_noflare)
-	if bats_near and not danger and not steer:
-		want = false
-	var w := world.width(s)
-	var cx := world.center(s)
-	_auto_tx = clampf(tx, cx - w / 2.0 + 0.8, cx + w / 2.0 - 0.8)
-	_auto_touch = want
+	if not _dev_noflare and blaze < 0.2 and (_nearest_jaguar() < 9.0 or (light > 0.7 and randf() < delta * 0.2)):
+		_flare()
 
 # --------------------------------------------------------------- profiling ---
 
