@@ -6,16 +6,19 @@ the Sunstone — that sun — along a winding causeway through the Houses of
 Xibalba (the Popol Vuh's trials). One run is a chain of nights; each night is
 three Houses, then dawn.
 
-One thumb, one decision: **how bright to be.** Holding blazes the Sunstone —
-colour floods back into the world (outside the light it is bare ink on night
-paper), the stone jaguars freeze, and the thumb steers. It burns light fast and
-draws the bats of Camazotz. Letting go dims it to embers: the road leads you
-back to its middle, light lasts, the dark closes in. The UI is the **Codex**
+**Three lanes, one thumb that rests between moves** (since 1.1.0, ruleset 2;
+see `PLAN-LANES.md`). Swipe left/right to change lane, up to jump low walls
+and pits, down to slide under lintels and diving bats; a tap **flares** the
+Sunstone — its light thrown far down the road, the jaguars frozen to stone —
+at the cost of a lump of light. Light is sight (outside it the world is bare
+ink on night paper, and past the stone's reach not even that), and light is
+life: when it fails, the jaguar pack behind you catches up. Head-on hits end
+the run. The UI is the **Codex**
 (Maya codex pages, glyph-block buttons). Store title **Sunstone: Dusk Run**
 (launcher label "Sunstone"), package `com.pranta.sunstone`. Visual identity:
 **`DESIGN.md`** — read it before touching UI or 3D art. Roadmap: **`PLAN.md`**.
-The earlier lane runner (swipes, corners) is gone; its code is in git history
-on `master` before the `xibalba` branch.
+The hold-to-blaze version (1.0.x, ruleset 1) is in git history before the
+`lanes` branch.
 
 This repo is `sunstone-game`; its backend is the sibling repo `../sunstone-api`
 (`G:\Personal\MyProjects\Sunstone\`). The game is a clean break from any
@@ -28,7 +31,7 @@ project.godot / export_presets.cfg   portrait, Android uses Compatibility render
 scenes/main.tscn        one node; everything is built in code by game.gd
 scripts/
   game.gd               state machine (title → running → dying → results), the
-                        run (blaze/steer, light, jaguars, bats, hazards, dawn),
+                        run (lanes/swipes/flare, light, pack, jaguars, bats, hazards, dawn),
                         camera, halo, motes, title sky, dev autopilot
   nights.gd             THE shape of a run: nights, Houses (their numbers and
                         looks), speeds, widths, dawn — pure functions of distance
@@ -50,7 +53,7 @@ scripts/
                         Offerings, Glyphs, Market, Records, Second wind)
   save_data.gd          versioned JSON save (+ .bak fallback)
   maya_calendar.gd      tzolk'in day names, UTC/local day keys, daily seeds
-  glyphs.gd             the 20 glyphs (achievements), earned by nights/blazes
+  glyphs.gd             the 24 glyphs (achievements), earned by nights/moves
   market.gd             charms, stone hues, Second wind cost
   shop.gd               the shop catalog: outfits, hats, boosts, treasury,
                         prices (sun-drops or a store product); Shop.dress()
@@ -77,23 +80,38 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   Jaguars → Bats; later nights draw three from Gloom, Knives, Cold, Jaguars,
   Bats, Fire (seeded). Everything is a function of distance and seed, so the
   daily dusk is identical for everyone and the score stays in metres.
-- **The thumb.** Touch = blaze (light radius ember → 8.4 m) and steer: the
-  runner keeps his place across the road and the drag moves him over
-  (`STEER_SPAN` m per screen width). Let go = embers; he drifts back to the
-  road's middle. Dodging always needs a touch.
-- **Light** drains 0.014/s at embers, +0.075/s blazing (× House drain × Ember
-  heart); sun-drops +0.055 (× Sun-drinker); a full trail of five = a
-  "Sun-string" bonus (+3 drops); dawn gives back 0.35. Zero = "The Sunstone went
-  out".
-- **Jaguars** are frozen wherever any light reaches them (stone, braziers, the
-  dusk/dawn flood); in the dark they come — at a creep from ahead, faster than
-  you from behind. Stay dim > 2.2 s and one may pick up your trail.
-  Jaguar's patience = they stay stone a moment after the light leaves.
-- **Bats** come when you blaze for long (attraction builds while blazing, House
-  "bat" factor) and steal 0.2 light on a hit; let go and they lose you. They
-  move in the runner's frame.
-- **Dangers**: off the road ("Stepped off the road into Xibalba"), pits (missing
-  road cells), fallen stelae, obsidian blades. Death causes ≤ 60 chars.
+- **The thumb.** A swipe (≥ 4.5% of the short screen side, one per touch) is a
+  move: left/right = lane (−1, 0, 1; `LANE_W` 2.5 m, eased), up = jump (1.2 m,
+  0.6 s), down = slide (0.65 s; in the air it dives and slides on landing). A
+  touch < 0.3 s that didn't swipe = **flare**: 2.2 s, light circle grows to
+  11 m centred 8 m ahead; costs 0.15 light, 0.45 s cooldown, fizzles below the
+  cost (the sun meter marks it). Keys: arrows/WASD + space.
+- **Speed** 10 → 20 m/s (`Nights.speed`). Rows of road come about a second
+  apart at the speed you'll have there (`world.gd _deal_until/_row`): stela or
+  blades (1–2 lanes), low wall (jump), lintel (whole road, slide), pits over
+  1–3 lanes (jump), sun-drop lines/arcs, jaguars, braziers. Every row leaves a
+  way through. Each House weighs them by its `mix`.
+- **Hits**: meeting a danger's front face in its lane = death; clipping it
+  from the side mid-lane-change = **stumble** (thrown back, −0.12 light, pack
+  at your heels); a second stumble within 6 s = caught.
+- **Light** drains 0.02/s (× House drain × Ember heart); a sun-drop +0.014
+  (× Sun-drinker), a whole line +3 drops and 3× that light; close calls +0.01;
+  dawn +0.35. **Sight** = light radius + (8 + 14 × light) m: past it the
+  night swallows the ink (`Codex` `sight`); glowing things still show.
+- **The pack** (`_step_pack`): three stone jaguars behind, out of view while the
+  light is high, closer as it dims, at the heels after a stumble; a flare turns
+  them to stone and they fall back; at zero light they catch you. They run the
+  same road (round stelae, over walls/pits, under lintels: `World.occupant`).
+- **Jaguars ahead** crouch at the curb; in the dark, as you near, one leaps into
+  your lane (only where it can land clear) and comes at you; light freezes it
+  where it stands — a stone jaguar is an obstacle. Patience charm = linger.
+- **Bats** come when you flare a lot (attraction while blazing, House "bat"),
+  dive at head height for 3.5 s and steal 0.2 light; a slide ducks them.
+- **Close calls**: a danger passed within 0.45 s of the move that dodged it
+  pays sun-drops (more in a row). **Teaching**: the first time each danger meets
+  you, time slows (0.3×) and a hint names the swipe until you make it
+  (`save.taught`). **Head start** boost: the sun carries you 300 m at 2.6× over
+  everything, landing on clear road (not on the daily dusk).
 - **Second wind**: once per run — rise past what ended it, nearby jaguars gone,
   light ≥ 0.6, 1.5 s shield.
 - **The look** (`codex.gd`): no real lights or shadows. Flat three-band shading
@@ -113,7 +131,7 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   non-consumable store products whose server grant is an entitlement equal to
   the item's id (`save.owns()` checks both). Product ids must match
   `sunstone-api` Purchases/Products.cs and Play Console. Sun-drop packs are the
-  consumables. Boosts (Ember shield, Jaguar ward) are bought/used totals in the
+  consumables. Boosts (Ember shield, Jaguar ward, Head start) are bought/used totals in the
   save, used automatically in a run.
 - The shop's 3D preview is a SubViewport with its own world; it is painted
   because the title's daylight flood covers it — only open the shop on the title.

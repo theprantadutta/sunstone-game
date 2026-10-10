@@ -23,27 +23,27 @@ App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## Short description (80 max)
 
-Carry the sun through the Maya underworld. Hold to blaze, let go to hide.
+Carry the sun through the Maya underworld. Swipe, leap, and flare to dawn.
 
 ## Full description (4000 max)
 
 Every night, the sun goes down into Xibalba, the Maya underworld, and must cross it to rise again at dawn. Tonight, you carry it.
 
-Sunstone: Dusk Run is a one-thumb runner unlike any other. Your Sunstone is the only light on a winding causeway through the dark, and you decide how bright it burns.
+Sunstone: Dusk Run is a runner where your light is everything. Your Sunstone is the only light on a winding causeway through the dark: it shows you the road, and it keeps the jaguars away.
 
-HOLD TO BLAZE
-Touch and hold and the Sunstone blazes. Colour floods back into the world, you can steer across the road, and the stone jaguars freeze where they stand. But a blaze burns your light fast.
+SWIPE, LEAP, SLIDE
+Three lanes and sudden death. Swipe left and right round fallen stelae, swipe up to leap low walls and pits, swipe down to slide under stone lintels and diving bats. Hit something head-on and the night is over.
 
-LET GO TO HIDE
-Let go and the stone dims to embers. Your light lasts, and the road leads you on. But in the dark, the jaguars wake, and you'll see their eyes coming.
+TAP TO FLARE
+Tap and the Sunstone flares, throwing its light far down the road so you can see what's coming. Jaguars caught in the light freeze to stone. But every flare costs light, and when your light runs out, the jaguar pack behind you catches up.
 
 A WORLD PAINTED BY YOUR LIGHT
-Sunstone looks like a Maya codex come to life. Outside your light, the underworld is bare ink on night paper. Inside it, everything is painted in cinnabar, ochre and Maya blue. Every blaze paints the world back in.
+Sunstone looks like a Maya codex come to life. Inside your light, everything is painted in cinnabar, ochre and Maya blue. Outside it, the underworld is bare ink on night paper, and further out the dark swallows even that.
 
 THE HOUSES OF XIBALBA
 Each night is three Houses from the Popol Vuh, each with its own rules and its own look:
 - House of Jaguars: stone guardians that only move in the dark
-- House of Bats: they hunt bright light, so blaze too long and they swoop in
+- House of Bats: they hunt bright light, so flare too much and they dive at you
 - House of Gloom: even your embers barely glow
 - House of Knives: obsidian blades in the road
 - House of Cold: your light drains faster
@@ -53,17 +53,17 @@ MAKE IT TO DAWN
 Survive the three Houses and the sun rises. Then the next night begins, faster and harder, with new Houses. How many dawns can you reach?
 
 SUN-DROPS AND SUN-STRINGS
-Sun-drops feed your light. Most lie off the middle of the road, so taking them means steering, and steering means blazing. Take a whole trail for a Sun-string bonus.
+Sun-drops feed your light, so keep collecting them. Take a whole line for a Sun-string bonus, and dodge at the very last moment for close calls that pay extra.
 
 MORE TO PLAY FOR
 - Daily dusk: the same road for everyone, once a day, named for its day in the Maya calendar
 - Ranks: race players everywhere on the daily dusk, the week and all time
-- Twenty glyphs to earn, each drawn like a scribe's sign
+- Twenty-four glyphs to earn, each drawn like a scribe's sign
 - Offerings: a gift for every day you come back
 - Records of your deepest night, longest run and more
 
 YOUR RUNNER, YOUR WAY
-Choose your runner, then dress them in outfits and hats, and pick the colour of your Sunstone's light. Try everything on in a live 3D preview before you buy. Charms make your light last longer, and boosts can save a run: an Ember shield relights your stone, a Jaguar ward turns a pouncing jaguar to stone.
+Choose your runner, then dress them in outfits and hats, and pick the colour of your Sunstone's light. Try everything on in a live 3D preview before you buy. Charms make your light last longer, and boosts can save a run: an Ember shield relights your stone, a Jaguar ward turns a pouncing jaguar to stone, and a Head start has the sun carry you over the first 300 m.
 
 SEASONS IN THE UNDERWORLD
 Special nights arrive with the seasons, with new scenery, new looks and new surprises.

@@ -4,9 +4,10 @@
 underworld each night and must cross it to rise again. The explorer carries
 the Sunstone — that sun — down a winding causeway through the Houses of
 Xibalba: Gloom, Knives, Cold, Jaguars, Bats, Fire. A run is a chain of nights;
-each night ends at dawn. One thumb decides how bright to be: hold and the stone
-blazes (colour, steering, frozen jaguars — but it burns light and draws bats),
-let go and it dims to embers.
+each night ends at dawn. Three lanes and a resting thumb: swipe to change
+lane, jump and slide; tap to flare the stone — light thrown far down the road,
+jaguars frozen — at a cost in light, which is both your sight and what keeps
+the pack behind you at bay.
 
 The UI has three jobs: get you running instantly, keep the light and the way to
 dawn readable at a glance, and make the end of a run land.
@@ -95,8 +96,8 @@ answers touch: buttons stamp down, pages unfold, a flare bursts warm white.
 
 ## Copy
 
-Death causes are specific: "Ran into a fallen stela", "Fell into a pit",
-"Stepped off the road into Xibalba", "Caught by a jaguar in the dark", "The
-Sunstone went out". Hints name the move at the moment it's needed: "Touch and
-hold: the Sunstone blazes and you can steer", "Bats hunt bright light: let go
-and they lose you".
+Death causes are specific: "Ran into a stela", "Tripped over a low wall",
+"Hit a stone lintel", "Fell into a pit", "Caught by a jaguar in the dark",
+"The light went out, and the pack caught him". Hints name the move at the
+moment it's needed: "Swipe up to jump", "Swipe down to slide under", "Tap to
+flare: the light reaches far ahead, but it costs light".
