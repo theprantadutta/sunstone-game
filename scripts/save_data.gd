@@ -24,6 +24,7 @@ var bank: int: ## sun-drops to spend; assigning records an earning or a spend
 			spent += (earned - spent) - v
 var runs := 0
 var tutorial_runs := 0 ## move hints show for the first two runs
+var taught := {} ## hint id → true once the player has learned it (each shows until then)
 
 # --- lifetime records ---
 var total_distance := 0 ## metres
@@ -94,6 +95,8 @@ func _apply(d: Dictionary) -> void:
 	spent = int(d.get("spent", 0))
 	runs = int(d.get("runs", 0))
 	tutorial_runs = int(d.get("tutorial_runs", 0))
+	var tg: Variant = d.get("taught", {})
+	taught = tg if tg is Dictionary else {}
 	total_distance = int(d.get("total_distance", 0))
 	total_drops = int(d.get("total_drops", 0))
 	best_drops = int(d.get("best_drops", 0))
@@ -133,7 +136,7 @@ func _apply(d: Dictionary) -> void:
 func to_dict() -> Dictionary:
 	return {
 		"version": VERSION,
-		"best": best, "earned": earned, "spent": spent, "bank": bank, "runs": runs, "tutorial_runs": tutorial_runs,
+		"best": best, "earned": earned, "spent": spent, "bank": bank, "runs": runs, "tutorial_runs": tutorial_runs, "taught": taught,
 		"total_distance": total_distance, "total_drops": total_drops, "best_drops": best_drops,
 		"flares": flares, "deepest_dusk": deepest_dusk, "play_seconds": play_seconds,
 		"deaths": deaths,
@@ -159,6 +162,10 @@ func merge_from(other: Variant) -> bool:
 	spent = maxi(spent, int(o.get("spent", 0)))
 	runs = maxi(runs, int(o.get("runs", 0)))
 	tutorial_runs = maxi(tutorial_runs, int(o.get("tutorial_runs", 0)))
+	var ot: Variant = o.get("taught", {})
+	if ot is Dictionary:
+		for k in ot:
+			taught[k] = true
 	total_distance = maxi(total_distance, int(o.get("total_distance", 0)))
 	total_drops = maxi(total_drops, int(o.get("total_drops", 0)))
 	best_drops = maxi(best_drops, int(o.get("best_drops", 0)))
@@ -220,8 +227,10 @@ func save_to_disk() -> void:
 ## Back to a brand-new save (after deleting the account). Settings stay.
 func reset_all() -> void:
 	var keep := [music, sound, vibration]
+	var knows := taught.duplicate()
 	var fresh := SaveData.new()
 	_apply(fresh.to_dict())
+	taught = knows
 	music = keep[0]
 	sound = keep[1]
 	vibration = keep[2]

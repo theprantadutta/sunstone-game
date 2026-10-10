@@ -120,6 +120,10 @@ var _lean := 0.0
 var _attraction := 0.0 ## how much the bats want you
 var _house_key := ""
 var _hints := {}
+var _coach := "" ## the move being taught right now (time runs slow until it's made)
+var _act_t := -9.0 ## when he last moved, jumped or slid (close calls)
+var _close := 0 ## close calls this run
+var _combo := 0 ## close calls in a row without a stumble
 var _growl_cd := 0.0
 var _jags: Array[Dictionary] = [] ## {node, pos, frozen, linger}
 var _bats: Array[Dictionary] = [] ## {node, rel, vel, gone, flee, life}
@@ -251,6 +255,7 @@ func _ready() -> void:
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.back_requested.connect(_on_back)
 	ui.setup(save, online, ads, store)
+	ui.set_flare_cost(FLARE_COST + 0.03)
 	store.setup(online, save)
 	store.products_changed.connect(func():
 		ads.no_ads = save.has_entitlement("no_ads"))
@@ -333,6 +338,10 @@ func _reset_run() -> void:
 	_house_key = ""
 	_strings.clear()
 	_hints.clear()
+	_end_coach()
+	_close = 0
+	_combo = 0
+	_act_t = -9.0
 	_touch_index = -1
 	_cam_x = 0.0
 	runner.rotation = Vector3.ZERO
@@ -364,10 +373,10 @@ func _start_run() -> void:
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 	sfx.play(Sfx.ROAR)
 	online.track("run_start", {"mode": "daily" if daily_key != "" else "free", "runs": save.runs})
-	if save.tutorial_runs < 2 and not _shots:
+	if not _shots:
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if state == State.RUNNING:
-				_hint("swipe", "Swipe left and right to change lanes"))
+				_hint("swipe", "Swipe left and right to change lanes", false))
 
 ## Today's dusk: the same road for everyone, fixed for the whole run even if
 ## the date turns while running.
@@ -392,6 +401,7 @@ func _pause() -> void:
 		return
 	state = State.PAUSED
 	_touch_index = -1
+	Engine.time_scale = 1.0
 	get_tree().paused = true
 	ui.show_pause()
 
@@ -401,6 +411,8 @@ func _resume() -> void:
 	get_tree().paused = false
 	state = State.RUNNING
 	_touch_index = -1
+	if _coach != "":
+		Engine.time_scale = 0.3
 	ui.show_hud(MayaCalendar.tzolkin_name(daily_key) if daily_key != "" else "")
 
 func _die(cause: String, fell := false, caught := false) -> void:
@@ -408,6 +420,7 @@ func _die(cause: String, fell := false, caught := false) -> void:
 		return
 	state = State.DYING
 	death_cause = cause
+	_end_coach()
 	if _autopilot:
 		print("[sunstone] died at %.0f m (%.1f m/s): %s" % [s, speed, cause])
 	_fell = fell
@@ -498,6 +511,7 @@ func _finish_run() -> void:
 	var new_glyphs := Glyphs.evaluate(save, {
 		"distance": metres, "drops": coins, "flares": _run_flares, "dusk": dusk,
 		"daily": daily_key != "", "recovered": _recovered, "nights": Nights.progress(distance),
+		"jumps": _jumps, "slides": _slides, "close": _close, "stumbles": _stumbles,
 	})
 	save.save_to_disk()
 	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info, new_glyphs, _night_line())
@@ -680,6 +694,7 @@ func _step_run(delta: float) -> void:
 	if _shield_t <= 0.0 and _check_hazards():
 		return
 	_collect()
+	_check_close()
 	_spawn_queued_jaguar()
 	_step_jaguars(delta, h, at)
 	if state != State.RUNNING:
@@ -694,11 +709,11 @@ func _step_run(delta: float) -> void:
 		sfx.play(Sfx.FLARE)
 	if _step_pack(delta, at):
 		return
-	if save.tutorial_runs < 2:
-		if light < 0.35:
-			_hint("drops", "Sun-drops feed the stone: run through them")
-		elif _run_time > 9.0:
-			_hint("flare", "Tap to flare: the light reaches far ahead, but it costs light")
+	_teach()
+	if light < 0.35:
+		_hint("drops", "Sun-drops feed the stone: run through them")
+	elif _run_time > 12.0:
+		_hint("flare", "Tap to flare: the light reaches far ahead, but it costs light", false)
 
 	if y > 0.02:
 		runner.pose = RunnerModel.Pose.JUMP
@@ -743,18 +758,62 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 		ui.show_banner(h.name, h.sub)
 	if not first:
 		sfx.play(Sfx.GATE)
-	if save.tutorial_runs < 2:
+	if true:
 		var id: String = Nights.plan(at.n, world.seed)[at.house]
 		if id == "jaguars":
 			_hint("jaguars", "Jaguars move only in the dark: flare and they turn to stone")
 		elif id == "bats":
 			_hint("bats", "Bats dive for your light: swipe down to slide under them")
 
-func _hint(key: String, text: String) -> void:
-	if _hints.has(key) or _shots:
+## Shows a hint until the player has learned it. [learned_on_show]: a fact,
+## learned by reading it; otherwise a move, learned by making it ([_learn]).
+func _hint(key: String, text: String, learned_on_show := true) -> void:
+	if _hints.has(key) or save.taught.has(key) or _shots or _autopilot:
 		return
 	_hints[key] = true
+	if learned_on_show:
+		save.taught[key] = true
 	ui.show_hint(text, Vector2.ZERO)
+
+## The move [key] was made: never teach it again, and if time was slowed to
+## teach it, let it run.
+func _learn(key: String) -> void:
+	if not save.taught.has(key) and _hints.has(key):
+		save.taught[key] = true
+		ui.dismiss_hint()
+	if _coach == key:
+		_end_coach()
+
+## The first time each danger meets him in his lane, time slows and a hint
+## says which swipe gets past it, until he makes it (or it's behind him).
+const COACH := {
+	"jump": "Swipe up to jump", "slide": "Swipe down to slide under",
+	"dodge": "Swipe left or right to go round",
+}
+func _teach() -> void:
+	if _shots or _autopilot or _tour:
+		return
+	if _coach != "":
+		# The danger went by without the move: let time run again.
+		if _coach_s < s - 0.5:
+			_hints.erase(_coach)
+			_end_coach()
+		return
+	var near := world.occupant(s + speed * 0.75, _lane, speed * 0.4)
+	if near.is_empty() or near.s - s < 3.0:
+		return
+	var key := "jump" if near.kind in ["wall", "pit"] else ("slide" if near.kind == "lintel" else "dodge")
+	if save.taught.has(key) or _hints.has(key):
+		return
+	_hint(key, COACH[key], false)
+	_coach = key
+	_coach_s = near.s
+	Engine.time_scale = 0.3
+
+var _coach_s := 0.0
+func _end_coach() -> void:
+	_coach = ""
+	Engine.time_scale = 1.0
 
 const CAUSES := {
 	"stela": "Ran into a stela", "blades": "Cut on obsidian blades",
@@ -806,6 +865,7 @@ func _check_hazards() -> bool:
 ## that ended the run.
 func _stumble() -> bool:
 	_stumbles += 1
+	_combo = 0
 	_lane = _lane_from
 	_shake = 0.35
 	sfx.play(Sfx.STUMBLE)
@@ -819,6 +879,29 @@ func _stumble() -> bool:
 	light = maxf(0.0, light - STUMBLE_LIGHT)
 	ui.pop("Stumble!")
 	return false
+
+## A danger he got past by a move made at the last moment — a lane change
+## round it, a leap over it, a slide under it — is a close call: a sun-drop,
+## and more for close calls in a row.
+func _check_close() -> void:
+	for c in world.chunks():
+		if c.s1 < s - 3.0 or c.s0 > s + 1.0:
+			continue
+		for o in c.obstacles:
+			if o.get("hit", false) or o.get("passed", false) or s < o.s + o.depth / 2.0:
+				continue
+			o["passed"] = true
+			if _run_time - _act_t > 0.45:
+				continue
+			if o.lane != World.ALL and absf(_u - World.lane_u(o.lane)) > Nights.LANE_W * 1.2:
+				continue
+			_close += 1
+			_combo += 1
+			var pay := mini(_combo, 5)
+			coins += pay
+			light = minf(light + 0.01, 1.0)
+			ui.pop("Close!" if _combo < 2 else "Close!  ×%d" % _combo)
+			sfx.play(Sfx.COIN)
 
 func _collect() -> void:
 	for c in world.chunks():
@@ -1329,7 +1412,10 @@ func _move(dir: int) -> void:
 		return
 	_lane_from = _lane
 	_lane = to
+	_act_t = _run_time
 	sfx.play(Sfx.LANE)
+	_learn("swipe")
+	_learn("dodge")
 
 func _jump() -> void:
 	if state != State.RUNNING or y > 0.0 or vy > 0.0:
@@ -1338,7 +1424,9 @@ func _jump() -> void:
 	_slide_queued = false
 	vy = JUMP_V
 	_jumps += 1
+	_act_t = _run_time
 	sfx.play(Sfx.JUMP)
+	_learn("jump")
 
 ## On the ground: a slide. In the air: dive back down and slide on landing.
 func _slide() -> void:
@@ -1347,11 +1435,14 @@ func _slide() -> void:
 	if y > 0.0 or vy > 0.0:
 		vy = minf(vy, DIVE_V)
 		_slide_queued = true
+		_learn("slide")
 		return
 	if _slide_t <= 0.0:
 		_slides += 1
 		sfx.play(Sfx.SLIDE)
 	_slide_t = SLIDE_T
+	_act_t = _run_time
+	_learn("slide")
 
 ## A tap: the Sunstone flares, throwing its light far down the road. It costs
 ## light, so with too little left it only fizzles.
@@ -1367,6 +1458,7 @@ func _flare() -> void:
 	_flare_t = FLARE_TIME
 	_run_flares += 1
 	sfx.play(Sfx.FLARE)
+	_learn("flare")
 
 func _notification(what: int) -> void:
 	match what:

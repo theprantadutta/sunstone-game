@@ -843,6 +843,7 @@ class SunMeter:
 	var light := 1.0
 	var night := 0.0
 	var gap := 24.0
+	var cost := 0.0 ## light a flare needs: a cinnabar dot marks it on the ring
 	var _t := 0.0
 
 	func _init() -> void:
@@ -867,6 +868,12 @@ class SunMeter:
 				draw_line(c + d * (r + 7), c + d * (r + 21), UiKit.OCHRE, 4.5, true)
 			else:
 				draw_line(c + d * (r + 9), c + d * (r + 18), Color(UiKit.INK, 0.55), 4.0, true)
+		if cost > 0.0:
+			# Below this mark a tap only fizzles.
+			var ka := TAU * ceilf(cost * 20.0) / 20.0 - PI / 2.0
+			var kd := Vector2(cos(ka), sin(ka))
+			draw_circle(c + kd * (r + 28), 5.5, UiKit.INK, true, -1.0, true)
+			draw_circle(c + kd * (r + 28), 3.5, UiKit.CINNABAR, true, -1.0, true)
 		UiKit.draw_kin(self, c, r, clampf(light * 1.4, 0.15, 1.0), 3.5)
 		if light < 0.35:
 			# Failing: a cinnabar ring beats around the glyph.

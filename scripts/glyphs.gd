@@ -3,7 +3,9 @@ class_name Glyphs
 ## pays sun-drops when claimed on the Glyphs page. Order here is display order.
 ##
 ## [run] passed to evaluate(): {distance, drops, flares, dusk, daily, recovered,
-## nights} where flares = times the Sunstone was flared, recovered = it nearly
+## nights, jumps, slides, close, stumbles} where flares = times the Sunstone
+## was flared, close = close calls (a danger dodged at the last moment),
+## recovered = it nearly
 ## went out and was lit again, nights = night progress (1.5 = halfway through
 ## the second night; see Nights.progress).
 
@@ -21,6 +23,10 @@ const DEFS := [
 	{"id": "deep_night", "title": "Deep night", "text": "Reach the last House of the second night.", "reward": 150},
 	{"id": "no_flare_1000", "title": "Ember walker", "text": "Run 1,000 m flaring three times or fewer.", "reward": 120},
 	{"id": "close_call", "title": "Close call", "text": "Let the stone nearly go out, then light it again.", "reward": 50},
+	{"id": "leaper", "title": "Leaper", "text": "Jump 25 times in one run.", "reward": 60},
+	{"id": "low_road", "title": "The low road", "text": "Slide 15 times in one run.", "reward": 60},
+	{"id": "hair_breadth", "title": "Hair's breadth", "text": "Make 10 close calls in one run.", "reward": 120},
+	{"id": "untouched", "title": "Untouched", "text": "Run 1,000 m without a stumble.", "reward": 150},
 	{"id": "daily_first", "title": "Today's dusk", "text": "Finish a daily dusk.", "reward": 30},
 	{"id": "daily_3", "title": "Three dusks", "text": "Run the daily dusk three days in a row.", "reward": 90},
 	{"id": "daily_7", "title": "A week of dusks", "text": "Run the daily dusk seven days in a row.", "reward": 200},
@@ -57,6 +63,10 @@ static func evaluate(save: SaveData, run: Dictionary) -> Array[String]:
 		"deep_night": nights >= 1.0 + 2.0 / 3.0,
 		"no_flare_1000": dist >= 1000 and flares <= 3,
 		"close_call": run.recovered,
+		"leaper": int(run.get("jumps", 0)) >= 25,
+		"low_road": int(run.get("slides", 0)) >= 15,
+		"hair_breadth": int(run.get("close", 0)) >= 10,
+		"untouched": dist >= 1000 and int(run.get("stumbles", 99)) == 0,
 		"daily_first": run.daily,
 		"daily_3": run.daily and save.daily_streak >= 3,
 		"daily_7": run.daily and save.daily_streak >= 7,

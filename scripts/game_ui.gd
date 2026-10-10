@@ -480,6 +480,10 @@ func show_banner(title: String, sub: String) -> void:
 	_banner.show_banner(title, sub)
 
 ## The Sunstone's charge, how far night has fallen, and how close the jaguars are.
+## The least light a flare needs (marked on the sun meter's ring).
+func set_flare_cost(value: float) -> void:
+	_meter.cost = value
+
 func set_light(value: float, night: float, chaser_gap: float) -> void:
 	_meter.light = value
 	_meter.night = night
