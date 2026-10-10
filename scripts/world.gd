@@ -149,6 +149,29 @@ func in_pit(x: float, z: float) -> bool:
 			return true
 	return false
 
+## What stands in [lane] within [margin] metres of [s] — {kind, s} of a
+## danger (a lintel stands in every lane) or of a hole ("pit"), or {} when the
+## lane is clear there. Jaguars use it so they never pass through stone.
+func occupant(s: float, lane: int, margin := 1.0) -> Dictionary:
+	var col := (lane + 1) * 2
+	for c in _chunks:
+		if c.s1 < s - margin - 2.0 or c.s0 > s + margin + 2.0:
+			continue
+		for o in c.obstacles:
+			if absf(o.s - s) < o.depth / 2.0 + margin and (o.lane == ALL or o.lane == lane):
+				return {"kind": o.kind, "s": o.s}
+		for p in c.pits:
+			if s > p.s0 - margin and s < p.s1 + margin and col >= p.c0 and col <= p.c1:
+				return {"kind": "pit", "s": (p.s0 + p.s1) / 2.0}
+	return {}
+
+## True when nothing stands in any of [lanes] near [s].
+func clear(s: float, lanes: Array, margin := 1.0) -> bool:
+	for l in lanes:
+		if not occupant(s, l, margin).is_empty():
+			return false
+	return true
+
 func chunk_at(s: float) -> Chunk:
 	var i := floori(s / CHUNK)
 	for c in _chunks:

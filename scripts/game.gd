@@ -103,6 +103,7 @@ var _light_c := Vector3.ZERO ## the centre of his circle of light
 var _sight := 1000.0 ## metres past which the night swallows the road
 var _pack := PACK_FAR ## how far behind him the jaguar pack runs
 var _pack_nodes: Array[JaguarModel] = []
+var _pack_u: Array[float] = [] ## each cat's place across the road, eased
 var _pack_caught := false
 var _run_time := 0.0
 var _second_wind_used := false
@@ -910,14 +911,22 @@ func _step_jaguars(delta: float, _h: Dictionary, _at: Dictionary) -> void:
 		match j.state:
 			"wait":
 				if not lit and ahead < speed * 1.05 + 2.0 and ahead > 3.0:
-					j.state = "leap"
-					j.t = 0.0
-					j.from = p
-					j.lane = _lane
-					j.to = world.point(js - 1.0, World.lane_u(_lane))
-					if _growl_cd <= 0.0:
-						sfx.play(Sfx.ROAR)
-						_growl_cd = 2.5
+					# It leaps only where it can land: every lane between the
+					# curb and his must be clear of stone and holes there.
+					var side := 1 if world.u_of(p.x, p.z) > 0.0 else -1
+					var over: Array = range(_lane, side + 1) if side > 0 else range(side, _lane + 1)
+					for back in [1.0, 3.0, 5.0]:
+						var land: float = js - back
+						if land - s > 2.5 and world.clear(land, over, 1.4):
+							j.state = "leap"
+							j.t = 0.0
+							j.from = p
+							j.lane = _lane
+							j.to = world.point(land, World.lane_u(_lane))
+							if _growl_cd <= 0.0:
+								sfx.play(Sfx.ROAR)
+								_growl_cd = 2.5
+							break
 			"leap":
 				lit = false # a leap, once begun, lands
 				j.t = minf(j.t + delta / JAG_LEAP, 1.0)
@@ -927,8 +936,11 @@ func _step_jaguars(delta: float, _h: Dictionary, _at: Dictionary) -> void:
 					j.state = "road"
 					p.y = 0.0
 			"road":
-				if not lit:
-					p = world.point(js - JAG_CREEP * delta, World.lane_u(j.lane))
+				# Coming at him down its lane — but never through stone or over
+				# a hole: it stops behind whatever stands in the way.
+				var next := js - JAG_CREEP * delta
+				if not lit and world.occupant(next - 1.1, j.lane, 0.1).is_empty():
+					p = world.point(next, World.lane_u(j.lane))
 		j.frozen = lit
 		j.node.frozen = lit
 		j.pos = p
@@ -990,7 +1002,9 @@ func _step_pack(delta: float, at: Dictionary) -> bool:
 		return true
 	return false
 
-## Three stone cats running at his heels, staggered across the lanes.
+## Three stone cats running at his heels, staggered across the lanes. They
+## run the same road he did: round stelae and blades, over walls and holes,
+## low under lintels — never through stone.
 const PACK_SPOTS := [Vector2(-1.4, 0.4), Vector2(1.4, 1.0), Vector2(0.0, 1.8)]
 func _place_pack(delta: float, frozen: bool) -> void:
 	var show := _pack < PACK_FAR + 1.0 and state == State.RUNNING or _pack_caught
@@ -1002,6 +1016,7 @@ func _place_pack(delta: float, frozen: bool) -> void:
 			n.scale = Vector3.ONE * 0.95
 			add_child(n)
 			_pack_nodes.append(n)
+			_pack_u.append(_u + PACK_SPOTS[i].x)
 	for i in _pack_nodes.size():
 		var n: JaguarModel = _pack_nodes[i]
 		n.visible = show
@@ -1009,8 +1024,32 @@ func _place_pack(delta: float, frozen: bool) -> void:
 			continue
 		var spot: Vector2 = PACK_SPOTS[i]
 		var ps := s - _pack - spot.y
-		var pu := clampf(_u + spot.x, -Nights.ROAD_W / 2.0 + 0.5, Nights.ROAD_W / 2.0 - 0.5)
-		n.position = world.point(ps, pu)
+		var want_u := clampf(_u + spot.x, -Nights.ROAD_W / 2.0 + 0.5, Nights.ROAD_W / 2.0 - 0.5)
+		var lane := clampi(roundi(want_u / Nights.LANE_W), -1, 1)
+		var ahead: Dictionary = world.occupant(ps + 1.0, lane, 1.6)
+		if not ahead.is_empty() and ahead.kind in ["stela", "blades"]:
+			# Stone in its lane: swerve to the nearest lane that's clear.
+			for l in [lane - 1, lane + 1, lane - 2, lane + 2]:
+				if l >= -1 and l <= 1:
+					var o: Dictionary = world.occupant(ps + 1.0, l, 1.6)
+					if o.is_empty() or not o.kind in ["stela", "blades"]:
+						want_u = World.lane_u(l)
+						lane = l
+						break
+		if _pack_u.size() <= i:
+			_pack_u.append(want_u)
+		_pack_u[i] = lerpf(_pack_u[i], want_u, 1.0 - exp(-9.0 * delta))
+		var hop := 0.0
+		var squash := 1.0
+		var here: Dictionary = world.occupant(ps, roundi(_pack_u[i] / Nights.LANE_W), 1.8)
+		if not here.is_empty():
+			var d: float = (ps - here.s) / 1.8
+			if here.kind in ["wall", "pit"]:
+				hop = maxf(0.0, 1.0 - d * d) * (1.0 if here.kind == "wall" else 0.8)
+			elif here.kind == "lintel":
+				squash = lerpf(1.0, 0.72, clampf(1.6 - absf(d) * 1.8, 0.0, 1.0))
+		n.position = world.point(ps, _pack_u[i], hop)
+		n.scale = Vector3(0.95, 0.95 * squash, 0.95)
 		n.rotation.y = atan2(-world.slope(ps), 1.0)
 		n.frozen = frozen
 		if not frozen:
