@@ -112,6 +112,11 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   you, time slows (0.3×) and a hint names the swipe until you make it
   (`save.taught`). **Head start** boost: the sun carries you 300 m at 2.6× over
   everything, landing on clear road (not on the daily dusk).
+- **Launch** is one continuous picture: the Android splash is plain plum
+  (`[splash]` custom theme attributes: no icon; `screen/background_color` so
+  no black frame), Godot's boot splash is the k'in glyph on the same plum
+  (`tools/make_splash.py`, stretch "keep"), and `GameUI.play_splash` takes that
+  exact image over and flies it into the title wordmark while the plum fades.
 - **Second wind**: once per run — rise past what ended it, nearby jaguars gone,
   light ≥ 0.6, 1.5 s shield.
 - **The look** (`codex.gd`): no real lights or shadows. Flat three-band shading

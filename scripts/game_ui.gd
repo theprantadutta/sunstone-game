@@ -383,13 +383,16 @@ func _build_title() -> void:
 	gear.pressed.connect(_open_settings)
 
 func show_title(save: SaveData) -> void:
+	# Shown again while already up (progress synced, a look changed): no replay.
+	var already := _title.visible and not _hud.visible
 	_hide_all()
 	if save.best > 0:
 		_best.set_text("Best %s m" % UiKit.thousands(save.best), save.best)
 	else:
 		_best.set_text("Carry the sun to dawn")
 	_title.visible = true
-	_wordmark.replay()
+	if not already:
+		_wordmark.replay()
 	_refresh_title()
 
 ## Bank and menu badges: what's waiting since you last looked.
@@ -484,6 +487,59 @@ func set_night(n: int, house: String, t: float, dawn: bool) -> void:
 	_distance.text = "Night %d" % n
 	_house.text = "The sun is rising" if dawn else house
 	_dawn.set_progress(1.0 if dawn else t, dawn)
+
+## The launch: the boot splash's sun glyph (same image, same place) rises
+## and settles into the title wordmark while the plum behind it fades away,
+## then the wordmark's strip unrolls beneath it. Holds a moment first so the
+## world's first frames are drawn behind the plum.
+func play_splash() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	var splash := Splash.new()
+	layer.add_child(splash)
+	splash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_wordmark.sun = UiKit.Wordmark.Sun.HIDDEN
+	for i in 4:
+		await get_tree().process_frame
+	await get_tree().create_timer(0.3).timeout
+	var target := _wordmark.global_position + Vector2(320, 96)
+	var tw := splash.create_tween()
+	tw.tween_method(func(t: float): splash.fly(t, target), 0.0, 1.0, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	await tw.finished
+	_wordmark.sun = UiKit.Wordmark.Sun.PLACED
+	_wordmark.replay()
+	layer.queue_free()
+
+## The splash overlay: the boot splash's plum and its glyph, drawn exactly
+## where the engine drew them (the image fitted to the screen, centred).
+class Splash:
+	extends Control
+	const GLYPH_R := 150.0 / 1024.0 ## the glyph's radius in the image (tools/make_splash.py)
+	const BG := Color(0.1647, 0.1059, 0.2392)
+	var _tex: Texture2D = preload("res://assets/icon/splash.png")
+	var _t := 0.0
+	var _to := Vector2.ZERO
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP # no taps reach the title mid-flight
+
+	## [t] 0..1 along the flight to [target] (the wordmark's sun centre).
+	func fly(t: float, target: Vector2) -> void:
+		_t = t
+		_to = target
+		queue_redraw()
+
+	func _draw() -> void:
+		var d := minf(size.x, size.y)
+		var from := size / 2.0
+		var c := from.lerp(_to, _t) if _t > 0.0 else from
+		# Shrinks to the wordmark's glyph (radius 58).
+		var k := lerpf(1.0, 58.0 / (GLYPH_R * d), _t)
+		var fade := 1.0 - smoothstep(0.15, 0.85, _t)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(BG, fade))
+		var side := d * k
+		draw_texture_rect(_tex, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)), false)
 
 ## A short line that pops under the sun meter: "Sun-string +3".
 var _pops_live := 0 ## pops on screen now: a new one sits under the last

@@ -785,6 +785,10 @@ class Countdown:
 ## sun glyph rising above it. The strip unrolls once when the title appears.
 class Wordmark:
 	extends Control
+	## How the sun glyph appears: grown in with the strip, held back (the
+	## launch splash is carrying it here), or already in place.
+	enum Sun { GROW, HIDDEN, PLACED }
+	var sun := Sun.GROW
 	var _t := 0.0
 
 	func _init() -> void:
@@ -796,11 +800,18 @@ class Wordmark:
 		_t = 0.0
 
 	func _process(delta: float) -> void:
+		if sun == Sun.HIDDEN:
+			# Held rolled up until the launch splash lands.
+			_t = 0.0
+			queue_redraw()
+			return
 		if _t < 1.0:
 			_t = minf(_t + delta / 0.9, 1.0)
 			queue_redraw()
 
 	func _draw() -> void:
+		if sun == Sun.HIDDEN:
+			return
 		var e := 1.0 - pow(1.0 - _t, 3.0)
 		var strip := Rect2(Vector2(20, 130), Vector2(600, 150))
 		var w := strip.size.x * e
@@ -824,6 +835,10 @@ class Wordmark:
 			draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(UiKit.INK, a))
 		# The sun glyph above the strip, with twenty count marks around it.
 		var s := clampf((_t - 0.15) / 0.6, 0.0, 1.0)
+		if sun == Sun.HIDDEN:
+			s = 0.0
+		elif sun == Sun.PLACED:
+			s = 1.0
 		if s > 0.0:
 			var c := Vector2(strip.get_center().x, 96)
 			var r := 58.0 * (0.7 + 0.3 * s)

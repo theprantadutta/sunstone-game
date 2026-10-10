@@ -289,6 +289,7 @@ func _ready() -> void:
 	if not FileAccess.file_exists("user://perf_hz"):
 		_lock_refresh()
 	_go_title()
+	ui.play_splash()
 	if _shots:
 		_run_shots()
 	elif _tour:
