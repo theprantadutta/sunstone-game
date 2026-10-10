@@ -13,7 +13,8 @@ class_name Codex
 ##
 ## The light itself is a handful of circles on the ground plane: the Sunstone,
 ## up to eight braziers, and the dusk/dawn flood around the runner. [update]
-## pushes them to every material once a frame.
+## pushes them to every material once a frame. Beyond the stone's [sight] the
+## night swallows even the pale ink: a dim stone sees only a little way ahead.
 
 const MAX_LIGHTS := 8
 
@@ -31,6 +32,12 @@ uniform float wob_t = 0.0;
 uniform vec3 fade_col : source_color = vec3(0.07, 0.09, 0.23);
 uniform float fade_near = 30.0;
 uniform float fade_far = 58.0;
+uniform float sight = 1000.0;
+
+// 1 where the night has swallowed even the ink: unlit and far from the stone.
+float swallowed(vec2 p, float m) {
+	return (1.0 - m) * smoothstep(sight * 0.45, sight, length(p - stone.xz));
+}
 
 float wobble(vec2 p) {
 	return (sin(p.x * 1.7 + p.y * 0.9 + wob_t * 0.5) + sin(p.y * 2.3 - p.x * 1.3)) * 0.11;
@@ -116,6 +123,7 @@ void fragment() {
 	col = mix(col, col * stone_col * 1.25, near * 0.25);
 	col = mix(night, col, m);
 	col = mix(col, ring_col, edge);
+	col = mix(col, fade_col, swallowed(wpos.xz, m));
 	col = mix(col, fade_col, smoothstep(fade_near, fade_far, distance(CAMERA_POSITION_WORLD, wpos)));
 	// The bark-paper grain of the page, in screen space so it never swims.
 	vec3 g = texture(grain, SCREEN_UV * VIEWPORT_SIZE / grain_scale).rgb;
@@ -162,6 +170,7 @@ void fragment() {
 	float edge;
 	float m = paint(wpos.xz, edge);
 	vec3 col = mix(pale_ink, ink, m);
+	col = mix(col, fade_col, swallowed(wpos.xz, m));
 	col = mix(col, fade_col, smoothstep(fade_near, fade_far, distance(CAMERA_POSITION_WORLD, wpos)));
 	ALBEDO = col;
 }
@@ -231,7 +240,8 @@ static func _empty_lights() -> PackedVector4Array:
 ## Once a frame: where the light is. [stone] = (x, y, z, radius) of the
 ## Sunstone's circle; [amb] = radius of the dusk/dawn flood around it (0 at
 ## night, huge in daylight); [lights] = up to eight (x, y, z, radius) braziers;
-## [fade] = the colour far things melt into.
+## [fade] = the colour far things melt into; [sight] = metres from the stone's
+## circle centre past which unlit things vanish.
 ## The paper grain multiplied over the painted world (white = no change).
 ## [amount] 0 switches it off.
 static func set_grain(tex: Texture2D, amount := 1.0, scale := 256.0) -> void:
@@ -247,7 +257,7 @@ static func set_stone_color(c: Color) -> void:
 	_world.set_shader_parameter("stone_col", c)
 	_world_flat.set_shader_parameter("stone_col", c)
 
-static func update(stone: Vector4, amb: float, lights: PackedVector4Array, fade: Color, t: float) -> void:
+static func update(stone: Vector4, amb: float, lights: PackedVector4Array, fade: Color, t: float, sight := 1000.0) -> void:
 	_ensure()
 	var l := lights
 	if l.size() != MAX_LIGHTS:
@@ -259,3 +269,4 @@ static func update(stone: Vector4, amb: float, lights: PackedVector4Array, fade:
 		m.set_shader_parameter("lights", l)
 		m.set_shader_parameter("fade_col", fade)
 		m.set_shader_parameter("wob_t", t)
+		m.set_shader_parameter("sight", sight)

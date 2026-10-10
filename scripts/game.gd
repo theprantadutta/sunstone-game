@@ -13,7 +13,7 @@ extends Node3D
 enum State { TITLE, RUNNING, PAUSED, DYING, OFFER, RESULTS }
 
 const START_S := -3.0
-const DRAIN := 0.016 ## light per second
+const DRAIN := 0.02 ## light per second
 const FLARE_COST := 0.15 ## light a flare spends
 const FLARE_TIME := 2.2 ## seconds a flare burns
 const FLARE_CD := 0.45 ## seconds before the next flare
@@ -29,12 +29,17 @@ const WALL_CLEAR := 0.5 ## feet higher than this clear a low wall
 const STUMBLE_LIGHT := 0.12 ## light lost when he clips something
 const STUMBLE_WINDOW := 6.0 ## a second stumble this soon is the end
 const RUNNER_HALF := 0.35 ## half his width, for clipping
-const DROP_LIGHT := 0.05
+const DROP_LIGHT := 0.014 ## a sun-drop keeps the stone burning, barely
 const DAWN_GIFT := 0.35 ## light the sunrise gives back
 const DROP_R := 0.85
 const CATCH_R := 0.75
-const JAG_CREEP := 3.0 ## m/s, a waking jaguar coming at you
-const JAG_CHASE := 2.7 ## m/s faster than you, one hunting from behind
+const JAG_CREEP := 3.0 ## m/s, a jaguar in the road coming at you
+const JAG_LEAP := 0.4 ## seconds a jaguar is in the air, curb to lane
+const SIGHT_MIN := 8.0 ## metres past the light he sees even with a dying stone...
+const SIGHT_LIGHT := 14.0 ## ...and this much more with a full one
+const PACK_FAR := 13.0 ## metres behind: out of sight
+const PACK_NEAR := 1.9 ## right at his heels, in view
+const PACK_CATCH := 0.7
 const BAT_SPEED := 7.3
 const BAT_STEAL := 0.2
 const BAT_HIT_R := 0.75
@@ -95,6 +100,10 @@ var _flare_t := 0.0
 var _flare_cd := 0.0
 var _stumble_t := 99.0 ## seconds since the last stumble
 var _light_c := Vector3.ZERO ## the centre of his circle of light
+var _sight := 1000.0 ## metres past which the night swallows the road
+var _pack := PACK_FAR ## how far behind him the jaguar pack runs
+var _pack_nodes: Array[JaguarModel] = []
+var _pack_caught := false
 var _run_time := 0.0
 var _second_wind_used := false
 var _shield_t := 0.0
@@ -137,6 +146,8 @@ var _slide_queued := false
 var _autopilot := OS.get_cmdline_user_args().has("--autopilot") or FileAccess.file_exists("user://autopilot")
 ## Dev: `files/dev_noflare` — the autopilot never flares.
 var _dev_noflare := FileAccess.file_exists("user://dev_noflare")
+## Dev: `files/dev_pack` — the pack runs at his heels the whole run.
+var _dev_pack := FileAccess.file_exists("user://dev_pack")
 ## Dev: `files/dev_start` holding metres starts every run that far along.
 var _dev_start := FileAccess.get_file_as_string("user://dev_start").to_float() if FileAccess.file_exists("user://dev_start") else 0.0
 var _auto_cd := 0.0
@@ -303,6 +314,9 @@ func _reset_run() -> void:
 	_flare_t = 0.0
 	_flare_cd = 0.0
 	_stumble_t = 99.0
+	_pack = PACK_FAR + 6.0
+	_pack_caught = false
+	_sight = 1000.0
 	_run_time = 0.0
 	_second_wind_used = false
 	_shield_t = 0.0
@@ -322,6 +336,8 @@ func _reset_run() -> void:
 	_cam_x = 0.0
 	runner.rotation = Vector3.ZERO
 	runner.raise = 0.0
+	for n in _pack_nodes:
+		n.visible = false
 
 func _go_title() -> void:
 	get_tree().paused = false
@@ -435,6 +451,8 @@ func _second_wind(paid_by_ad := false) -> void:
 	x = world.point(s, _u).x
 	_slide_t = 0.0
 	_stumble_t = 99.0
+	_pack = PACK_FAR + 6.0
+	_pack_caught = false
 	for j in _jags.duplicate():
 		if Vector2(j.pos.x - x, j.pos.z + s).length() < 14.0:
 			_drop_jaguar(j.node)
@@ -624,6 +642,7 @@ func _step_run(delta: float) -> void:
 	light = clampf(light, 0.0, 1.0)
 	var glow: float = h.ember * GLOW * (0.4 + 0.6 * sqrt(light))
 	light_r = lerpf(glow, FLARE_R, blaze)
+	_sight = light_r + (SIGHT_MIN + SIGHT_LIGHT * light) * h.ember / 2.05
 	if light < 0.12:
 		_was_low = true
 	elif _was_low and light > 0.5:
@@ -667,15 +686,13 @@ func _step_run(delta: float) -> void:
 	_step_bats(delta, h, at)
 	if _invincible:
 		light = maxf(light, 0.25)
-	if light <= 0.0 and s > 0.0 and not at.dawn:
-		if save.use_boost("shield"):
-			light = 0.4
-			ui.pop("Ember shield!")
-			ui.flash_flare()
-			sfx.play(Sfx.FLARE)
-		else:
-			_die("The Sunstone went out")
-			return
+	if light <= 0.0 and s > 0.0 and not at.dawn and save.use_boost("shield"):
+		light = 0.4
+		ui.pop("Ember shield!")
+		ui.flash_flare()
+		sfx.play(Sfx.FLARE)
+	if _step_pack(delta, at):
+		return
 	if save.tutorial_runs < 2:
 		if light < 0.35:
 			_hint("drops", "Sun-drops feed the stone: run through them")
@@ -695,7 +712,7 @@ func _step_run(delta: float) -> void:
 	_push_codex()
 	ui.set_run_numbers(int(distance), coins)
 	ui.set_night(at.n, h.name, at.t, at.dawn)
-	ui.set_light(light, 1.0 - amb / AMB_FULL, _nearest_jaguar())
+	ui.set_light(light, 1.0 - amb / AMB_FULL, minf(_nearest_jaguar(), _pack + 1.0))
 
 ## Entering a House, or dawn: a banner, a sound, and on the first nights a hint.
 func _check_houses(at: Dictionary, h: Dictionary) -> void:
@@ -730,7 +747,7 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 		if id == "jaguars":
 			_hint("jaguars", "Jaguars move only in the dark: flare and they turn to stone")
 		elif id == "bats":
-			_hint("bats", "Bats hunt bright light: flare less and they lose you")
+			_hint("bats", "Bats dive for your light: swipe down to slide under them")
 
 func _hint(key: String, text: String) -> void:
 	if _hints.has(key) or _shots:
@@ -794,7 +811,8 @@ func _stumble() -> bool:
 	sfx.vibrate(save, 50)
 	ui.flash_danger()
 	if _stumble_t < STUMBLE_WINDOW:
-		_die("Stumbled twice, and the dark took him")
+		_pack_caught = true
+		_die("Stumbled, and the pack caught him", false, true)
 		return true
 	_stumble_t = 0.0
 	light = maxf(0.0, light - STUMBLE_LIGHT)
@@ -818,9 +836,9 @@ func _collect() -> void:
 				var tid: int = d.get("trail", 0)
 				if tid > 0:
 					_strings[tid] = _strings.get(tid, 0) + 1
-					if _strings[tid] == 5:
+					if _strings[tid] == int(d.get("of", 5)):
 						coins += STRING_BONUS
-						light = minf(light + DROP_LIGHT, 1.0)
+						light = minf(light + DROP_LIGHT * 3.0, 1.0)
 						ui.pop("Sun-string  +%d" % STRING_BONUS)
 						sfx.play(Sfx.BLAZE)
 
@@ -864,21 +882,24 @@ func _add_jaguar(pos: Vector3) -> void:
 	node.position = pos
 	node.rotation.y = randf() * TAU
 	node.frozen = true
-	_jags.append({"node": node, "pos": pos, "frozen": true, "linger": 0.0})
+	_jags.append({"node": node, "pos": pos, "frozen": true, "linger": 0.0, "state": "wait", "lane": 0, "t": 0.0,
+		"from": pos, "to": pos})
 
-## The stone jaguars: frozen wherever there is light, and in the dark they
-## come for you — from ahead at a creep, from behind at a run.
-func _step_jaguars(delta: float, h: Dictionary, at: Dictionary) -> void:
-	var me := Vector3(x, 0.0, -s)
+## The stone jaguars by the road: frozen wherever there is light. In the dark
+## one waits crouched at the curb until he comes near, then leaps into his
+## lane and comes at him; light turns it back to stone where it stands, and a
+## stone jaguar in the road is just one more thing to go round.
+func _step_jaguars(delta: float, _h: Dictionary, _at: Dictionary) -> void:
 	for j in _jags.duplicate():
 		var p: Vector3 = j.pos
-		var ahead := -p.z - s
+		var js := -p.z
+		var ahead := js - s
 		if ahead < -1.5:
 			# Passed: gone, so nothing stands between him and the camera.
 			_drop_jaguar(j.node)
 			_jags.erase(j)
 			continue
-		if ahead > 32.0:
+		if ahead > 40.0:
 			continue
 		var lit := _is_lit(p)
 		if lit:
@@ -886,40 +907,119 @@ func _step_jaguars(delta: float, h: Dictionary, at: Dictionary) -> void:
 		elif j.linger > 0.0:
 			j.linger -= delta
 			lit = true
+		match j.state:
+			"wait":
+				if not lit and ahead < speed * 1.05 + 2.0 and ahead > 3.0:
+					j.state = "leap"
+					j.t = 0.0
+					j.from = p
+					j.lane = _lane
+					j.to = world.point(js - 1.0, World.lane_u(_lane))
+					if _growl_cd <= 0.0:
+						sfx.play(Sfx.ROAR)
+						_growl_cd = 2.5
+			"leap":
+				lit = false # a leap, once begun, lands
+				j.t = minf(j.t + delta / JAG_LEAP, 1.0)
+				p = j.from.lerp(j.to, j.t)
+				p.y = sin(PI * j.t) * 1.3
+				if j.t >= 1.0:
+					j.state = "road"
+					p.y = 0.0
+			"road":
+				if not lit:
+					p = world.point(js - JAG_CREEP * delta, World.lane_u(j.lane))
 		j.frozen = lit
 		j.node.frozen = lit
-		if lit:
-			continue
-		var to := me - p
-		to.y = 0.0
-		var dist := to.length()
-		var sp: float = speed + JAG_CHASE if ahead < 0.2 else JAG_CREEP + 0.49 * Nights.progress(s)
-		if dist > 0.01:
-			p += to / dist * sp * delta
 		j.pos = p
 		j.node.position = p
-		j.node.rotation.y = lerp_angle(j.node.rotation.y, atan2(-to.x, -to.z), 1.0 - exp(-10.0 * delta))
-		j.node.animate(delta, sp)
-		if dist < 9.0 and _growl_cd <= 0.0:
-			sfx.play(Sfx.ROAR)
-			_growl_cd = 6.0
-		if dist < CATCH_R and _shield_t <= 0.0:
-			if save.use_boost("ward"):
-				# The ward: this one is stone for good.
-				j.node.frozen = true
-				_jags.erase(j)
-				ui.pop("Jaguar ward!")
-				ui.flash_flare()
-				sfx.play(Sfx.FLARE)
-				_shield_t = 1.0
-				continue
-			_die("Caught by a jaguar in the dark", false, true)
+		if not lit:
+			var to := Vector3(x, 0.0, -s) - p
+			j.node.rotation.y = lerp_angle(j.node.rotation.y, atan2(-to.x, -to.z), 1.0 - exp(-10.0 * delta))
+			j.node.animate(delta, JAG_CREEP if j.state == "road" else 6.0)
+		# In the road, where he is: head-on ends the run, a side clip stumbles.
+		if j.state == "wait" or j.get("hit", false) or absf(ahead) > 0.75 or _shield_t > 0.0 or _invincible:
+			continue
+		var gap := absf(_u - World.lane_u(j.lane))
+		if gap >= Nights.LANE_W * 0.4 + RUNNER_HALF:
+			continue
+		j.hit = true
+		if save.use_boost("ward"):
+			# The ward: this one is stone for good, and out of the way.
+			_drop_jaguar(j.node)
+			_jags.erase(j)
+			ui.pop("Jaguar ward!")
+			ui.flash_flare()
+			sfx.play(Sfx.FLARE)
+			_shield_t = 1.0
+			continue
+		if gap < 0.8:
+			if lit:
+				_die("Ran into a stone jaguar")
+			else:
+				_die("Caught by a jaguar in the dark", false, true)
 			return
+		if _stumble():
+			return
+
+## The pack behind him: out of sight while the stone burns bright, closer as
+## it dims, at his heels after a stumble. A flare turns them to stone and they
+## fall back. When the light is gone they catch him. Returns true when they did.
+func _step_pack(delta: float, at: Dictionary) -> bool:
+	var want := PACK_FAR + 6.0
+	if s > Nights.START_CLEAR and not at.dawn:
+		want = lerpf(PACK_NEAR + 0.9, PACK_FAR, smoothstep(0.08, 0.5, light))
+		if _stumble_t < STUMBLE_WINDOW:
+			want = minf(want, PACK_NEAR)
+		if light <= 0.0:
+			want = 0.0
+	if _dev_pack:
+		want = PACK_NEAR
+	var frozen := blaze > 0.5
+	if frozen:
+		want = maxf(want, _pack) + 4.0
+	var rate := 9.0 if want > _pack else (6.0 if light <= 0.0 else 2.6)
+	_pack = move_toward(_pack, want, rate * delta)
+	_place_pack(delta, frozen)
+	if _pack < PACK_NEAR + 1.0 and _growl_cd <= 0.0 and not frozen:
+		sfx.play(Sfx.ROAR)
+		_growl_cd = 4.0
+	if _pack <= PACK_CATCH and not _invincible:
+		_pack_caught = true
+		_die("The light went out, and the pack caught him", false, true)
+		return true
+	return false
+
+## Three stone cats running at his heels, staggered across the lanes.
+const PACK_SPOTS := [Vector2(-1.4, 0.4), Vector2(1.4, 1.0), Vector2(0.0, 1.8)]
+func _place_pack(delta: float, frozen: bool) -> void:
+	var show := _pack < PACK_FAR + 1.0 and state == State.RUNNING or _pack_caught
+	if _pack_nodes.is_empty():
+		if not show:
+			return
+		for i in PACK_SPOTS.size():
+			var n := JaguarModel.new()
+			n.scale = Vector3.ONE * 0.95
+			add_child(n)
+			_pack_nodes.append(n)
+	for i in _pack_nodes.size():
+		var n: JaguarModel = _pack_nodes[i]
+		n.visible = show
+		if not show:
+			continue
+		var spot: Vector2 = PACK_SPOTS[i]
+		var ps := s - _pack - spot.y
+		var pu := clampf(_u + spot.x, -Nights.ROAD_W / 2.0 + 0.5, Nights.ROAD_W / 2.0 - 0.5)
+		n.position = world.point(ps, pu)
+		n.rotation.y = atan2(-world.slope(ps), 1.0)
+		n.frozen = frozen
+		if not frozen:
+			n.animate(delta, speed)
 
 func _nearest_jaguar() -> float:
 	var best := 24.0
 	for j in _jags:
-		if not j.frozen:
+		if not j.frozen and j.state != "wait":
 			best = minf(best, Vector2(j.pos.x - x, j.pos.z + s).length())
 	return best
 
@@ -942,7 +1042,7 @@ func _step_bats(delta: float, h: Dictionary, at: Dictionary) -> void:
 			sfx.play(Sfx.BAT)
 	for b in _bats.duplicate():
 		b.life += delta
-		var hunting: bool = not b.gone and not b.flee and blaze > 0.35
+		var hunting: bool = not b.gone and not b.flee and b.life < 3.5
 		var rel: Vector3 = b.rel
 		var vel: Vector3 = b.vel
 		if hunting:
@@ -950,7 +1050,11 @@ func _step_bats(delta: float, h: Dictionary, at: Dictionary) -> void:
 			var dist := to.length()
 			var sp: float = BAT_SPEED + 0.59 * (at.n - 1)
 			vel = vel.lerp(to / maxf(dist, 0.01) * sp, 1.0 - exp(-3.0 * delta))
-			if dist < BAT_HIT_R and _shield_t <= 0.0:
+			if dist < BAT_HIT_R * 1.6 and _slide_t > 0.0:
+				# Ducked under it: it sweeps over his back and away.
+				b.gone = true
+				vel = Vector3(randf_range(-3.0, 3.0), 4.0, 6.0)
+			elif dist < BAT_HIT_R and _shield_t <= 0.0:
 				light = maxf(0.0, light - BAT_STEAL)
 				b.gone = true
 				vel = Vector3(randf_range(-4.0, 4.0), 5.0, -3.0)
@@ -982,7 +1086,12 @@ func _step_death(delta: float) -> void:
 		runner.rotation.x = minf(runner.rotation.x + delta * 2.0, 1.2)
 	else:
 		runner.animate(delta, 0.0)
-		if _caught:
+		if _caught and _pack_caught and not _pack_nodes.is_empty():
+			# The pack: the leader pounces from behind.
+			var lead: JaguarModel = _pack_nodes[2]
+			lead.position = lead.position.lerp(Vector3(x, 0.0, -s + 0.6), 1.0 - exp(-8.0 * delta))
+			lead.animate(delta, 6.0)
+		elif _caught:
 			# The nearest one pounces.
 			var best: Dictionary = {}
 			var bd := INF
@@ -1033,7 +1142,7 @@ func _push_codex() -> void:
 	_env.background_color = bg
 	# A flare throws the circle of light down the road.
 	_light_c = Vector3(x, 0.0, -s) + world.forward(maxf(s, 0.0)) * FLARE_AHEAD * blaze
-	Codex.update(Vector4(_light_c.x, 0.0, _light_c.z, light_r), amb, _lights, bg, _time)
+	Codex.update(Vector4(_light_c.x, 0.0, _light_c.z, light_r), amb, _lights, bg, _time, _sight if state == State.RUNNING else 1000.0)
 
 func _make_halo() -> void:
 	var grad := Gradient.new()
@@ -1403,6 +1512,13 @@ func _drive(delta: float) -> void:
 			if not d.taken and ahead > 0.5 and ahead < look:
 				var lane := clampi(roundi(world.u_of(d.pos.x, d.pos.z) / Nights.LANE_W), -1, 1)
 				drops[lane] = minf(drops[lane], ahead)
+	var wakes := false
+	for j in _jags:
+		var ahead: float = -j.pos.z - s
+		if j.state == "wait":
+			wakes = wakes or (ahead > 2.0 and ahead < speed * 1.3 + 4.0)
+		elif ahead > -1.0 and ahead < look and ahead < lanes[j.lane][0]:
+			lanes[j.lane] = [ahead, "block"]
 	var here: Array = lanes[_lane]
 	# Blocked ahead: go round, to the side lane that's clear longest.
 	if here[1] == "block":
@@ -1434,7 +1550,7 @@ func _drive(delta: float) -> void:
 				_move(to - _lane)
 				_auto_cd = 0.6
 				break
-	if not _dev_noflare and blaze < 0.2 and (_nearest_jaguar() < 9.0 or (light > 0.7 and randf() < delta * 0.2)):
+	if not _dev_noflare and blaze < 0.2 and (wakes or (light > 0.7 and randf() < delta * 0.2)):
 		_flare()
 
 # --------------------------------------------------------------- profiling ---

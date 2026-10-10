@@ -278,7 +278,7 @@ func _deal_until(upto: float) -> void:
 		var v := Nights.speed(at.n, at.t)
 		_next_ev += v * _ev.randf_range(0.95, 1.45) / (1.0 + 0.06 * minf(prog, 6.0))
 		if s < Nights.START_CLEAR:
-			if s > 8.0:
+			if s > 8.0 and s < 20.0:
 				_drop_line(s, 0, 5)
 			continue
 		if at.dawn:
@@ -310,7 +310,7 @@ func _row(pick: String, s: float, prog: float) -> void:
 	var busy := clampf(0.12 + 0.13 * prog, 0.0, 0.7)
 	match pick:
 		"drop":
-			_drop_line(s, lanes[0], 6)
+			_drop_line(s, lanes[0], 5)
 		"stela", "blades":
 			# One lane blocked, or two; never three.
 			var n := 2 if _ev.randf() < busy else 1
@@ -320,19 +320,20 @@ func _row(pick: String, s: float, prog: float) -> void:
 				# The open lane holds a low wall: jump it there.
 				_danger("wall", s, lanes[2])
 				_drop_arc(s, lanes[2])
-			elif _ev.randf() < 0.5:
-				_drop_line(s - 2.0, lanes[n], 5)
+			elif _ev.randf() < 0.3:
+				_drop_line(s - 2.0, lanes[n], 4)
 		"wall":
 			var n := 1 + int(_ev.randf() < busy) + int(_ev.randf() < busy * 0.6)
 			for i in n:
 				_danger("wall", s, lanes[i])
-			_drop_arc(s, lanes[0])
+			if _ev.randf() < 0.5:
+				_drop_arc(s, lanes[0])
 		"lintel":
 			_danger("lintel", s, ALL)
 			if _ev.randf() < busy:
 				_danger("stela", s, lanes[0])
-			elif _ev.randf() < 0.5:
-				_drop_line(s - 3.0, lanes[1], 5)
+			elif _ev.randf() < 0.3:
+				_drop_line(s - 3.0, lanes[1], 4)
 		"pit":
 			var row_s := floorf(s / ROW) * ROW
 			var n := 1 + int(_ev.randf() < 0.35 + busy) + int(_ev.randf() < busy)
@@ -340,7 +341,8 @@ func _row(pick: String, s: float, prog: float) -> void:
 			for lane in picked:
 				var c0: int = (int(lane) + 1) * 2
 				_put("pits", row_s, {"s0": row_s, "s1": row_s + ROW, "c0": c0, "c1": c0 + 1})
-			_drop_arc(row_s + ROW / 2.0, picked[0])
+			if _ev.randf() < 0.5:
+				_drop_arc(row_s + ROW / 2.0, picked[0])
 		"jag":
 			var side := -1.0 if _ev.randf() < 0.5 else 1.0
 			var n := 2 if _ev.randf() < 0.25 + 0.1 * prog else 1
@@ -352,7 +354,7 @@ func _row(pick: String, s: float, prog: float) -> void:
 		"brazier":
 			var side := -1.0 if _ev.randf() < 0.5 else 1.0
 			_put("braziers", s, {"pos": point(s, side * (width(s) / 2.0 + CURB_W / 2.0), CURB_H), "r": BRAZIER_R, "curb": true, "seed": _ev.randi()})
-			_drop_line(s - 2.0, int(side), 5)
+			_drop_line(s - 2.0, int(side), 4)
 
 func _danger(kind: String, s: float, lane: int) -> void:
 	var u := 0.0 if lane == ALL else lane_u(lane)
@@ -371,7 +373,7 @@ func _drop_line(s: float, lane: int, n: int) -> void:
 	_trail_id += 1
 	for i in n:
 		var si := s + i * 1.6
-		_put("drops", si, {"s": si, "pos": point(si, lane_u(lane), DROP_Y), "taken": false, "trail": _trail_id})
+		_put("drops", si, {"s": si, "pos": point(si, lane_u(lane), DROP_Y), "taken": false, "trail": _trail_id, "of": n})
 
 ## Five sun-drops arched over a jump at [s] in [lane]: they follow the leap.
 func _drop_arc(s: float, lane: int) -> void:
@@ -379,7 +381,7 @@ func _drop_arc(s: float, lane: int) -> void:
 	for i in 5:
 		var k := (i - 2) / 2.0
 		var si := s + k * 2.6
-		_put("drops", si, {"s": si, "pos": point(si, lane_u(lane), DROP_Y + 1.0 * (1.0 - k * k)), "taken": false, "trail": _trail_id})
+		_put("drops", si, {"s": si, "pos": point(si, lane_u(lane), DROP_Y + 1.0 * (1.0 - k * k)), "taken": false, "trail": _trail_id, "of": 5})
 
 # ----------------------------------------------------------------- build ---
 
@@ -482,7 +484,7 @@ func _road_row(m: Mesher, c: Chunk, s0: float, h: Dictionary, r: RandomNumberGen
 		var f0 := float(k) / cols - 0.5
 		var f1 := float(k + 1) / cols - 0.5
 		if not plaza and c.has_pit(s0, k):
-			_pit(m, s0, s1, f0, f1, w0, w1)
+			_pit(m, s0, s1, f0, f1, w0, w1, h.mark == "lava")
 			continue
 		var col: Color = h.tile.lerp(h.tile2, r.randf() * 0.8) if not plaza else Models.STUCCO.lerp(Models.STUCCO_SHADE, r.randf() * 0.7)
 		var roll := r.randf()
@@ -524,11 +526,12 @@ func _road_row(m: Mesher, c: Chunk, s0: float, h: Dictionary, r: RandomNumberGen
 			m.block([a[0], a[1], a[2], a[3], a[0] + up, a[1] + up, a[2] + up, a[3] + up], band[2], false, false)
 
 ## A hole where road stones fell into the dark: black shaft walls going down.
-func _pit(m: Mesher, s0: float, s1: float, f0: float, f1: float, w0: float, w1: float) -> void:
-	var y0 := -2.2
+## In the House of Fire it opens on lava, which glows even in the dark.
+func _pit(m: Mesher, s0: float, s1: float, f0: float, f1: float, w0: float, w1: float, lava := false) -> void:
+	var y0 := -2.2 if not lava else -1.1
 	var q := [point(s0, f0 * w0, y0), point(s0, f1 * w0, y0), point(s1, f1 * w1, y0), point(s1, f0 * w1, y0)]
 	var low := Vector3(0, -0.4, 0)
-	m.block([q[0] + low, q[1] + low, q[2] + low, q[3] + low, q[0], q[1], q[2], q[3]], Models.PIT, false, false)
+	m.block([q[0] + low, q[1] + low, q[2] + low, q[3] + low, q[0], q[1], q[2], q[3]], Models.LAVA if lava else Models.PIT, lava, false)
 	var t := 0.06
 	var walls := [
 		[point(s0, f0 * w0, y0), point(s0, f1 * w0, y0), point(s0 + t, f1 * w0, y0), point(s0 + t, f0 * w0, y0)],
