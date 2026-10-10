@@ -11,6 +11,7 @@ signal run_pressed
 signal daily_pressed
 signal pause_pressed
 signal dash_pressed
+signal update_pressed
 signal resume_pressed
 signal home_pressed
 signal again_pressed
@@ -48,6 +49,7 @@ var _drops: Label
 var _meter: UiKit.SunMeter
 var _hint: UiKit.HintStrip
 var _dash_btn: UiKit.GlyphButton
+var _update_btn: UiKit.GlyphButton
 var _danger: UiKit.DangerFlash
 var _pause: Control
 var _settings: Control
@@ -382,6 +384,14 @@ func _build_title() -> void:
 	_pin(gear, TOP_RIGHT, Rect2(-108, _top, 84, 84))
 	gear.pressed.connect(_open_settings)
 
+	# A downloaded update, waiting for a restart (AppUpdates).
+	_update_btn = UiKit.GlyphButton.new("Restart to update", UiKit.GlyphButton.Kind.SECONDARY)
+	_update_btn.font_size = 26
+	_title.add_child(_update_btn)
+	_pin(_update_btn, TOP_CENTER, Rect2(-190, _top + 312, 380, 76))
+	_update_btn.pressed.connect(func(): update_pressed.emit())
+	_update_btn.visible = false
+
 func show_title(save: SaveData) -> void:
 	# Shown again while already up (progress synced, a look changed): no replay.
 	var already := _title.visible and not _hud.visible
@@ -456,6 +466,10 @@ func _build_hud() -> void:
 	_pin(_dash_btn, Rect2(0.5, 0.88, 0, 0), Rect2(-170, -50, 340, 96))
 	_dash_btn.pressed.connect(func(): dash_pressed.emit())
 	_dash_btn.visible = false
+
+## A new version has downloaded: the title offers to restart into it.
+func show_update_ready() -> void:
+	_update_btn.visible = true
 
 ## Offers the head start ([count] held) for a few seconds.
 func show_dash(count: int) -> void:

@@ -228,6 +228,17 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   The AAR lands in `addons/sunstone_google_signin/bin/` (committed so exports work
   without rebuilding it); the editor plugin there adds it and its Maven deps to
   the Gradle export.
+  It also carries the display refresh-rate lock and **Play in-app updates**
+  (`checkUpdate`/`startUpdate`/`completeUpdate`, app-update 2.1.0), driven by
+  `scripts/app_updates.gd`: immediate when the build is below the server's
+  `minBuild` (GAME_MIN_BUILD) or the release has priority 4–5, otherwise a
+  flexible background download offered once a day, then "Restart to update"
+  on the title. Only builds installed from Play see updates (test via an
+  internal-testing track).
+- **In-app review**: `addons/InappReviewPlugin` (Cengiz, 5.3), asked after a
+  new best ≥ 500 m with 5+ runs, at most monthly and 3 times ever.
+- The Play preset ships armeabi-v7a, arm64-v8a and x86_64 (the AAB splits per
+  device); debug presets build arm64 only, for speed.
 - Exports use the Gradle build (`android/build`, regenerated, gitignored).
 - `addons/admob` (Poing Studios v5.1.0, only the core `ads` lib under
   `android/bin`) and `addons/GodotGooglePlayBilling` (3.3.0). Debug builds use

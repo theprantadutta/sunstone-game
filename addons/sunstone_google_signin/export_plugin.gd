@@ -32,4 +32,5 @@ class AndroidExport:
 			"androidx.credentials:credentials-play-services-auth:1.3.0",
 			"com.google.android.libraries.identity.googleid:googleid:1.1.1",
 			"org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0",
+			"com.google.android.play:app-update:2.1.0",
 		])

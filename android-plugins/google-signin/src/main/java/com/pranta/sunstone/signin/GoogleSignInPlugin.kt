@@ -7,7 +7,16 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import android.content.Intent
 import android.os.Build
+import com.google.android.play.core.appupdate.AppUpdateInfo
+import com.google.android.play.core.appupdate.AppUpdateManager
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.InstallStateUpdatedListener
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.InstallStatus
+import com.google.android.play.core.install.model.UpdateAvailability
 import android.view.Surface
 import android.view.SurfaceView
 import android.view.View
@@ -26,7 +35,8 @@ import org.godotengine.godot.plugin.UsedByGodot
  * Sunstone's own Android bits. "Sign in with Google": shows Android's own
  * Google account sheet (Credential Manager) and hands the game a Google ID
  * token, which the game passes to Firebase Auth to link the player's guest
- * account. And the display's refresh rate (see [setRefreshRate]).
+ * account. The display's refresh rate (see [setRefreshRate]). And Play's
+ * in-app updates (see [checkUpdate]).
  */
 class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
 
@@ -37,6 +47,14 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
         SignalInfo("signed_in", String::class.java, String::class.java),
         // reason: "cancelled" or a message
         SignalInfo("sign_in_failed", String::class.java),
+        // available, priority (0-5, set when publishing), days since Play
+        // learned of it (-1 = unknown), flexible allowed, immediate allowed
+        SignalInfo("update_checked", Boolean::class.javaObjectType, Int::class.javaObjectType,
+            Int::class.javaObjectType, Boolean::class.javaObjectType, Boolean::class.javaObjectType),
+        // a flexible update finished downloading: completeUpdate() installs it
+        SignalInfo("update_downloaded"),
+        // reason
+        SignalInfo("update_failed", String::class.java),
     )
 
     /** [webClientId] is the OAuth *web* client of the Firebase project. */
@@ -108,6 +126,113 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
             }
         }
         return rates.sorted().joinToString(",")
+    }
+
+    // ------------------------------------------------------------- updates
+
+    private var updates: AppUpdateManager? = null
+    private var lastInfo: AppUpdateInfo? = null
+    private val updateRequest = 7301
+
+    private val installListener = InstallStateUpdatedListener { state ->
+        when (state.installStatus()) {
+            InstallStatus.DOWNLOADED -> emitSignal("update_downloaded")
+            InstallStatus.FAILED -> emitSignal("update_failed", "install failed (${state.installErrorCode()})")
+            else -> {}
+        }
+    }
+
+    private fun manager(): AppUpdateManager? {
+        val act = activity ?: return null
+        return updates ?: AppUpdateManagerFactory.create(act).also {
+            it.registerListener(installListener)
+            updates = it
+        }
+    }
+
+    /** This build's version code (what Play compares against). */
+    @UsedByGodot
+    fun versionCode(): Int {
+        val act = activity ?: return 0
+        val info = act.packageManager.getPackageInfo(act.packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toInt() else @Suppress("DEPRECATION") info.versionCode
+    }
+
+    /** Asks Play whether a newer build is out; answers with "update_checked". */
+    @UsedByGodot
+    fun checkUpdate() {
+        val m = manager()
+        if (m == null) {
+            emitSignal("update_checked", false, 0, -1, false, false)
+            return
+        }
+        m.appUpdateInfo.addOnSuccessListener { info ->
+            lastInfo = info
+            if (info.installStatus() == InstallStatus.DOWNLOADED) {
+                emitSignal("update_downloaded")
+                return@addOnSuccessListener
+            }
+            val available = info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
+            emitSignal("update_checked", available, info.updatePriority(), info.clientVersionStalenessDays() ?: -1,
+                info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE), info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE))
+        }.addOnFailureListener { e ->
+            // Not installed from Play (a debug build), no Play Store, offline...
+            emitSignal("update_checked", false, 0, -1, false, false)
+        }
+    }
+
+    /**
+     * Starts Play's update flow for the build [checkUpdate] found: [immediate]
+     * takes over the screen until it's installed; otherwise it downloads in
+     * the background ("update_downloaded" when it's ready).
+     */
+    @UsedByGodot
+    fun startUpdate(immediate: Boolean): Boolean {
+        val act = activity ?: return false
+        val m = manager() ?: return false
+        val info = lastInfo ?: return false
+        val type = if (immediate) AppUpdateType.IMMEDIATE else AppUpdateType.FLEXIBLE
+        if (!info.isUpdateTypeAllowed(type)) return false
+        return try {
+            act.runOnUiThread {
+                @Suppress("DEPRECATION")
+                m.startUpdateFlowForResult(info, act, AppUpdateOptions.newBuilder(type).build(), updateRequest)
+            }
+            true
+        } catch (e: Exception) {
+            emitSignal("update_failed", e.message ?: "could not start")
+            false
+        }
+    }
+
+    /** Installs a downloaded flexible update (the app restarts). */
+    @UsedByGodot
+    fun completeUpdate() {
+        manager()?.completeUpdate()
+    }
+
+    override fun onMainActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onMainActivityResult(requestCode, resultCode, data)
+        if (requestCode == updateRequest && resultCode != android.app.Activity.RESULT_OK) {
+            emitSignal("update_failed", if (resultCode == android.app.Activity.RESULT_CANCELED) "declined" else "failed ($resultCode)")
+        }
+    }
+
+    override fun onMainResume() {
+        super.onMainResume()
+        // Back from the background: an immediate update left half done carries
+        // on, and a flexible one that finished meanwhile says so.
+        val m = updates ?: return
+        val act = activity ?: return
+        m.appUpdateInfo.addOnSuccessListener { info ->
+            lastInfo = info
+            if (info.installStatus() == InstallStatus.DOWNLOADED) {
+                emitSignal("update_downloaded")
+            } else if (info.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                @Suppress("DEPRECATION")
+                m.startUpdateFlowForResult(info, act, AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(), updateRequest)
+            }
+        }
     }
 
     /** The game's drawing surface: the first SurfaceView under [v]. */

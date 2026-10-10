@@ -77,6 +77,7 @@ var online: Online
 var ads: Ads
 var store: Store
 var review: InappReview
+var updates: AppUpdates
 var sfx: Sfx
 var save := SaveData.new()
 
@@ -208,9 +209,12 @@ func _ready() -> void:
 	review = InappReview.new()
 	add_child(review)
 	review.review_info_generated.connect(func(): review.launch_review_flow())
+	updates = AppUpdates.new()
+	add_child(updates)
 	online.config_loaded.connect(func(c: Dictionary):
 		ads.configure(c.get("adsEnabled", false), int(c.get("interstitialEveryRuns", 4)), save.has_entitlement("no_ads"))
 		store.open = c.get("storeOpen", false)
+		updates.set_min_build(int(c.get("minBuild", 0)))
 		# The server may switch a seasonal event on or off.
 		var before := Themes.event_id()
 		Themes.choose_event(str(c.get("event", "")))
@@ -264,6 +268,8 @@ func _ready() -> void:
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.back_requested.connect(_on_back)
 	ui.setup(save, online, ads, store)
+	updates.downloaded.connect(ui.show_update_ready)
+	ui.update_pressed.connect(updates.restart_into_update)
 	ui.set_flare_cost(FLARE_COST + 0.03)
 	store.setup(online, save)
 	store.products_changed.connect(func():
