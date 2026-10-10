@@ -53,6 +53,7 @@ var _pause: Control
 var _settings: Control
 var _results: Control
 var _records: Control
+var _howto: Control
 var _daily: Control
 var _glyphs: Control
 var _offerings: Control
@@ -195,14 +196,14 @@ func _back() -> void:
 
 ## True while a page covers the world (any menu page, pause, results).
 func page_open() -> bool:
-	for page in [_legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
+	for page in [_howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
 		if page and is_instance_valid(page) and page.visible:
 			return true
 	return false
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
+	for page in [_howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -582,7 +583,7 @@ func show_pause() -> void:
 	_hide_all()
 	if _pause:
 		_pause.queue_free()
-	var m := _modal(720)
+	var m := _modal(810)
 	_pause = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Paused")
@@ -598,12 +599,18 @@ func show_pause() -> void:
 	home.size = Vector2(488, 96)
 	home.pressed.connect(func(): home_pressed.emit())
 	page.add_child(home)
+	var how := UiKit.GlyphButton.new("How to play", UiKit.GlyphButton.Kind.SECONDARY)
+	how.font_size = 26
+	how.position = Vector2(56, y + 246)
+	how.size = Vector2(488, 76)
+	how.pressed.connect(_open_howto)
+	page.add_child(how)
 	page.open()
 
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(770 + (64 if _ads.privacy_options_required() else 0))
+	var m := _modal(862 + (64 if _ads.privacy_options_required() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")
@@ -612,8 +619,12 @@ func _open_settings() -> void:
 	var acc := UiKit.label("Your runner" if who != "" else "Not signed in yet", UiKit.text_font(900), 24, UiKit.CINNABAR)
 	acc.position = Vector2(58, y + 6)
 	page.add_child(acc)
-	var name_l := UiKit.label(who if who != "" else "Offline", UiKit.display_font(), 30, UiKit.INK)
-	name_l.position = Vector2(58, y + 38)
+	var name_l := UiKit.label(who if who != "" else "Offline", UiKit.display_font(), 26, UiKit.INK)
+	name_l.position = Vector2(58, y + 40)
+	# Long names stop short of the Account button.
+	name_l.size = Vector2(300, 44)
+	name_l.clip_text = true
+	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	page.add_child(name_l)
 	var account := UiKit.GlyphButton.new("Account", UiKit.GlyphButton.Kind.SECONDARY)
 	account.font_size = 24
@@ -629,6 +640,13 @@ func _open_settings() -> void:
 		privacy.pressed.connect(func(): _ads.show_privacy_options())
 		page.add_child(privacy)
 		y += 64
+	var how := UiKit.GlyphButton.new("How to play", UiKit.GlyphButton.Kind.SECONDARY)
+	how.font_size = 28
+	how.position = Vector2(56, y + 112)
+	how.size = Vector2(488, 80)
+	how.pressed.connect(_open_howto)
+	page.add_child(how)
+	y += 92
 	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
 	done.position = Vector2(56, y + 116)
 	done.size = Vector2(488, 112)
@@ -1849,6 +1867,156 @@ static func duration_text(seconds: float) -> String:
 	return "%d h %d min" % [m / 60, m % 60]
 
 ## The record book: every count the codex keeps, one register per line.
+# ---------------------------------------------------------- how to play ---
+
+## Each rule of the game beside an inked sign: [sign, heading, text].
+const HOWTO := [
+	["lanes", "Swipe left or right", "Change lane. Go round fallen stelae, obsidian blades and stone jaguars."],
+	["up", "Swipe up", "Jump over low walls and pits."],
+	["down", "Swipe down", "Slide under stone lintels and diving bats. In the air, it drops you straight down."],
+	["tap", "Tap to flare", "Your light reaches far down the road and jaguars freeze to stone. Each flare costs light: below the red mark on the sun it only fizzles."],
+	["sun", "Your light", "It's how far you can see, and it fades as you run. Run through sun-drops to feed it. A whole line pays a bonus."],
+	["pack", "The pack behind you", "Stone jaguars follow you. They close in when your light is low or you stumble. If your light goes out, they catch you."],
+	["hit", "One wrong move", "Run into anything head-on and the night is over. Clip something while changing lanes and you stumble; stumble twice in a row and the pack has you."],
+	["close", "Close calls", "Dodge at the very last moment for extra sun-drops. Several in a row pay more."],
+	["dawn", "Make it to dawn", "Each night is three Houses of Xibalba, each with its own dangers. Survive them and the sun rises; then the next night begins, faster."],
+]
+
+## How to play: the swipes, the flare, the light and the pack, on one
+## scrolling codex page.
+func _open_howto() -> void:
+	if _howto:
+		_howto.queue_free()
+	var vp := get_viewport().get_visible_rect().size
+	var height := minf(1180.0, vp.y - 120.0)
+	var m := _modal(height, 0.7)
+	_howto = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 53
+	_headline(page, "How to play")
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	scroll.position = Vector2(40, 136)
+	scroll.size = Vector2(520, height - 136 - 150)
+	page.add_child(scroll)
+	var content := Control.new()
+	content.mouse_filter = Control.MOUSE_FILTER_PASS
+	scroll.add_child(content)
+	var y := 8.0
+	for i in HOWTO.size():
+		var row: Array = HOWTO[i]
+		var sign := HowSign.new()
+		sign.kind = row[0]
+		sign.position = Vector2(14, y + 4)
+		sign.size = Vector2(104, 104)
+		content.add_child(sign)
+		var head := UiKit.label(row[1], UiKit.display_font(), 30, UiKit.CINNABAR if i == 3 else UiKit.INK)
+		head.position = Vector2(136, y)
+		content.add_child(head)
+		var text: String = row[2]
+		var lines := ceili(text.length() / 24.0)
+		var body := UiKit.wrapped(text, UiKit.text_font(800), 24, UiKit.INK, Vector2(136, y + 44), 370, lines * 32.0)
+		content.add_child(body)
+		y += maxf(124.0, 52.0 + lines * 32.0) + 18.0
+		if i < HOWTO.size() - 1:
+			var r := Rule.new(60 + i)
+			r.position = Vector2(14, y - 16)
+			r.size = Vector2(490, 12)
+			content.add_child(r)
+	content.custom_minimum_size = Vector2(520, y)
+	# A fade at the foot of the text: there's more below.
+	var more := UiKit.label("Scroll for more", UiKit.text_font(900), 22, Color(UiKit.CINNABAR, 0.8))
+	more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	more.position = Vector2(56, height - 150)
+	more.size = Vector2(488, 30)
+	page.add_child(more)
+	scroll.get_v_scroll_bar().value_changed.connect(func(v: float):
+		more.visible = v < y - scroll.size.y - 40.0)
+	var done := UiKit.GlyphButton.new("Got it", UiKit.GlyphButton.Kind.PRIMARY)
+	done.position = Vector2(56, height - 116)
+	done.size = Vector2(488, 96)
+	done.pressed.connect(func(): _howto.visible = false)
+	page.add_child(done)
+	page.open()
+
+## The sign beside each rule: a glyph block with the move inked on it.
+class HowSign:
+	extends Control
+	var kind := ""
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var rect := Rect2(Vector2.ZERO, size)
+		var block := UiKit.glyph_block(rect, kind.length() * 7)
+		UiKit.draw_paper(self, block, Color.WHITE)
+		UiKit.draw_ink(self, block, UiKit.INK, 4.0)
+		var c := size / 2.0
+		var u := size.x / 100.0
+		match kind:
+			"lanes":
+				_arrow(c + Vector2(-6, 0) * u, Vector2(-1, 0), 30 * u)
+				_arrow(c + Vector2(6, 0) * u, Vector2(1, 0), 30 * u)
+			"up":
+				_arrow(c + Vector2(0, 16) * u, Vector2(0, -1), 40 * u)
+				draw_line(c + Vector2(-26, 30) * u, c + Vector2(26, 30) * u, UiKit.INK, 5.0 * u, true)
+			"down":
+				_arrow(c + Vector2(0, -22) * u, Vector2(0, 1), 36 * u)
+				draw_line(c + Vector2(-28, -28) * u, c + Vector2(28, -28) * u, UiKit.INK, 7.0 * u, true)
+			"tap":
+				for k in 3:
+					draw_arc(c, (10 + k * 11) * u, 0.0, TAU, 32, Color(UiKit.CINNABAR if k > 0 else UiKit.INK, 1.0 - k * 0.25), 4.0 * u, true)
+				draw_circle(c, 7 * u, UiKit.INK, true, -1.0, true)
+			"sun":
+				UiKit.draw_kin(self, c, 26 * u, 1.0, 3.0 * u)
+			"pack", "hit", "close", "dawn":
+				_special(c, u)
+
+	func _special(c: Vector2, u: float) -> void:
+		match kind:
+			"pack":
+				# Jaguar eyes in the dark.
+				for side in [-1.0, 1.0]:
+					var ec := c + Vector2(side * 18, 0) * u
+					var eye := UiKit.ellipse(ec, 14 * u, 7 * u, side * 0.25, 18)
+					draw_colored_polygon(eye, UiKit.OCHRE)
+					draw_polyline(UiKit.closed(eye), UiKit.INK, 3.0 * u, true)
+					draw_line(ec + Vector2(0, -6) * u, ec + Vector2(0, 6) * u, UiKit.INK, 3.5 * u, true)
+			"hit":
+				# A stela, struck.
+				draw_rect(Rect2(c + Vector2(-14, -30) * u, Vector2(28, 60) * u), UiKit.STUCCO.darkened(0.15))
+				draw_rect(Rect2(c + Vector2(-14, -30) * u, Vector2(28, 60) * u), UiKit.INK, false, 3.5 * u)
+				for k in 4:
+					var a := TAU * k / 4.0 + PI / 4.0
+					var d := Vector2(cos(a), sin(a))
+					draw_line(c + d * 24 * u, c + d * 40 * u, UiKit.CINNABAR, 4.5 * u, true)
+			"close":
+				# A runner's path just missing a block.
+				draw_rect(Rect2(c + Vector2(6, -22) * u, Vector2(24, 44) * u), UiKit.STUCCO.darkened(0.15))
+				draw_rect(Rect2(c + Vector2(6, -22) * u, Vector2(24, 44) * u), UiKit.INK, false, 3.5 * u)
+				var pts := PackedVector2Array()
+				for k in 13:
+					var t := k / 12.0
+					pts.append(c + Vector2(-30 + 6.0 * sin(t * PI) * 3.0, 34 - t * 68) * u + Vector2(-4, 0) * u)
+				draw_polyline(pts, UiKit.CINNABAR, 4.5 * u, true)
+			"dawn":
+				# The sun rising over the line of the earth.
+				draw_arc(c + Vector2(0, 14) * u, 22 * u, PI, TAU, 24, UiKit.OCHRE, 7.0 * u, true)
+				for k in 5:
+					var a := PI + PI * (k + 0.5) / 5.0
+					var d := Vector2(cos(a), sin(a))
+					draw_line(c + Vector2(0, 14) * u + d * 30 * u, c + Vector2(0, 14) * u + d * 40 * u, UiKit.INK, 4.0 * u, true)
+				draw_line(c + Vector2(-38, 16) * u, c + Vector2(38, 16) * u, UiKit.INK, 5.0 * u, true)
+
+	func _arrow(from: Vector2, dir: Vector2, length: float) -> void:
+		var tip := from + dir * length
+		draw_line(from, tip, UiKit.INK, length * 0.16, true)
+		var side := Vector2(-dir.y, dir.x)
+		draw_colored_polygon(PackedVector2Array([tip + dir * length * 0.32, tip + side * length * 0.3, tip - side * length * 0.3]), UiKit.CINNABAR)
+		draw_polyline(PackedVector2Array([tip + dir * length * 0.32, tip + side * length * 0.3, tip - side * length * 0.3, tip + dir * length * 0.32]), UiKit.INK, 3.0, true)
+
 func _open_records() -> void:
 	if _records:
 		_records.queue_free()

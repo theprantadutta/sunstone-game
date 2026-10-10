@@ -1888,6 +1888,13 @@ func _shot_run(start: float, blaze: float, light_v: float) -> void:
 	_intro_t = 1.0
 	light = light_v
 
+## Waits (up to [timeout] seconds) until [cond] holds.
+func _until(cond: Callable, timeout: float) -> void:
+	var t := 0.0
+	while t < timeout and not cond.call():
+		await get_tree().process_frame
+		t += get_process_delta_time()
+
 ## Jaguars staged round the runner: [offsets] are (across, ahead) metres.
 func _shot_jaguars(offsets: Array) -> void:
 	for o in offsets:
@@ -1901,29 +1908,23 @@ func _run_shots() -> void:
 	_go_title()
 	await _wait(4.0)
 	await _hold("01_title")
-	# Blazing in the House of Jaguars: they stand frozen in the light.
+	# A leap over a low wall, mid-air.
+	_shot_run(60.0, 0.35, 0.85)
+	await _until(func(): return y > 0.95 and vy < 1.0 and world.occupant(s + 1.0, _lane, 1.5).get("kind", "") in ["wall", "pit"], 20.0)
+	await _hold("02_leap")
+	# A flare in the House of Jaguars: they stand frozen in the light.
 	_shot_run(180.0, 1.0, 0.95)
 	await _wait(1.2)
-	_shot_jaguars([Vector2(-2.4, 2.5), Vector2(2.6, 4.0), Vector2(-1.2, 6.5), Vector2(3.4, 9.5)])
+	_shot_jaguars([Vector2(-2.4, 5.5), Vector2(2.6, 7.0), Vector2(-1.2, 10.5), Vector2(3.4, 13.5)])
 	await _wait(1.8)
-	await _hold("02_blaze")
-	# Embers: eyes in the dark, coming.
-	_shot_run(200.0, 0.0, 0.8)
-	await _wait(2.5)
-	_shot_jaguars([Vector2(-3.0, 7.0), Vector2(3.4, 9.0), Vector2(0.4, 12.5), Vector2(-4.2, 14.5), Vector2(4.6, 15.5)])
-	await _wait(0.35)
-	await _hold("03_dark")
-	# The House of Bats: a blaze, and they come.
-	_shot_run(300.0, 1.0, 0.8)
-	await _wait(2.5)
-	for k in 4:
-		var node := BatModel.new()
-		add_child(node)
-		var rel: Vector3 = [Vector3(-2.2, 4.2, 1.5), Vector3(2.6, 3.6, 0.0), Vector3(-0.6, 3.0, -2.5), Vector3(3.2, 4.8, -4.0)][k]
-		_bats.append({"node": node, "rel": rel, "vel": Vector3.ZERO, "gone": false, "flee": false, "life": 0.0})
-		node.scale = Vector3.ONE * 2.0
-	await _wait(0.25)
-	await _hold("04_bats")
+	await _hold("03_flare")
+	# The light failing, the pack at his heels.
+	_shot_run(120.0, 0.0, 0.18)
+	_dev_pack = true
+	await _wait(2.6)
+	light = 0.18
+	await _hold("04_pack")
+	_dev_pack = FileAccess.file_exists("user://dev_pack")
 	# The House of Fire, wherever this seed puts it.
 	var fire_s := 0.0
 	for n in range(2, 6):

@@ -30,13 +30,13 @@ DUSK_LOW = (240, 154, 94)
 # (raw file, caption, small line) — in store order (Play shows up to 8).
 SHOTS = [
     ("01_title.png", "Carry the sun", "Through the Maya underworld, one night at a time."),
-    ("02_blaze.png", "Hold to blaze", "Your light paints the world back in."),
-    ("03_dark.png", "Let go and hide", "Embers save light. The dark closes in."),
-    ("04_bats.png", "Bats hunt the light", "Blaze too long and they swoop in."),
+    ("02_leap.png", "Swipe, leap, slide", "Three lanes. One wrong move ends the night."),
+    ("03_flare.png", "Tap to flare", "Light the road ahead. Jaguars turn to stone."),
+    ("04_pack.png", "The pack is behind you", "Let your light die and they catch you."),
     ("05_fire.png", "Six Houses of Xibalba", "Gloom, Knives, Cold, Jaguars, Bats and Fire."),
     ("06_dawn.png", "Make it to dawn", "Then the next night begins."),
     ("07_shop.png", "Choose your runner", "Runners, outfits, hats and stones."),
-    ("08_glyphs.png", "Earn twenty glyphs", "Every one drawn like a scribe's sign."),
+    ("08_glyphs.png", "Earn twenty-four glyphs", "Every one drawn like a scribe's sign."),
 ]
 SIZES = {"phone": (1080, 2160, 330), "tablet": (1080, 1920, 320)} # width, height, caption band
 # Where each set goes: Play wants tablet shots in two slots (7- and 10-inch),
@@ -158,7 +158,7 @@ def main():
                 dst = os.path.join(OUT, "screenshots", folder)
                 os.makedirs(dst, exist_ok=True)
                 img.save(os.path.join(dst, "%02d.png" % i))
-    feature(os.path.join(raw_dir, "phone", "02_blaze.png")).save(os.path.join(OUT, "feature-graphic.png"))
+    feature(os.path.join(raw_dir, "phone", "03_flare.png")).save(os.path.join(OUT, "feature-graphic.png"))
     print("store art written to", os.path.abspath(OUT))
 
 
