@@ -355,7 +355,7 @@ class GlyphButton:
 		UiKit.draw_ink(self, inner, Color(UiKit.STUCCO, 0.55) if kind == Kind.PRIMARY else UiKit.CINNABAR, 2.0)
 		# Affixes: the small dotted marks scribes set beside a main sign.
 		var dot := Color(UiKit.STUCCO, 0.85) if kind == Kind.PRIMARY else UiKit.CINNABAR
-		if face_rect.size.x < 200.0:
+		if face_rect.size.x < 260.0: # no room beside the label on narrow buttons
 			return
 		for side in [-1.0, 1.0]:
 			var x: float = face_rect.get_center().x + side * (face_rect.size.x / 2.0 - 26.0)

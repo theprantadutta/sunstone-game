@@ -715,11 +715,17 @@ func _open_settings() -> void:
 		page.add_child(privacy)
 		y += 64
 	var how := UiKit.GlyphButton.new("How to play", UiKit.GlyphButton.Kind.SECONDARY)
-	how.font_size = 28
+	how.font_size = 22
 	how.position = Vector2(56, y + 112)
-	how.size = Vector2(488, 80)
+	how.size = Vector2(238, 80)
 	how.pressed.connect(_open_howto)
 	page.add_child(how)
+	var rate := UiKit.GlyphButton.new("Rate Sunstone", UiKit.GlyphButton.Kind.SECONDARY)
+	rate.font_size = 22
+	rate.position = Vector2(306, y + 112)
+	rate.size = Vector2(238, 80)
+	rate.pressed.connect(_rate)
+	page.add_child(rate)
 	y += 92
 	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
 	done.position = Vector2(56, y + 116)
@@ -2019,6 +2025,19 @@ static func duration_text(seconds: float) -> String:
 	return "%d h %d min" % [m / 60, m % 60]
 
 ## The record book: every count the codex keeps, one register per line.
+## Rate Sunstone: the store's own page for the game. (The in-app review
+## sheet is rationed by the store and may not show when asked, so a button
+## the player pressed goes straight to the listing.)
+const PLAY_PAGE := "https://play.google.com/store/apps/details?id=com.pranta.sunstone"
+func _rate() -> void:
+	if OS.get_name() == "iOS":
+		_store.request_review()
+		return
+	if Engine.has_singleton("SunstoneGoogleSignIn"):
+		Engine.get_singleton("SunstoneGoogleSignIn").call("openStorePage")
+	else:
+		OS.shell_open(PLAY_PAGE)
+
 # ---------------------------------------------------------- how to play ---
 
 ## Each rule of the game beside an inked sign: [sign, heading, text].

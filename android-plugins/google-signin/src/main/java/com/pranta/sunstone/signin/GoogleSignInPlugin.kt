@@ -235,6 +235,27 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
         }
     }
 
+    /**
+     * Opens this game's page in the Google Play app (not a chooser between
+     * stores), or on the web when Play isn't installed.
+     */
+    @UsedByGodot
+    fun openStorePage() {
+        val act = activity ?: return
+        val id = act.packageName
+        act.runOnUiThread {
+            val play = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=$id"))
+                .setPackage("com.android.vending")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                act.startActivity(play)
+            } catch (e: android.content.ActivityNotFoundException) {
+                act.startActivity(Intent(Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://play.google.com/store/apps/details?id=$id")))
+            }
+        }
+    }
+
     /** The game's drawing surface: the first SurfaceView under [v]. */
     private fun findSurface(v: View): SurfaceView? {
         if (v is SurfaceView) return v
