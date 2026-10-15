@@ -639,7 +639,7 @@ func _rule(page: Control, y: float, seed: int) -> void:
 
 func _settings_rows(page: Control, y: float) -> float:
 	var i := 0
-	for row in [["Music", "music"], ["Sound", "sound"], ["Vibration", "vibration"]]:
+	for row in [["Music", "music"], ["Sound", "sound"], ["Vibration", "vibration"], ["Battery saver", "saver"]]:
 		var key: String = row[1]
 		var t := UiKit.Toggle.new(row[0], _save.get(key))
 		t.position = Vector2(56, y)
@@ -677,7 +677,7 @@ func show_pause() -> void:
 	_hide_all()
 	if _pause:
 		_pause.queue_free()
-	var m := _modal(894)
+	var m := _modal(978)
 	_pause = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Paused")
@@ -704,7 +704,7 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(946 + (64 if _ads.privacy_options_required() else 0))
+	var m := _modal(1030 + (64 if _ads.privacy_options_required() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")
@@ -1490,9 +1490,16 @@ class ItemCard:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 		custom_minimum_size = Vector2(152, 112)
+	var _down := false
+
 	func _gui_input(event: InputEvent) -> void:
-		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
-			chosen.emit()
+		# A tap arrives as a touch and again as an emulated click: act once.
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event.pressed:
+				_down = true
+			elif _down:
+				_down = false
+				chosen.emit()
 			accept_event()
 	func _draw() -> void:
 		var r := Rect2(Vector2(3, 3), size - Vector2(6, 6))

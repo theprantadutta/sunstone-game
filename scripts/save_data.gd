@@ -67,6 +67,7 @@ var music := true
 var sound := true
 var vibration := true
 var swipe := 1 ## swipe sensitivity: 0 light, 1 normal, 2 firm
+var saver := false ## battery saver: lighter 3D
 
 const BACKUP := "user://save.json.bak"
 
@@ -134,6 +135,7 @@ func _apply(d: Dictionary) -> void:
 	sound = bool(d.get("sound", true))
 	vibration = bool(d.get("vibration", true))
 	swipe = clampi(int(d.get("swipe", 1)), 0, 2)
+	saver = bool(d.get("saver", false))
 
 func to_dict() -> Dictionary:
 	return {
@@ -147,7 +149,7 @@ func to_dict() -> Dictionary:
 		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "character": character, "hat": hat,
 		"boosts_bought": boosts_bought, "boosts_used": boosts_used, "entitlements": entitlements,
 		"review_asks": review_asks, "review_last": review_last,
-		"music": music, "sound": sound, "vibration": vibration, "swipe": swipe,
+		"music": music, "sound": sound, "vibration": vibration, "swipe": swipe, "saver": saver,
 	}
 
 ## Folds another copy of the save (the cloud's) into this one, so progress
@@ -228,7 +230,7 @@ func save_to_disk() -> void:
 
 ## Back to a brand-new save (after deleting the account). Settings stay.
 func reset_all() -> void:
-	var keep := [music, sound, vibration, swipe]
+	var keep := [music, sound, vibration, swipe, saver]
 	var knows := taught.duplicate()
 	var fresh := SaveData.new()
 	_apply(fresh.to_dict())
@@ -237,6 +239,7 @@ func reset_all() -> void:
 	sound = keep[1]
 	vibration = keep[2]
 	swipe = keep[3]
+	saver = keep[4]
 	tutorial_runs = 2 # they already know how to play
 
 ## Folds one finished run into the records.

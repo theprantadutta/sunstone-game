@@ -600,9 +600,16 @@ class GlyphTile:
 			draw_circle(bc, 11.0, UiKit.INK, true, -1.0, true)
 			draw_circle(bc, 8.0, UiKit.CINNABAR, true, -1.0, true)
 
+	var _down := false
+
 	func _gui_input(event: InputEvent) -> void:
-		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
-			chosen.emit()
+		# A tap arrives as a touch and again as an emulated click: act once.
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event.pressed:
+				_down = true
+			elif _down:
+				_down = false
+				chosen.emit()
 			accept_event()
 
 ## One day of the offering cycle: the day in Maya numerals and its gift.
@@ -730,9 +737,16 @@ class Swatch:
 		var tw := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
 		draw_string(font, Vector2((size.x - tw) / 2.0, r.end.y + 26), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, UiKit.INK)
 
+	var _down := false
+
 	func _gui_input(event: InputEvent) -> void:
-		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
-			chosen.emit()
+		# A tap arrives as a touch and again as an emulated click: act once.
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event.pressed:
+				_down = true
+			elif _down:
+				_down = false
+				chosen.emit()
 			accept_event()
 
 ## A charm's tier marks: three small glyph blocks, gold when bought.
@@ -1002,11 +1016,19 @@ class Toggle:
 		else:
 			draw_line(box.position + Vector2(14, box.size.y - 14), box.position + Vector2(box.size.x - 14, 14), UiKit.CINNABAR, 6.0, true)
 
+	var _down := false
+
 	func _gui_input(event: InputEvent) -> void:
-		if (event is InputEventScreenTouch or event is InputEventMouseButton) and not event.pressed:
-			on = not on
-			queue_redraw()
-			toggled.emit(on)
+		# A tap arrives as a touch and again as an emulated click: act once,
+		# or every tap would flip the toggle and straight back.
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event.pressed:
+				_down = true
+			elif _down:
+				_down = false
+				on = not on
+				queue_redraw()
+				toggled.emit(on)
 			accept_event()
 
 # ========================================================= danger flash ===

@@ -181,6 +181,7 @@ var _force_blaze := -1.0 ## >= 0 holds a flare at that strength (shots)
 var _tour_seed := 0 ## the tour plays the same road every time
 var _page_scaled := false
 var _render_scale := 1.0
+var _dev_scaled := false ## a perf_* flag file owns the 3D scale and MSAA
 var _ph := ""
 var _ph_frames := 0
 var _ph_time := 0.0
@@ -294,6 +295,7 @@ func _ready() -> void:
 	if FileAccess.file_exists("user://perf_noworld"):
 		world.visible = false
 	_dev_perf_flags()
+	_apply_graphics()
 	if not FileAccess.file_exists("user://perf_hz"):
 		_lock_refresh()
 	_go_title()
@@ -612,6 +614,19 @@ func _leave_results(then: Callable) -> void:
 func _on_settings_changed() -> void:
 	save.save_to_disk()
 	sfx.apply_settings(save)
+	_apply_graphics()
+
+## Battery saver: the 3D world at 70% resolution without anti-aliasing, and
+## no drifting motes. The UI stays sharp; the run plays the same.
+func _apply_graphics() -> void:
+	if _dev_scaled:
+		return
+	_render_scale = 0.7 if save.saver else 1.0
+	get_viewport().scaling_3d_scale = 0.5 if _page_scaled else _render_scale
+	get_viewport().msaa_3d = Viewport.MSAA_DISABLED if save.saver else Viewport.MSAA_4X
+	if _motes:
+		_motes.visible = not save.saver
+		_motes.emitting = not save.saver
 
 # -------------------------------------------------------------- frame ---
 
@@ -2018,6 +2033,7 @@ func _lock_refresh() -> void:
 ## profiled without rebuilding: perf_nomsaa, perf_novsync, perf_scale (file
 ## contents = 3D render scale, e.g. 0.8), perf_nograin.
 func _dev_perf_flags() -> void:
+	_dev_scaled = FileAccess.file_exists("user://perf_nomsaa") or FileAccess.file_exists("user://perf_scale")
 	if FileAccess.file_exists("user://perf_nomsaa"):
 		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
 	if FileAccess.file_exists("user://perf_novsync"):
