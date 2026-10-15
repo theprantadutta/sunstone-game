@@ -1051,6 +1051,11 @@ class DangerFlash:
 ## a brush chevron for swipes, ripples for a tap.
 class HintStrip:
 	extends Control
+	## The gesture drawn beside the text: a direction (chevrons sweeping that
+	## way), TAP (ink ripples), BOTH_WAYS (left and right), or NONE (the sun).
+	const TAP := Vector2.ZERO
+	const BOTH_WAYS := Vector2(2, 0)
+	const NONE := Vector2(9, 9)
 	var _dir := Vector2.UP
 	var _t := 0.0
 	var _life := 0.0
@@ -1068,10 +1073,11 @@ class HintStrip:
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		add_child(_label)
 
-	func show_hint(text: String, dir: Vector2) -> void:
+	## [held]: stays until dismissed (a move being taught), not 2.4 s.
+	func show_hint(text: String, dir: Vector2, held := false) -> void:
 		_label.text = text
 		_dir = dir
-		_life = 2.4
+		_life = 1.0e9 if held else 2.4
 		_t = 0.0
 
 	## Fades out now — the player already did what it asked.
@@ -1100,7 +1106,20 @@ class HintStrip:
 		UiKit.draw_rule(self, Vector2(102, 18), Vector2(102, size.y - 18), UiKit.CINNABAR, 2.0, 19)
 		var c := Vector2(54, size.y / 2.0)
 		var travel := fmod(_t * 1.5, 1.0)
-		if _dir == Vector2.ZERO:
+		if _dir == NONE:
+			UiKit.draw_kin(self, c, 24.0, 1.0, 3.0)
+			return
+		if _dir == BOTH_WAYS:
+			for side in [-1.0, 1.0]:
+				var d := Vector2(side, 0.0)
+				for k in 2:
+					var p := fmod(travel + k * 0.5, 1.0)
+					var tip := c + d * (6.0 + 22.0 * p)
+					var col := Color(UiKit.INK if k == 0 else UiKit.CINNABAR, 1.0 - p * 0.7)
+					draw_polyline(PackedVector2Array([tip - d * 9 + Vector2(0, 13), tip + d * 5, tip - d * 9 - Vector2(0, 13)]), col, 7.0, true)
+			draw_circle(c, 6.0, UiKit.INK, true, -1.0, true)
+			return
+		if _dir == TAP:
 			# A tap: ink ripples spreading from a fingertip dot.
 			draw_circle(c, 9.0, UiKit.INK, true, -1.0, true)
 			for k in 2:

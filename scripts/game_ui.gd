@@ -593,8 +593,8 @@ func set_light(value: float, night: float, chaser_gap: float) -> void:
 	# only when it shows.
 	_dark.visible = _dark.modulate.a > 0.01
 
-func show_hint(text: String, dir: Vector2) -> void:
-	_hint.show_hint(text, dir)
+func show_hint(text: String, dir: Vector2, held := false) -> void:
+	_hint.show_hint(text, dir, held)
 
 func dismiss_hint() -> void:
 	_hint.dismiss()

@@ -160,6 +160,8 @@ var _slide_queued := false
 var _autopilot := OS.get_cmdline_user_args().has("--autopilot") or FileAccess.file_exists("user://autopilot")
 ## Dev: `files/dev_noflare` — the autopilot never flares.
 var _dev_noflare := FileAccess.file_exists("user://dev_noflare")
+## Dev: `files/dev_untaught` — every hint shows again, as for a new player.
+var _dev_untaught := FileAccess.file_exists("user://dev_untaught")
 ## Dev: `files/dev_pack` — the pack runs at his heels the whole run.
 var _dev_pack := FileAccess.file_exists("user://dev_pack")
 ## Dev: `files/dev_start` holding metres starts every run that far along.
@@ -399,7 +401,7 @@ func _start_run() -> void:
 	if not _shots:
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if state == State.RUNNING:
-				_hint("swipe", "Swipe left and right to change lanes", false))
+				_hint("swipe", "Swipe left and right to change lanes", false, UiKit.HintStrip.BOTH_WAYS))
 
 ## The head start: the sun lifts him over the road and carries him DASH_M
 ## metres, then sets him down where the road is clear.
@@ -776,7 +778,7 @@ func _step_run(delta: float) -> void:
 	if light < 0.35:
 		_hint("drops", "Sun-drops feed the stone: run through them")
 	elif _run_time > 12.0:
-		_hint("flare", "Tap to flare: the light reaches far ahead, but it costs light", false)
+		_hint("flare", "Tap to flare: the light reaches far ahead, but it costs light", false, UiKit.HintStrip.TAP)
 
 	if y > 0.02:
 		runner.pose = RunnerModel.Pose.JUMP
@@ -824,19 +826,20 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 	if true:
 		var id: String = Nights.plan(at.n, world.seed)[at.house]
 		if id == "jaguars":
-			_hint("jaguars", "Jaguars move only in the dark: flare and they turn to stone")
+			_hint("jaguars", "Jaguars move only in the dark: flare and they turn to stone", true, UiKit.HintStrip.TAP)
 		elif id == "bats":
-			_hint("bats", "Bats dive for your light: swipe down to slide under them")
+			_hint("bats", "Bats dive for your light: swipe down to slide under them", true, Vector2.DOWN)
 
 ## Shows a hint until the player has learned it. [learned_on_show]: a fact,
 ## learned by reading it; otherwise a move, learned by making it ([_learn]).
-func _hint(key: String, text: String, learned_on_show := true) -> void:
-	if _hints.has(key) or save.taught.has(key) or _shots or _autopilot:
+## [gesture]: what the strip draws beside the text (see UiKit.HintStrip).
+func _hint(key: String, text: String, learned_on_show := true, gesture := UiKit.HintStrip.NONE, held := false) -> void:
+	if _hints.has(key) or (save.taught.has(key) and not _dev_untaught) or _shots or _autopilot:
 		return
 	_hints[key] = true
 	if learned_on_show:
 		save.taught[key] = true
-	ui.show_hint(text, Vector2.ZERO)
+	ui.show_hint(text, gesture, held)
 
 ## The move [key] was made: never teach it again, and if time was slowed to
 ## teach it, let it run.
@@ -866,15 +869,17 @@ func _teach() -> void:
 	if near.is_empty() or near.s - s < 3.0:
 		return
 	var key := "jump" if near.kind in ["wall", "pit"] else ("slide" if near.kind == "lintel" else "dodge")
-	if save.taught.has(key) or _hints.has(key):
+	if (save.taught.has(key) and not _dev_untaught) or _hints.has(key):
 		return
-	_hint(key, COACH[key], false)
+	_hint(key, COACH[key], false, {"jump": Vector2.UP, "slide": Vector2.DOWN, "dodge": UiKit.HintStrip.BOTH_WAYS}[key], true)
 	_coach = key
 	_coach_s = near.s
 	Engine.time_scale = 0.3
 
 var _coach_s := 0.0
 func _end_coach() -> void:
+	if _coach != "" and ui:
+		ui.dismiss_hint()
 	_coach = ""
 	Engine.time_scale = 1.0
 
