@@ -56,6 +56,7 @@ var _settings: Control
 var _results: Control
 var _records: Control
 var _howto: Control
+var _confirm_page: Control
 var _daily: Control
 var _glyphs: Control
 var _offerings: Control
@@ -198,14 +199,14 @@ func _back() -> void:
 
 ## True while a page covers the world (any menu page, pause, results).
 func page_open() -> bool:
-	for page in [_howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
+	for page in [_confirm_page, _howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
 		if page and is_instance_valid(page) and page.visible:
 			return true
 	return false
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
+	for page in [_confirm_page, _howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -1143,7 +1144,9 @@ func _open_account() -> void:
 		sign_out.font_size = 26
 		sign_out.position = Vector2(56, y)
 		sign_out.size = Vector2(488, 80)
-		sign_out.pressed.connect(func():
+		sign_out.pressed.connect(func(): _confirm("Sign out?",
+			"Your progress is saved to your account first. Sign in again any time to get it back on this phone.",
+			"Sign out", func():
 			kept.text = "Saving your progress…"
 			var err := await _online.sign_out()
 			if err != "":
@@ -1155,7 +1158,7 @@ func _open_account() -> void:
 			account_reset.emit()
 			await get_tree().create_timer(1.6).timeout
 			if is_instance_valid(page):
-				_account.visible = false)
+				_account.visible = false))
 		page.add_child(sign_out)
 		y += 106
 	_rule(page, y, 109)
@@ -1172,14 +1175,9 @@ func _open_account() -> void:
 	close.size = Vector2(174, 84)
 	close.pressed.connect(func(): _account.visible = false)
 	page.add_child(close)
-	var armed := [false]
-	delete.pressed.connect(func():
-		# Two taps: the first arms it, the second deletes.
-		if not armed[0]:
-			armed[0] = true
-			delete.get_child(0).text = "Tap to confirm"
-			status.text = "This can't be undone."
-			return
+	delete.pressed.connect(func(): _confirm("Delete account?",
+		"Your runs, ranks and cloud save are removed from the server and this phone starts fresh. This can't be undone.",
+		"Delete", func():
 		status.text = "Deleting…"
 		if await _online.delete_account():
 			_save.reset_all()
@@ -1191,7 +1189,33 @@ func _open_account() -> void:
 			if _settings:
 				_settings.visible = false
 		else:
-			status.text = "Can't reach the temple right now. Try again later.")
+			status.text = "Can't reach the temple right now. Try again later."))
+	page.open()
+
+## Asks before something that can't be taken back: [title], a line of [text],
+## and [yes] (the cinnabar button) or Cancel. [then] runs on yes.
+func _confirm(title: String, text: String, yes: String, then: Callable) -> void:
+	if _confirm_page:
+		_confirm_page.queue_free()
+	var m := _modal(570, 0.6)
+	_confirm_page = m[0]
+	var page: UiKit.Page = m[1]
+	page.seed = 71
+	_headline(page, title)
+	page.add_child(UiKit.wrapped(text, UiKit.text_font(800), 27, UiKit.INK, Vector2(58, 150), 486, 190))
+	var ok := UiKit.GlyphButton.new(yes, UiKit.GlyphButton.Kind.PRIMARY)
+	ok.position = Vector2(56, 362)
+	ok.size = Vector2(488, 100)
+	ok.pressed.connect(func():
+		_confirm_page.visible = false
+		then.call())
+	page.add_child(ok)
+	var cancel := UiKit.GlyphButton.new("Cancel", UiKit.GlyphButton.Kind.SECONDARY)
+	cancel.font_size = 28
+	cancel.position = Vector2(56, 474)
+	cancel.size = Vector2(488, 76)
+	cancel.pressed.connect(func(): _confirm_page.visible = false)
+	page.add_child(cancel)
 	page.open()
 
 ## Signed in, linked or switched: the Account page shows the new state and
