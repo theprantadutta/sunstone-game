@@ -72,10 +72,10 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
 
 - **Road space.** A point on the road is (s, u): metres along, metres across
   (+ right). `world.point(s, u)` gives the world position; the road runs toward
-  −Z and its centre wanders (`world.center(s)`, two sines, seeded phases). Width
-  belongs to the House (`Nights.width`, blended at House changes).
-- **Nights** (`nights.gd`): night n lasts min(90, 58 + 8(n−1)) s at its own speed
-  (6.6 → 11 m/s); its length in metres follows. Three Houses per night, a 36 m
+  −Z and its centre wanders (`world.center(s)`, two sines, seeded phases). The
+  road is always three lanes wide (`Nights.ROAD_W`).
+- **Nights** (`nights.gd`): night n lasts min(80, 50 + 6(n−1)) s at its own speed
+  (10 → 20 m/s); its length in metres follows. Three Houses per night, a 48 m
   sunrise road (no danger) between nights. Night 1 is always dusk causeway →
   Jaguars → Bats; later nights draw three from Gloom, Knives, Cold, Jaguars,
   Bats, Fire (seeded). Everything is a function of distance and seed, so the
@@ -110,13 +110,25 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
 - **Close calls**: a danger passed within 0.45 s of the move that dodged it
   pays sun-drops (more in a row). **Teaching**: the first time each danger meets
   you, time slows (0.3×) and a hint names the swipe until you make it
-  (`save.taught`). **Head start** boost: the sun carries you 300 m at 2.6× over
+  (`save.taught`). While a move is taught, doing as told always works: the slide
+  stays down until the lintel is past, an early jump waits for the moment that
+  clears it, and the dodge hint names the clear side. Hints draw their gesture
+  (`UiKit.HintStrip`: a direction, TAP, BOTH_WAYS, NONE). **Head start** boost: the sun carries you 300 m at 2.6× over
   everything, landing on clear road (not on the daily dusk).
 - **Launch** is one continuous picture: the Android splash is plain plum
   (`[splash]` custom theme attributes: no icon; `screen/background_color` so
   no black frame), Godot's boot splash is the k'in glyph on the same plum
   (`tools/make_splash.py`, stretch "keep"), and `GameUI.play_splash` takes that
   exact image over and flies it into the title wordmark while the plum fades.
+- **Settings** (Settings and the pause page): music, sound, vibration, battery
+  saver (3D at 70% scale, no MSAA, no motes), swipe sensitivity (Light 3% /
+  Normal 4.5% / Firm 7% of the short screen side); How to play; Rate Sunstone
+  (the plugin's `openStorePage`). Sign out and Delete account ask first
+  (`GameUI._confirm`). **Share** on the results page sends a cropped run card
+  through the plugin's `shareImage` (Godot's own FileProvider).
+- **Taps reach a control twice** (a touch, then an emulated click): custom
+  controls act on release only after their own press (`_down`), or toggles
+  flip and flip back.
 - **Second wind**: once per run — rise past what ended it, nearby jaguars gone,
   light ≥ 0.6, 1.5 s shield.
 - **The look** (`codex.gd`): no real lights or shadows. Flat three-band shading
@@ -167,7 +179,10 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
   is ~9 ms; Compatibility holds a locked 60. Verify pacing with
   `dumpsys SurfaceFlinger --latency '<SurfaceView layer>'` — every interval
   should be one vsync.
-- **Dev switches:** `files/dev_light` (e.g. `0.3`) sets the starting light.
+- **Dev switches:** `files/dev_light` (e.g. `0.3`) sets the starting light;
+  `files/dev_untaught` shows every hint again; `files/dev_pack` keeps the pack
+  at his heels. Debug builds log `[coach]` lessons and deaths (for scripted
+  first-run checks).
 - **Perf switches** (dev): with autopilot on, logcat prints fps / frame-time /
   draw calls every 2 s. Flag files in `files/` toggle features without a rebuild:
   `perf_nomsaa`, `perf_noui`, `perf_noworld`, `perf_nograin`, `perf_novsync`,
