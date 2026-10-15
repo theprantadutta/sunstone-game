@@ -361,6 +361,8 @@ func _reset_run() -> void:
 	_strings.clear()
 	_hints.clear()
 	_end_coach()
+	_jump_at = 0.0
+	_slide_hold = 0.0
 	_close = 0
 	_combo = 0
 	_act_t = -9.0
@@ -463,7 +465,7 @@ func _die(cause: String, fell := false, caught := false) -> void:
 	state = State.DYING
 	death_cause = cause
 	_end_coach()
-	if _autopilot:
+	if _autopilot or OS.is_debug_build():
 		print("[sunstone] died at %.0f m (%.1f m/s): %s" % [s, speed, cause])
 	_fell = fell
 	_caught = caught
@@ -762,6 +764,11 @@ func _step_run(delta: float) -> void:
 				_slide_queued = false
 				_slide()
 	_slide_t = maxf(_slide_t - delta, 0.0)
+	if s < _slide_hold:
+		_slide_t = maxf(_slide_t, 0.15)
+	if _jump_at > 0.0 and s >= _jump_at:
+		_jump_at = 0.0
+		_jump()
 	_stumble_t += delta
 	_x_vel = (x - old_x) / maxf(delta, 0.0001)
 	_x_vel_s = lerpf(_x_vel_s, _x_vel, 1.0 - exp(-8.0 * delta))
@@ -880,18 +887,42 @@ func _teach() -> void:
 			_hints.erase(_coach)
 			_end_coach()
 		return
-	var near := world.occupant(s + speed * 0.75, _lane, speed * 0.4)
+	# The nearest danger in his lane, a little ahead (scanning outward, so a
+	# second one further on never takes its place).
+	var near := {}
+	var d := speed * 0.35
+	while d < speed * 1.15 and near.is_empty():
+		near = world.occupant(s + d, _lane, 0.25)
+		d += 0.5
 	if near.is_empty() or near.s - s < 3.0:
 		return
 	var key := "jump" if near.kind in ["wall", "pit"] else ("slide" if near.kind == "lintel" else "dodge")
 	if (save.taught.has(key) and not _dev_untaught) or _hints.has(key):
 		return
-	_hint(key, COACH[key], false, {"jump": Vector2.UP, "slide": Vector2.DOWN, "dodge": UiKit.HintStrip.BOTH_WAYS}[key], true)
+	var text: String = COACH[key]
+	var gesture: Vector2 = {"jump": Vector2.UP, "slide": Vector2.DOWN, "dodge": UiKit.HintStrip.BOTH_WAYS}[key]
+	if key == "dodge":
+		# Name the side that's clear: a stela can fill two lanes.
+		var open := []
+		for l in [_lane - 1, _lane + 1]:
+			if l >= -1 and l <= 1 and world.occupant(near.s, l, 1.2).is_empty():
+				open.append(l)
+		if open.is_empty():
+			return
+		if open.size() == 1:
+			var right: bool = open[0] > _lane
+			text = "Swipe %s to go round" % ("right" if right else "left")
+			gesture = Vector2.RIGHT if right else Vector2.LEFT
+	_hint(key, text, false, gesture, true)
 	_coach = key
 	_coach_s = near.s
+	if OS.is_debug_build():
+		print("[coach] %s %.1f m ahead, at %.1f m: %s" % [key, near.s - s, near.s, text])
 	Engine.time_scale = 0.3
 
-var _coach_s := 0.0
+var _coach_s := 0.0 ## where the danger being taught stands
+var _jump_at := 0.0 ## > 0: a taught jump waiting for its moment
+var _slide_hold := 0.0 ## a taught slide stays down until here
 func _end_coach() -> void:
 	if _coach != "" and ui:
 		ui.dismiss_hint()
@@ -1503,6 +1534,16 @@ func _move(dir: int) -> void:
 func _jump() -> void:
 	if state != State.RUNNING or y > 0.0 or vy > 0.0:
 		return
+	# Being taught to jump and swiped early: the leap waits for the moment
+	# that clears it, so doing as told always works.
+	if _coach == "jump":
+		var best := speed * 0.22 + 0.4
+		if _coach_s - s > best + 0.6:
+			_jump_at = _coach_s - best
+			_learn("jump")
+			return
+	_jump_at = 0.0
+	_slide_hold = 0.0
 	_slide_t = 0.0
 	_slide_queued = false
 	vy = JUMP_V
@@ -1525,6 +1566,10 @@ func _slide() -> void:
 		sfx.play(Sfx.SLIDE)
 	_slide_t = SLIDE_T
 	_act_t = _run_time
+	# Being taught to slide: stay down until the lintel is behind him, however
+	# early the swipe came.
+	if _coach == "slide":
+		_slide_hold = _coach_s + 1.2
 	_learn("slide")
 
 ## A tap: the Sunstone flares, throwing its light far down the road. It costs
