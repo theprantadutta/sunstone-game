@@ -1192,6 +1192,53 @@ func _open_account() -> void:
 			status.text = "Can't reach the temple right now. Try again later."))
 	page.open()
 
+## A small glyph block with an inked eye: tap to show the password, tap
+## again to hide it (the eye struck through while it's hidden).
+class EyeToggle:
+	extends Control
+	signal toggled(shown: bool)
+	var shown := false
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		focus_mode = Control.FOCUS_NONE
+
+	var _down := false
+
+	func _gui_input(event: InputEvent) -> void:
+		# A tap arrives as a touch and again as an emulated click: act once.
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event.pressed:
+				_down = true
+			elif _down:
+				_down = false
+				shown = not shown
+				toggled.emit(shown)
+				queue_redraw()
+			accept_event()
+
+	func _draw() -> void:
+		var block := UiKit.glyph_block(Rect2(Vector2.ZERO, size), 17)
+		UiKit.draw_paper(self, block, Color.WHITE)
+		UiKit.draw_ink(self, block, UiKit.INK, 4.0)
+		var c := size / 2.0
+		# The eye: two arcs, an iris, a pupil.
+		var top := PackedVector2Array()
+		var bottom := PackedVector2Array()
+		for i in 13:
+			var t := float(i) / 12.0
+			var x := lerpf(-20.0, 20.0, t)
+			var h := sin(t * PI) * 12.0
+			top.append(c + Vector2(x, -h))
+			bottom.append(c + Vector2(x, h))
+		draw_polyline(top, UiKit.INK, 3.5, true)
+		draw_polyline(bottom, UiKit.INK, 3.5, true)
+		draw_circle(c, 7.0, UiKit.OCHRE if shown else UiKit.STUCCO.darkened(0.2), true, -1.0, true)
+		draw_arc(c, 7.0, 0.0, TAU, 20, UiKit.INK, 2.5, true)
+		draw_circle(c, 2.8, UiKit.INK, true, -1.0, true)
+		if not shown:
+			draw_line(c + Vector2(-18, 16), c + Vector2(18, -16), UiKit.CINNABAR, 4.5, true)
+
 ## Asks before something that can't be taken back: [title], a line of [text],
 ## and [yes] (the cinnabar button) or Cancel. [then] runs on yes.
 func _confirm(title: String, text: String, yes: String, then: Callable) -> void:
@@ -1263,8 +1310,16 @@ func _open_email() -> void:
 	password.add_theme_font_size_override("font_size", 28)
 	password.add_theme_color_override("font_placeholder_color", Color(UiKit.INK, 0.35))
 	password.position = Vector2(56, 372)
-	password.size = Vector2(488, 72)
+	password.size = Vector2(412, 72)
 	page.add_child(password)
+	# Show or hide what's typed (hidden to begin with).
+	var eye := EyeToggle.new()
+	eye.position = Vector2(476, 372)
+	eye.size = Vector2(68, 72)
+	eye.toggled.connect(func(shown: bool):
+		password.secret = not shown
+		password.caret_column = password.text.length())
+	page.add_child(eye)
 	var note := UiKit.wrapped("", UiKit.text_font(800), 23, UiKit.CINNABAR, Vector2(58, 456), 486, 60)
 	page.add_child(note)
 	var sign_in := UiKit.GlyphButton.new("Sign in", UiKit.GlyphButton.Kind.PRIMARY)
