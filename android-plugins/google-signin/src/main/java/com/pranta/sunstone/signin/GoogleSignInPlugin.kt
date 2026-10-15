@@ -256,6 +256,35 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
         }
     }
 
+    /**
+     * Opens the share sheet with the image at [path] (a file the game wrote
+     * under its files/ folder, shared through Godot's own FileProvider) and a
+     * line of [text].
+     */
+    @UsedByGodot
+    fun shareImage(path: String, text: String) {
+        val act = activity ?: return
+        act.runOnUiThread {
+            try {
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    act, act.packageName + ".fileprovider", java.io.File(path))
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("image/jpeg")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .putExtra(Intent.EXTRA_TEXT, text)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                // Clip data carries the read grant to the share sheet's own
+                // preview as well as to the app the player picks.
+                send.clipData = android.content.ClipData.newRawUri("", uri)
+                act.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            } catch (e: Exception) {
+                // No file or no provider: share the words alone.
+                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                act.startActivity(Intent.createChooser(send, null))
+            }
+        }
+    }
+
     /** The game's drawing surface: the first SurfaceView under [v]. */
     private fun findSurface(v: View): SurfaceView? {
         if (v is SurfaceView) return v

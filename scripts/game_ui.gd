@@ -2052,6 +2052,59 @@ static func duration_text(seconds: float) -> String:
 	return "%d h %d min" % [m / 60, m % 60]
 
 ## The record book: every count the codex keeps, one register per line.
+## Shares the run: the results page over the painted world, the buttons
+## hidden and the game's name along the foot, as a picture, with a line
+## about the run and where to get the game.
+func _share_run(metres: int, night_line: String, page: Control, buttons: Array) -> void:
+	for b in buttons:
+		b.visible = false
+	# The card: the page down to its rule, the name strip right under it.
+	var card := page.get_global_rect()
+	var cut := card.position.y + 470.0 * card.size.y / page.size.y
+	var strip := ShareStrip.new()
+	_results.add_child(strip)
+	strip.position = Vector2(0, cut)
+	strip.size = Vector2(get_viewport().get_visible_rect().size.x, 120)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var shot := get_viewport().get_texture().get_image()
+	strip.queue_free()
+	# Crop to the card with a band of the painted night above it.
+	var k := shot.get_width() / get_viewport().get_visible_rect().size.x
+	var top := int(maxf(card.position.y - 120.0, 0.0) * k)
+	var bottom := int(minf(cut + 120.0, get_viewport().get_visible_rect().size.y) * k)
+	var img := shot.get_region(Rect2i(0, top, shot.get_width(), bottom - top))
+	for b in buttons:
+		b.visible = true
+	DirAccess.make_dir_recursive_absolute("user://share")
+	var path := "user://share/run.jpg"
+	img.save_jpg(path, 0.9)
+	var where := (" (%s)" % night_line) if night_line != "" else ""
+	var text := "I carried the sun %s m through Xibalba%s in Sunstone: Dusk Run. %s" % [
+		UiKit.thousands(metres), where, PLAY_PAGE]
+	Engine.get_singleton("SunstoneGoogleSignIn").call("shareImage", ProjectSettings.globalize_path(path), text)
+
+## The foot of a shared run card: a paper strip with the game's name.
+class ShareStrip:
+	extends Control
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	func _draw() -> void:
+		var r := Rect2(Vector2(0, 8), size - Vector2(0, 8))
+		UiKit.draw_paper(self, UiKit.torn(r, 29, 2.0))
+		UiKit.draw_rule(self, Vector2(18, 22), Vector2(size.x - 18, 22), UiKit.CINNABAR, 3.0, 31)
+		var font := UiKit.display_font()
+		var title := "Sunstone: Dusk Run"
+		var tw := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 40).x
+		var c := Vector2(size.x / 2.0, size.y / 2.0 + 10)
+		UiKit.draw_kin(self, c - Vector2(tw / 2.0 + 38, 4), 24.0, 1.0, 3.0)
+		draw_string(font, Vector2(c.x - tw / 2.0 + 10, c.y + 8), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, UiKit.INK)
+		var sub := "On Google Play"
+		var sf := UiKit.text_font(900)
+		var sw := sf.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
+		draw_string(sf, Vector2(c.x - sw / 2.0 + 10, c.y + 40), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, UiKit.CINNABAR)
+
 ## Rate Sunstone: the store's own page for the game. (The in-app review
 ## sheet is rationed by the store and may not show when asked, so a button
 ## the player pressed goes straight to the listing.)
@@ -2341,6 +2394,15 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	home.size = Vector2(508, 96)
 	home.pressed.connect(func(): home_pressed.emit())
 	page.add_child(home)
+	if Engine.has_singleton("SunstoneGoogleSignIn"):
+		# Share the run: Home steps aside for it.
+		home.size = Vector2(316, 96)
+		var share := UiKit.GlyphButton.new("Share", UiKit.GlyphButton.Kind.SECONDARY)
+		share.font_size = 30
+		share.position = Vector2(384, 614)
+		share.size = Vector2(180, 96)
+		share.pressed.connect(func(): _share_run(metres, night_line, page, [again, home, share]))
+		page.add_child(share)
 
 	# The one orchestrated moment: the page unfolds, then the distance is
 	# counted out — in both kinds of numerals.
