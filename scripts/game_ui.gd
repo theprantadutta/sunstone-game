@@ -650,6 +650,26 @@ func _settings_rows(page: Control, y: float) -> float:
 		page.add_child(t)
 		y += 84
 		i += 1
+	# How long a swipe must be before it counts.
+	var swipe_l := UiKit.label("Swipe", UiKit.text_font(900), 30, UiKit.INK)
+	swipe_l.position = Vector2(58, y + 18)
+	page.add_child(swipe_l)
+	var tabs: Array[UiKit.GlyphButton] = []
+	for k in 3:
+		var b := UiKit.GlyphButton.new(["Light", "Normal", "Firm"][k],
+			UiKit.GlyphButton.Kind.PRIMARY if _save.swipe == k else UiKit.GlyphButton.Kind.SECONDARY)
+		b.font_size = 19
+		b.position = Vector2(206 + k * 114, y + 6)
+		b.size = Vector2(108, 66)
+		tabs.append(b)
+		page.add_child(b)
+	for k in 3:
+		tabs[k].pressed.connect(func():
+			_save.swipe = k
+			for j in 3:
+				tabs[j].set_kind(UiKit.GlyphButton.Kind.PRIMARY if j == k else UiKit.GlyphButton.Kind.SECONDARY)
+			settings_changed.emit())
+	y += 84
 	_rule(page, y + 8, 7)
 	return y + 16
 
@@ -657,7 +677,7 @@ func show_pause() -> void:
 	_hide_all()
 	if _pause:
 		_pause.queue_free()
-	var m := _modal(810)
+	var m := _modal(894)
 	_pause = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Paused")
@@ -684,7 +704,7 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(862 + (64 if _ads.privacy_options_required() else 0))
+	var m := _modal(946 + (64 if _ads.privacy_options_required() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")

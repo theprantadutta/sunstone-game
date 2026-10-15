@@ -61,7 +61,7 @@ const MOTES := {
 const CAM_UP := 6.6
 const CAM_BACK := 6.6
 const CAM_AHEAD := 10.0
-const SWIPE_MIN := 0.045 ## of the screen's short side: a move this long is a swipe
+const SWIPE_MIN := [0.03, 0.045, 0.07] ## of the screen's short side, a swipe at each sensitivity (light, normal, firm)
 const TAP_MAX_T := 0.3 ## seconds: a touch shorter than this, that didn't swipe, flares
 const NIGHT_BG := Color("#0E1230")
 const DUSK_BG := Color("#B9765A")
@@ -1460,7 +1460,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _track_swipe(pos: Vector2) -> void:
 	var d := pos - _touch_from
 	var vp := get_viewport().get_visible_rect().size
-	if d.length() < SWIPE_MIN * minf(vp.x, vp.y):
+	if d.length() < SWIPE_MIN[clampi(save.swipe, 0, 2)] * minf(vp.x, vp.y):
 		return
 	_swiped = true
 	if absf(d.x) > absf(d.y):
