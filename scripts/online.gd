@@ -17,8 +17,9 @@ signal save_merged ## the local save took in progress from the cloud
 signal config_loaded(config: Dictionary)
 signal account_changed ## this phone now uses another account, or a new way to sign in
 
-## Debug builds talk to the API on the dev PC over the LAN; release builds to
-## the hosted server. `files/api_base` on a device overrides both.
+## Android debug builds talk to the API on the dev PC over the LAN; release
+## builds, and every iOS build, to the hosted server. `files/api_base` on a
+## device overrides both.
 const DEV_BASE := "http://192.168.0.141:8395"
 const PROD_BASE := "https://sunstone.pranta.dev"
 const STATE_PATH := "user://online.json"
@@ -32,7 +33,7 @@ const GOOGLE_WEB_CLIENT_ID := "865615140000-9jk5kbkrjg2ip2lmckib1oohokvaiten.app
 signal _google_result(ok: bool, value: String, email: String)
 signal _apple_result(ok: bool, value: String, email: String)
 
-var base_url := DEV_BASE if OS.is_debug_build() else PROD_BASE
+var base_url := DEV_BASE if OS.is_debug_build() and OS.get_name() != "iOS" else PROD_BASE
 var player := {} ## {id, name, isAnonymous} once signed in
 var reachable := false ## the last call to our server got an answer
 var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, storeOpen…

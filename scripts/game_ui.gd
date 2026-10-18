@@ -2109,9 +2109,10 @@ class ShareStrip:
 ## sheet is rationed by the store and may not show when asked, so a button
 ## the player pressed goes straight to the listing.)
 const PLAY_PAGE := "https://play.google.com/store/apps/details?id=com.pranta.sunstone"
+const APP_STORE_REVIEW := "https://apps.apple.com/app/id6818707768?action=write-review"
 func _rate() -> void:
 	if OS.get_name() == "iOS":
-		_store.request_review()
+		OS.shell_open(APP_STORE_REVIEW)
 		return
 	if Engine.has_singleton("SunstoneGoogleSignIn"):
 		Engine.get_singleton("SunstoneGoogleSignIn").call("openStorePage")

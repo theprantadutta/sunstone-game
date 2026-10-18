@@ -16,3 +16,8 @@ override.cfg
 
 # raw device screenshots for tools/make_store_art.py
 store/raw/
+
+# GodotApplePlugins (iOS StoreKit + Sign in with Apple): large binaries, installed per IOS.md
+addons/GodotApplePluginsRuntime/
+addons/GodotApplePluginsStoreKit/
+addons/GodotApplePluginsAuthenticationServices/
