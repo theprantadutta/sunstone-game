@@ -112,7 +112,7 @@ Nothing is processed ephemerally only.
 | App activity → App interactions (our gameplay events; AdMob ad interactions) | Yes | Required | Analytics, Advertising or marketing, Fraud prevention/security |
 | App activity → Other actions (runs, scores, cloud save) | No | Required | App functionality, Fraud prevention/security |
 | App info and performance → Diagnostics (by AdMob) | Yes | Required | Analytics, Fraud prevention/security |
-| Device or other IDs (advertising ID, app set ID; by AdMob) | Yes | Required | Advertising or marketing, Analytics, Fraud prevention/security |
+| Device or other IDs (advertising ID, app set ID; by AdMob; and the FCM notification token, with the phone's time zone, if notifications are allowed) | Yes | Required | Advertising or marketing, Analytics, Fraud prevention/security, App functionality |
 
 Not collected: phone, address, other personal info, payment info (Play handles
 it), precise location, messages, photos/videos, audio, files, calendar,

@@ -18,17 +18,19 @@ Last updated: 4 October 2026.
 
 **Purchases.** If you buy something, Google Play or Apple's App Store handles the payment. We receive the product and the store's proof of purchase (an order number and purchase token from Google, or a signed transaction from Apple), which we check so the item is granted once. We never see your payment details.
 
+**Notifications.** If you allow notifications, the game gets a notification token for your phone from Google Firebase Cloud Messaging and sends it to our server with your phone's time zone, so reminders arrive in your daytime (at most one a day, never at night). You can turn them off at any time in Settings, or in your phone's settings; signing out or deleting your account removes the token from our server.
+
 **Ads.** The game shows ads through Google AdMob. AdMob may collect your device's advertising ID, IP address and device information to show ads and measure them. Where the law requires it, the game asks for your consent before any ad is shown, and you can change your choice later under Settings, Ad privacy. On iPhone and iPad, the advertising ID is only used if you allow tracking when iOS asks. See Google's policy at https://policies.google.com/technologies/partner-sites.
 
 The game does not collect your contacts, location, photos or files.
 
 ## How it's used and shared
 
-We use this information to run the game: to sign you in, keep your progress, show the ranks, grant purchases and improve the game. We don't sell it. It is shared only with the services that make the game work: Google Firebase (sign-in), Apple (Sign in with Apple), Google Play and the App Store (purchases), Google AdMob (ads) and the server that hosts the game's data.
+We use this information to run the game: to sign you in, keep your progress, show the ranks, grant purchases and improve the game. We don't sell it. It is shared only with the services that make the game work: Google Firebase (sign-in and notifications), Apple (Sign in with Apple), Google Play and the App Store (purchases), Google AdMob (ads) and the server that hosts the game's data.
 
 ## Keeping and deleting it
 
-Your data is kept while your account exists. You can delete your account at any time in the game: Settings, Account, Delete account. That removes your runs, ranks, save, events and purchase records from our server and deletes your sign-in account. Purchases already made stay recorded by Google Play or the App Store.
+Your data is kept while your account exists. You can delete your account at any time in the game: Settings, Account, Delete account. That removes your runs, ranks, save, events, notification tokens and purchase records from our server and deletes your sign-in account. Purchases already made stay recorded by Google Play or the App Store.
 
 You can also ask for deletion by email (below). We will do it within 30 days.
 

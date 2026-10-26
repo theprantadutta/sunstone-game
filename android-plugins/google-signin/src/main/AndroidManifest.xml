@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 13+ asks the player before notifications show (requestPushPermission). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application>
+        <!-- How Firebase shows a notification that arrives while the game is closed. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/sunstone_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/sunstone_notification_color" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="@string/sunstone_push_channel" />
         <!-- Godot finds v2 plugins by this meta-data: name = plugin name, value = class. -->
         <meta-data
             android:name="org.godotengine.plugin.v2.SunstoneGoogleSignIn"

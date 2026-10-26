@@ -33,4 +33,5 @@ class AndroidExport:
 			"com.google.android.libraries.identity.googleid:googleid:1.1.1",
 			"org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0",
 			"com.google.android.play:app-update:2.1.0",
+			"com.google.firebase:firebase-messaging:24.1.0",
 		])

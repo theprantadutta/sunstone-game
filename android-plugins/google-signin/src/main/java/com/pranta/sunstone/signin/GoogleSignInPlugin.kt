@@ -7,7 +7,16 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.Settings
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
+import com.google.firebase.messaging.FirebaseMessaging
 import android.os.Build
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -35,8 +44,9 @@ import org.godotengine.godot.plugin.UsedByGodot
  * Sunstone's own Android bits. "Sign in with Google": shows Android's own
  * Google account sheet (Credential Manager) and hands the game a Google ID
  * token, which the game passes to Firebase Auth to link the player's guest
- * account. The display's refresh rate (see [setRefreshRate]). And Play's
- * in-app updates (see [checkUpdate]).
+ * account. The display's refresh rate (see [setRefreshRate]). Play's
+ * in-app updates (see [checkUpdate]). Sharing a run card. And notifications
+ * through Firebase Cloud Messaging (see [initPush]).
  */
 class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
 
@@ -55,6 +65,10 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
         SignalInfo("update_downloaded"),
         // reason
         SignalInfo("update_failed", String::class.java),
+        // this phone's FCM token ("" when Firebase can't give one)
+        SignalInfo("push_token", String::class.java),
+        // whether notifications may show, after asking
+        SignalInfo("push_permission", Boolean::class.javaObjectType),
     )
 
     /** [webClientId] is the OAuth *web* client of the Firebase project. */
@@ -282,6 +296,75 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
                 val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
                 act.startActivity(Intent.createChooser(send, null))
             }
+        }
+    }
+
+    // -------------------------------------------------------- notifications
+
+    private val pushRequest = 7302
+
+    /**
+     * Starts Firebase with the game's own config (google-services.json, read
+     * by the game — no Gradle plugin needed), makes the "dusk" channel and
+     * answers with this phone's token ("push_token").
+     */
+    @UsedByGodot
+    fun initPush(appId: String, apiKey: String, projectId: String, senderId: String) {
+        val act = activity ?: return
+        try {
+            if (FirebaseApp.getApps(act).isEmpty()) {
+                FirebaseApp.initializeApp(act.applicationContext, FirebaseOptions.Builder()
+                    .setApplicationId(appId).setApiKey(apiKey).setProjectId(projectId).setGcmSenderId(senderId)
+                    .build())
+            }
+            if (Build.VERSION.SDK_INT >= 26) {
+                val channel = NotificationChannel("dusk", "Dusk reminders", NotificationManager.IMPORTANCE_DEFAULT)
+                channel.description = "When dusk falls: the daily causeway, your offering, and news from Xibalba."
+                act.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            }
+            FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { emitSignal("push_token", it ?: "") }
+                .addOnFailureListener { emitSignal("push_token", "") }
+        } catch (e: Exception) {
+            emitSignal("push_token", "")
+        }
+    }
+
+    /** True when notifications can show (permission given, not switched off). */
+    @UsedByGodot
+    fun pushAllowed(): Boolean {
+        val act = activity ?: return false
+        return NotificationManagerCompat.from(act).areNotificationsEnabled()
+    }
+
+    /** Asks for the notification permission (Android 13+); answers with "push_permission". */
+    @UsedByGodot
+    fun requestPushPermission() {
+        val act = activity ?: return
+        if (Build.VERSION.SDK_INT < 33 ||
+            ActivityCompat.checkSelfPermission(act, "android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED) {
+            emitSignal("push_permission", pushAllowed())
+            return
+        }
+        act.runOnUiThread {
+            ActivityCompat.requestPermissions(act, arrayOf("android.permission.POST_NOTIFICATIONS"), pushRequest)
+        }
+    }
+
+    /** The game's page in the phone's notification settings (after a "no"). */
+    @UsedByGodot
+    fun openNotificationSettings() {
+        val act = activity ?: return
+        act.runOnUiThread {
+            act.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, act.packageName))
+        }
+    }
+
+    override fun onMainRequestPermissionsResult(requestCode: Int, permissions: Array<out String>?, grantResults: IntArray?) {
+        super.onMainRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == pushRequest) {
+            emitSignal("push_permission", grantResults?.firstOrNull() == PackageManager.PERMISSION_GRANTED)
         }
     }
 

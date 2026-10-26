@@ -78,6 +78,7 @@ var ads: Ads
 var store: Store
 var review: InappReview
 var updates: AppUpdates
+var push: Push
 var sfx: Sfx
 var save := SaveData.new()
 
@@ -271,6 +272,14 @@ func _ready() -> void:
 	ui.settings_changed.connect(_on_settings_changed)
 	ui.back_requested.connect(_on_back)
 	ui.setup(save, online, ads, store)
+	push = Push.new()
+	add_child(push)
+	push.setup(online, save)
+	ui.push = push
+	push.changed.connect(func():
+		# The Settings page shows the switch: redraw it with the answer.
+		if ui._settings and is_instance_valid(ui._settings) and ui._settings.visible:
+			ui._open_settings())
 	updates.downloaded.connect(ui.show_update_ready)
 	ui.update_pressed.connect(updates.restart_into_update)
 	ui.set_flare_cost(FLARE_COST + 0.03)
@@ -383,6 +392,13 @@ func _go_title() -> void:
 	_place_runner()
 	ui.show_title(save)
 	sfx.play_music()
+	# After the second run, once: a reminder at dusk?
+	if push and push.available() and not save.push_asked and save.runs >= 2 and not _shots and not _tour:
+		save.push_asked = true
+		save.save_to_disk()
+		get_tree().create_timer(0.8).timeout.connect(func():
+			if state == State.TITLE:
+				ui.ask_for_push())
 
 func _start_run() -> void:
 	if state != State.TITLE:
@@ -1593,6 +1609,9 @@ func _notification(what: int) -> void:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
 			_pause()
 		NOTIFICATION_APPLICATION_RESUMED:
+			# Notifications may have been allowed in the phone's settings meanwhile.
+			if push:
+				push.register()
 			# Android forgets a surface's frame-rate wish when it comes back.
 			if not FileAccess.file_exists("user://perf_hz"):
 				_lock_refresh()

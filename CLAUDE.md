@@ -126,6 +126,14 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   (the plugin's `openStorePage`). Sign out and Delete account ask first
   (`GameUI._confirm`). **Share** on the results page sends a cropped run card
   through the plugin's `shareImage` (Godot's own FileProvider).
+- **Notifications** (`push.gd`, plugin `initPush`/`requestPushPermission`/
+  `pushAllowed`/`openNotificationSettings`): Firebase Cloud Messaging, started
+  from `google-services.json` (no Gradle plugin); the plugin makes the `dusk`
+  channel and the white k'in icon. The game asks once on the title after the
+  second run ("A word at dusk?"), then Android asks; Settings has the switch
+  (`save.push_on`). The phone (token, UTC offset, on/off) goes to
+  `PUT /push/device` whenever it changes and on resume; sign-out forgets it.
+  What to send and when is the server's job (sunstone-api `Push/`).
 - **Taps reach a control twice** (a touch, then an emulated click): custom
   controls act on release only after their own press (`_down`), or toggles
   flip and flip back.

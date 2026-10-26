@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notifications: the accent behind the sun icon, and the channel. -->
+    <color name="sunstone_notification_color">#E3A82F</color>
+    <string name="sunstone_push_channel" translatable="false">dusk</string>
+</resources>

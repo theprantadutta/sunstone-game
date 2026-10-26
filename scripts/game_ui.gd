@@ -57,6 +57,7 @@ var _results: Control
 var _records: Control
 var _howto: Control
 var _confirm_page: Control
+var push: Push ## set by the game: the Settings switch and the ask page
 var _daily: Control
 var _glyphs: Control
 var _offerings: Control
@@ -639,12 +640,19 @@ func _rule(page: Control, y: float, seed: int) -> void:
 
 func _settings_rows(page: Control, y: float) -> float:
 	var i := 0
-	for row in [["Music", "music"], ["Sound", "sound"], ["Vibration", "vibration"], ["Battery saver", "saver"]]:
+	var rows := [["Music", "music"], ["Sound", "sound"], ["Vibration", "vibration"], ["Battery saver", "saver"]]
+	if push and push.available():
+		rows.append(["Notifications", "push_on"])
+	for row in rows:
 		var key: String = row[1]
 		var t := UiKit.Toggle.new(row[0], _save.get(key))
 		t.position = Vector2(56, y)
 		t.size = Vector2(488, 76)
 		t.toggled.connect(func(on: bool):
+			if key == "push_on":
+				# Asks Android when it must; the page redraws with the answer.
+				push.turn_on() if on else push.turn_off()
+				return
 			_save.set(key, on)
 			settings_changed.emit())
 		page.add_child(t)
@@ -677,7 +685,7 @@ func show_pause() -> void:
 	_hide_all()
 	if _pause:
 		_pause.queue_free()
-	var m := _modal(978)
+	var m := _modal(978 + (84 if push and push.available() else 0))
 	_pause = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Paused")
@@ -704,7 +712,7 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(1030 + (64 if _ads.privacy_options_required() else 0))
+	var m := _modal(1030 + (64 if _ads.privacy_options_required() else 0) + (84 if push and push.available() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
 	_headline(page, "Settings")
@@ -1265,9 +1273,16 @@ class EyeToggle:
 		if not shown:
 			draw_line(c + Vector2(-18, 16), c + Vector2(18, -16), UiKit.CINNABAR, 4.5, true)
 
+## Once, on the title after the second run: may the game remind them at dusk?
+## (Android then asks for the permission itself.)
+func ask_for_push() -> void:
+	_confirm("A word at dusk?",
+		"When dusk falls and you haven't run yet, the Sunstone can remind you. Never at night, never more than once a day.",
+		"Remind me", func(): push.turn_on(), "Not now", func(): push.turn_off())
+
 ## Asks before something that can't be taken back: [title], a line of [text],
 ## and [yes] (the cinnabar button) or Cancel. [then] runs on yes.
-func _confirm(title: String, text: String, yes: String, then: Callable) -> void:
+func _confirm(title: String, text: String, yes: String, then: Callable, no := "Cancel", otherwise := Callable()) -> void:
 	if _confirm_page:
 		_confirm_page.queue_free()
 	var m := _modal(570, 0.6)
@@ -1283,11 +1298,14 @@ func _confirm(title: String, text: String, yes: String, then: Callable) -> void:
 		_confirm_page.visible = false
 		then.call())
 	page.add_child(ok)
-	var cancel := UiKit.GlyphButton.new("Cancel", UiKit.GlyphButton.Kind.SECONDARY)
+	var cancel := UiKit.GlyphButton.new(no, UiKit.GlyphButton.Kind.SECONDARY)
 	cancel.font_size = 28
 	cancel.position = Vector2(56, 474)
 	cancel.size = Vector2(488, 76)
-	cancel.pressed.connect(func(): _confirm_page.visible = false)
+	cancel.pressed.connect(func():
+		_confirm_page.visible = false
+		if otherwise.is_valid():
+			otherwise.call())
 	page.add_child(cancel)
 	page.open()
 

@@ -35,6 +35,7 @@ signal _apple_result(ok: bool, value: String, email: String)
 
 var base_url := DEV_BASE if OS.is_debug_build() and OS.get_name() != "iOS" else PROD_BASE
 var player := {} ## {id, name, isAnonymous} once signed in
+var push_token := "" ## this phone's notification token (Push), forgotten on sign-out
 var reachable := false ## the last call to our server got an answer
 var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, storeOpen…
 
@@ -387,6 +388,11 @@ func sign_out() -> String:
 	await _flush_outbox()
 	if not _outbox.is_empty() or not await sync_save():
 		return "Can't reach the temple, so your latest progress isn't saved yet. Try again when you're online."
+	if push_token != "":
+		# This phone stops hearing about this account.
+		await api(HTTPClient.METHOD_POST, "/push/device/forget", {"token": push_token})
+		if FileAccess.file_exists(Push.SENT_PATH):
+			DirAccess.remove_absolute(Push.SENT_PATH)
 	print("[online] signed out")
 	_state = {}
 	player = {}
