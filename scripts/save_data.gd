@@ -59,6 +59,10 @@ var hat := "own" ## headwear (Shop.HATS); "own" keeps the runner's
 var boosts_bought := {}
 var boosts_used := {}
 var entitlements: Array = [] ## bought for good: "no_ads", "patron", and looks sold for money
+## Unix time the server last said the Sunstone Pass runs (0 = no pass). Never
+## merged from the cloud: each phone asks the server itself.
+var pass_seen := 0
+const PASS_TRUST := 7 * 86400 ## a pass not confirmed for a week (offline) stops counting
 var review_asks := 0 ## times we've asked Google to show the rating sheet
 var review_last := "" ## local day of the last ask
 
@@ -124,6 +128,7 @@ func _apply(d: Dictionary) -> void:
 	owned = ow if ow is Array else ["explorer", "sun"]
 	var en: Variant = d.get("entitlements", [])
 	entitlements = en if en is Array else []
+	pass_seen = int(d.get("pass_seen", 0))
 	review_asks = int(d.get("review_asks", 0))
 	review_last = str(d.get("review_last", ""))
 	garb = str(d.get("garb", "explorer"))
@@ -154,6 +159,7 @@ func to_dict() -> Dictionary:
 		"glyphs": glyphs, "offering_day": offering_day, "offering_last": offering_last,
 		"charms": charms, "owned": owned, "garb": garb, "hue": hue, "character": character, "hat": hat,
 		"boosts_bought": boosts_bought, "boosts_used": boosts_used, "entitlements": entitlements,
+		"pass_seen": pass_seen,
 		"review_asks": review_asks, "review_last": review_last,
 		"music": music, "sound": sound, "vibration": vibration, "swipe": swipe, "saver": saver,
 		"push_on": push_on, "push_asked": push_asked, "push_denied": push_denied,
@@ -205,7 +211,7 @@ func merge_from(other: Variant) -> bool:
 	var oc: Variant = o.get("charms", {})
 	if oc is Dictionary:
 		for k in oc:
-			charms[k] = maxi(charm_tier(k), clampi(int(oc[k]), 0, 3))
+			charms[k] = maxi(charm_bought(k), clampi(int(oc[k]), 0, 3))
 	var oe: Variant = o.get("entitlements", [])
 	if oe is Array:
 		set_entitlements(entitlements + oe)
@@ -315,14 +321,45 @@ func take_offering(today: String) -> int:
 	offering_day = (offering_day + 1) % OFFERINGS.size()
 	return reward
 
+## Bought for good — or, for no ads, while the Sunstone Pass runs.
 func has_entitlement(key: String) -> bool:
-	return entitlements.has(key)
+	return entitlements.has(key) or (key == "no_ads" and has_pass())
 
-## Adds what the server says this player owns (never removes); a patron also
-## gets the Obsidian hue. Returns true when anything changed.
+## The Sunstone Pass runs: every look, charms at full strength, no ads,
+## Second wind without sun-drops.
+func has_pass() -> bool:
+	return pass_seen > 0 and Time.get_unix_time_from_system() - pass_seen < PASS_TRUST
+
+## The server's answer about the pass ("pass" in its entitlements or not).
+## When it ends, looks only the pass gave come off. True when it changed.
+func set_pass(on: bool) -> bool:
+	var was := has_pass()
+	pass_seen = int(Time.get_unix_time_from_system()) if on else 0
+	if was and not on:
+		if not _keeps("Runners", character):
+			character = "explorer"
+		if not _keeps("Outfits", garb):
+			garb = "explorer"
+		if not _keeps("Hats", hat):
+			hat = "own"
+		if not _keeps("Stones", hue):
+			hue = "sun"
+	return was != on
+
+func _keeps(shelf: String, id: String) -> bool:
+	for item in Shop.shelf(shelf, self):
+		if item.id == id:
+			return Shop.drops_price(item) == 0 or owns(id)
+	return false
+
+## Adds what the server says this player owns for good (never removes; the
+## pass is set_pass's); a patron also gets the Obsidian hue. Returns true when
+## anything changed.
 func set_entitlements(keys: Array) -> bool:
 	var changed := false
 	for k in keys:
+		if str(k) == "pass":
+			continue
 		if not entitlements.has(str(k)):
 			entitlements.append(str(k))
 			changed = true
@@ -331,12 +368,17 @@ func set_entitlements(keys: Array) -> bool:
 		changed = true
 	return changed
 
+## A charm's strength in a run: full while the pass runs.
 func charm_tier(id: String) -> int:
+	return 3 if has_pass() else charm_bought(id)
+
+## The tiers bought with sun-drops (what's kept without the pass).
+func charm_bought(id: String) -> int:
 	return clampi(int(charms.get(id, 0)), 0, 3)
 
 ## Buys the next tier of a charm; false if maxed out or too dear.
 func buy_charm(id: String) -> bool:
-	var tier := charm_tier(id)
+	var tier := charm_bought(id)
 	var costs: Array = Market.find(Market.CHARMS, id).costs
 	if tier >= costs.size() or bank < int(costs[tier]):
 		return false
@@ -344,8 +386,12 @@ func buy_charm(id: String) -> bool:
 	charms[id] = tier + 1
 	return true
 
-## Owns a look: bought with sun-drops, or with real money (an entitlement).
+## Owns a look: bought with sun-drops, with real money (an entitlement), or
+## worn through the Sunstone Pass.
 func owns(id: String) -> bool:
+	return owns_for_good(id) or has_pass()
+
+func owns_for_good(id: String) -> bool:
 	return owned.has(id) or entitlements.has(id)
 
 ## How many of a boost are held.

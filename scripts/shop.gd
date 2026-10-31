@@ -9,7 +9,22 @@ class_name Shop
 ## two lists must match, and Play Console / App Store Connect too).
 ## "event" = only on sale while that seasonal event runs (Themes).
 
-const SHELVES := ["Runners", "Outfits", "Hats", "Stones", "Charms", "Boosts", "Treasury"]
+const SHELVES := ["Runners", "Outfits", "Hats", "Stones", "Charms", "Boosts", "Pass", "Treasury"]
+
+## The Sunstone Pass: one subscription (store id below), two base plans with
+## a free trial each (offers trial-3d / trial-7d in Play Console). While it
+## runs: every look, charms at full strength, no ads, free Second wind.
+const PASS_ID := "sunstone_pass"
+const PASS_PLANS := [
+	{"id": "monthly", "title": "Monthly", "per": "a month"},
+	{"id": "yearly", "title": "Yearly", "per": "a year"},
+]
+const PASS_PERKS := [
+	"Every runner, outfit, hat and stone hue",
+	"All charms at full strength",
+	"No ads between runs",
+	"Second wind without sun-drops",
+]
 
 ## Runners are Themes.CHARACTERS; their prices live there.
 
@@ -81,7 +96,7 @@ static func shelf(name: String, save: SaveData) -> Array:
 	var out := []
 	for item in src:
 		var ev: String = item.get("event", "")
-		if ev != "" and ev != Themes.event_id() and not save.owns(item.id):
+		if ev != "" and ev != Themes.event_id() and not save.owns_for_good(item.id):
 			continue
 		out.append(item)
 	return out

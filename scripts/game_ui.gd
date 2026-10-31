@@ -1649,6 +1649,7 @@ func _fill_market() -> void:
 	match shelf:
 		"Charms": _fill_charms(body)
 		"Boosts": _fill_boosts(body)
+		"Pass": _fill_pass(body)
 		"Treasury": _fill_treasury(body)
 		_: _fill_shelf(body, shelf)
 
@@ -1846,6 +1847,62 @@ func _fill_boosts(body: Control) -> void:
 		body.add_child(btn)
 		y += 210.0
 
+## The Sunstone Pass: what it opens, and its two plans (each with the free
+## trial Play offers this player), or how to manage it once it runs.
+func _fill_pass(body: Control) -> void:
+	_market_note = UiKit.label("", UiKit.text_font(900), 22, UiKit.CINNABAR)
+	_market_note.position = Vector2(58, 300)
+	body.add_child(_market_note)
+	var y := 340.0
+	for perk in Shop.PASS_PERKS:
+		var mark := UiKit.label("•", UiKit.text_font(900), 24, UiKit.CINNABAR)
+		mark.position = Vector2(58, y)
+		body.add_child(mark)
+		var l := UiKit.label(perk, UiKit.text_font(800), 24, UiKit.INK)
+		l.position = Vector2(92, y)
+		body.add_child(l)
+		y += 44.0
+	y += 18.0
+	if _save.has_pass():
+		body.add_child(UiKit.wrapped("The Pass is yours. Everything above is open on every phone you sign in on.",
+			UiKit.text_font(800), 24, UiKit.INK, Vector2(58, y), 486, 90))
+		var manage := UiKit.GlyphButton.new("Manage in Google Play", UiKit.GlyphButton.Kind.SECONDARY)
+		manage.font_size = 22
+		manage.position = Vector2(56, y + 110)
+		manage.size = Vector2(488, 70)
+		manage.pressed.connect(func(): _store.manage_pass())
+		body.add_child(manage)
+		return
+	if not _store.pass_ready():
+		body.add_child(UiKit.wrapped("The Pass opens here soon.",
+			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, y), 486, 80))
+		return
+	for plan in Shop.PASS_PLANS:
+		var offer: Dictionary = _store.pass_plans.get(plan.id, {})
+		if offer.is_empty():
+			continue
+		var t := UiKit.label(plan.title, UiKit.display_font(), 26, UiKit.INK)
+		t.position = Vector2(58, y)
+		body.add_child(t)
+		var trial: int = offer.get("trial_days", 0)
+		var line := "%s %s" % [offer.price, plan.per]
+		if trial > 0:
+			line = "%d days free, then %s" % [trial, line]
+		body.add_child(UiKit.wrapped(line, UiKit.text_font(800), 21, UiKit.INK, Vector2(58, y + 38), 300, 60))
+		var btn := UiKit.GlyphButton.new("Try free" if trial > 0 else "Join",
+			UiKit.GlyphButton.Kind.PRIMARY)
+		btn.font_size = 24
+		btn.position = Vector2(384, y + 6)
+		btn.size = Vector2(160, 70)
+		var id: String = plan.id
+		btn.pressed.connect(func():
+			_market_note.text = "Opening the store…"
+			_store.buy_pass(id))
+		body.add_child(btn)
+		y += 112.0
+	body.add_child(UiKit.wrapped("Renews until you cancel in Google Play. Cancel during the free days and you pay nothing.",
+		UiKit.text_font(800), 19, UiKit.INK, Vector2(58, y + 4), 486, 70))
+
 ## Real-money items through the store, priced by it in local currency.
 func _fill_treasury(body: Control) -> void:
 	_market_note = UiKit.label("", UiKit.text_font(900), 22, UiKit.CINNABAR)
@@ -1857,8 +1914,9 @@ func _fill_treasury(body: Control) -> void:
 		return
 	var y := 336.0
 	for p in Shop.TREASURY:
-		var owned: bool = (p.id == "sunstone_remove_ads" and _save.has_entitlement("no_ads")) \
-			or (p.id == "sunstone_patron" and _save.has_entitlement("patron"))
+		# Bought for good only: the pass's no-ads ends with it.
+		var owned: bool = (p.id == "sunstone_remove_ads" and _save.entitlements.has("no_ads")) \
+			or (p.id == "sunstone_patron" and _save.entitlements.has("patron"))
 		var t := UiKit.label(p.title, UiKit.display_font(), 24, UiKit.INK)
 		t.position = Vector2(58, y)
 		body.add_child(t)
@@ -1904,7 +1962,8 @@ func _fill_charms(body: Control) -> void:
 		var costs: Array = ch.costs
 		var btn: UiKit.GlyphButton
 		if tier >= costs.size():
-			btn = UiKit.GlyphButton.new("Complete", UiKit.GlyphButton.Kind.SECONDARY)
+			var by_pass := _save.has_pass() and _save.charm_bought(ch.id) < costs.size()
+			btn = UiKit.GlyphButton.new("By the Pass" if by_pass else "Complete", UiKit.GlyphButton.Kind.SECONDARY)
 		else:
 			var cost: int = costs[tier]
 			btn = UiKit.GlyphButton.new(UiKit.thousands(cost),
@@ -1989,6 +2048,7 @@ func show_reward_offer(reward: int) -> bool:
 # ----------------------------------------------------------- second wind ---
 
 ## After a fall or a crash: rise again for sun-drops, while the ring counts down.
+## [cost] 0 = the Sunstone Pass pays (no ad offered then).
 func show_second_wind(cost: int, held: int) -> void:
 	_hide_all()
 	if _offer:
@@ -2004,21 +2064,23 @@ func show_second_wind(cost: int, held: int) -> void:
 	ring.position = Vector2(410, 140)
 	ring.size = Vector2(130, 130)
 	page.add_child(ring)
-	var held_l := UiKit.label("You hold %s" % UiKit.thousands(held), UiKit.text_font(900), 24, UiKit.CINNABAR)
+	var held_l := UiKit.label("The Pass carries you" if cost == 0 else "You hold %s" % UiKit.thousands(held),
+		UiKit.text_font(900), 24, UiKit.CINNABAR)
 	held_l.position = Vector2(58, 296)
 	page.add_child(held_l)
 	var can_pay := held >= cost
-	var rise := UiKit.GlyphButton.new("Rise for %d" % cost, UiKit.GlyphButton.Kind.PRIMARY)
-	rise.font_size = 22 if _ads.rewarded_ready() else 30
+	var by_ad := _ads.rewarded_ready() and cost > 0
+	var rise := UiKit.GlyphButton.new("Rise again" if cost == 0 else "Rise for %d" % cost, UiKit.GlyphButton.Kind.PRIMARY)
+	rise.font_size = 22 if by_ad else 30
 	rise.position = Vector2(56, 342)
-	rise.size = Vector2(238 if _ads.rewarded_ready() else 488, 108)
+	rise.size = Vector2(238 if by_ad else 488, 108)
 	rise.visible = can_pay
 	page.add_child(rise)
 	var watch := UiKit.GlyphButton.new("Watch to rise", UiKit.GlyphButton.Kind.PRIMARY)
 	watch.font_size = 22 if can_pay else 30
 	watch.position = Vector2(306 if can_pay else 56, 342)
 	watch.size = Vector2(238 if can_pay else 488, 108)
-	watch.visible = _ads.rewarded_ready()
+	watch.visible = by_ad
 	page.add_child(watch)
 	var no := UiKit.GlyphButton.new("Let it end", UiKit.GlyphButton.Kind.SECONDARY)
 	no.font_size = 26

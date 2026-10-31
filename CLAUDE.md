@@ -156,7 +156,12 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   non-consumable store products whose server grant is an entitlement equal to
   the item's id (`save.owns()` checks both). Product ids must match
   `sunstone-api` Purchases/Products.cs and Play Console. Sun-drop packs are the
-  consumables. Boosts (Ember shield, Jaguar ward, Head start) are bought/used totals in the
+  consumables. The **Sunstone Pass** (`sunstone_pass`, Shop "Pass" tab; base plans
+  `monthly`/`yearly` with trials `trial-3d`/`trial-7d`) is the one subscription: while
+  the server lists `pass` in the entitlements, `save.has_pass()` makes `owns()` true for
+  every look, `charm_tier()` 3 (`charm_bought()` is what's kept), `no_ads` true and
+  Second wind free. It isn't merged from the cloud; `pass_seen` expires after 7 days
+  without the server, and looks only the pass gave come off when it ends. Boosts (Ember shield, Jaguar ward, Head start) are bought/used totals in the
   save, used automatically in a run.
 - The shop's 3D preview is a SubViewport with its own world; it is painted
   because the title's daylight flood covers it — only open the shop on the title.

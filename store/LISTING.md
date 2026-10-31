@@ -152,10 +152,13 @@ Re-create or reset them any time with `dotnet run manage-test-users.cs` in
 - "Contains ads": **Yes**.
 - AdMob app + units: *(user creates; IDs go in the gitignored config, see CLAUDE.md)*.
 
-## In-app products (create in Play Console → Monetize → In-app products)
+## In-app products (Play Console → Monetize with Play → Products)
 
 Must match `sunstone-api/src/Sunstone.Api/Purchases/Products.cs` and
-`scripts/store.gd` exactly. All one-time products (not subscriptions).
+`scripts/shop.gd` / `scripts/store.gd` exactly. All created and active in Play
+Console (Oct 31, 2026). One-time products each have one purchase option `buy`
+(Buy, backwards compatible), 174 countries, priced from USD. Play Billing
+Library 9.1.0 (billing plugin 3.3.0).
 
 | Product ID | Name | Description | Suggested price | Type in game |
 |---|---|---|---|---|
@@ -164,6 +167,21 @@ Must match `sunstone-api/src/Sunstone.Api/Purchases/Products.cs` and
 | `sunstone_drops_small` | A pouch of sun-drops | 1,000 sun-drops. | US$0.99 | consumable |
 | `sunstone_drops_medium` | A jar of sun-drops | 5,500 sun-drops. | US$3.99 | consumable |
 | `sunstone_drops_large` | A chest of sun-drops | 12,000 sun-drops. | US$7.99 | consumable |
+| `sunstone_char_nina` | Nina | A runner of her own. | US$1.99 | non-consumable (look) |
+| `sunstone_outfit_serpent` | Feathered serpent outfit | Outfit. | US$1.99 | non-consumable (look) |
+| `sunstone_hat_crown` | Quetzal crown | Hat. | US$1.99 | non-consumable (look) |
+
+### Subscription: `sunstone_pass` — Sunstone Pass
+
+Benefits: every runner, outfit, hat and stone hue; all charms at full
+strength; no ads between runs; Second wind without sun-drops. The server
+grants the `pass` entitlement while Play says it runs (verify, RTDN
+subscription notifications, a refresh when it lapses); refunds end it.
+
+| Base plan | Price | Grace period | Offer (new customers, never had this subscription) |
+|---|---|---|---|
+| `monthly` (auto-renewing) | US$2.99 | 7 days | `trial-3d`: 3 days free |
+| `yearly` (auto-renewing) | US$21.99 (~39% off 12 × monthly) | 14 days | `trial-7d`: 7 days free |
 
 ## Release checklist
 

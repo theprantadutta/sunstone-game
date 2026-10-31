@@ -502,7 +502,7 @@ func _die(cause: String, fell := false, caught := false) -> void:
 func _second_wind(paid_by_ad := false) -> void:
 	if state != State.OFFER:
 		return
-	if not paid_by_ad:
+	if not paid_by_ad and not save.has_pass():
 		if save.bank < Market.SECOND_WIND_COST:
 			return
 		save.bank -= Market.SECOND_WIND_COST
@@ -1366,9 +1366,9 @@ func _step_death(delta: float) -> void:
 	_update_camera(delta)
 	_push_codex()
 	if _death_t > 1.35:
-		if not _second_wind_used and (save.bank >= Market.SECOND_WIND_COST or ads.rewarded_ready()):
+		if not _second_wind_used and (save.has_pass() or save.bank >= Market.SECOND_WIND_COST or ads.rewarded_ready()):
 			state = State.OFFER
-			ui.show_second_wind(Market.SECOND_WIND_COST, save.bank)
+			ui.show_second_wind(0 if save.has_pass() else Market.SECOND_WIND_COST, save.bank)
 		else:
 			_finish_run()
 

@@ -23,6 +23,10 @@ const PRODUCTS := [
 
 var open := false ## the server's switch (GAME_STORE_OPEN)
 var prices := {} ## product id → formatted price from the store
+## The pass's plans as Play offers them to this player: base plan id →
+## {price, trial_days, offer_id} (offer_id "" = no trial; Play leaves the
+## trial out once it's been used).
+var pass_plans := {}
 var _billing: BillingClient
 var _apple: Node ## apple_store.gd, on iOS
 var _online: Online
@@ -51,6 +55,24 @@ func setup(online: Online, save: SaveData) -> void:
 	_billing.query_purchases_response.connect(_on_purchases)
 	_billing.start_connection()
 
+## The pass can be bought here (Play only for now).
+func pass_ready() -> bool:
+	return open and _billing != null and _billing.is_ready() and not pass_plans.is_empty()
+
+func buy_pass(plan: String) -> void:
+	if not pass_ready() or not pass_plans.has(plan):
+		purchase_finished.emit(Shop.PASS_ID, "The Pass isn't on sale here yet.")
+		return
+	var offer: String = pass_plans[plan].offer_id
+	var r: Dictionary = _billing.purchase_subscription(Shop.PASS_ID, plan, offer)
+	if int(r.get("response_code", 0)) != BillingClient.BillingResponseCode.OK:
+		purchase_finished.emit(Shop.PASS_ID, "Google Play couldn't start the purchase.")
+
+## Play's own page for the pass (cancel, change plan, payment).
+func manage_pass() -> void:
+	if _billing:
+		_billing.open_subscriptions_page(Shop.PASS_ID)
+
 ## The store can sell right now.
 func ready_to_sell() -> bool:
 	if _apple != null:
@@ -73,6 +95,7 @@ func buy(product_id: String) -> void:
 func restore() -> void:
 	if _billing and _billing.is_ready():
 		_billing.query_purchases(BillingClient.ProductType.INAPP)
+		_billing.query_purchases(BillingClient.ProductType.SUBS)
 	if _apple != null:
 		_apple.restore()
 	restore_owned()
@@ -86,21 +109,63 @@ func request_review() -> void:
 func restore_owned() -> void:
 	if _online:
 		var owned: Variant = await _online.entitlements()
-		if owned != null and _save.set_entitlements(owned):
+		if owned == null:
+			return
+		var changed := _save.set_entitlements(owned)
+		changed = _save.set_pass(owned.has("pass")) or changed
+		if changed:
 			_save.save_to_disk()
 			products_changed.emit()
 
 func _on_connected() -> void:
 	_billing.query_product_details(Shop.product_ids(), BillingClient.ProductType.INAPP)
+	_billing.query_product_details(PackedStringArray([Shop.PASS_ID]), BillingClient.ProductType.SUBS)
 	restore()
 
 func _on_product_details(response: Dictionary) -> void:
 	if int(response.get("response_code", -1)) != BillingClient.BillingResponseCode.OK:
 		return
 	for d in response.get("product_details", []):
+		if str(d.get("product_id", "")) == Shop.PASS_ID:
+			_read_pass(d)
+			continue
 		var offer: Dictionary = d.get("one_time_purchase_offer_details", {})
 		prices[str(d.get("product_id", ""))] = str(offer.get("formatted_price", ""))
 	products_changed.emit()
+
+## The pass's offers: per base plan, the price that repeats and the free
+## trial if Play offers this player one.
+func _read_pass(d: Dictionary) -> void:
+	pass_plans.clear()
+	for o in d.get("subscription_offer_details", []):
+		var plan := str(o.get("base_plan_id", ""))
+		var phases: Variant = o.get("pricing_phases", [])
+		if phases is Dictionary:
+			phases = phases.get("pricing_phase_list", [])
+		var price := ""
+		var trial := 0
+		for ph in phases:
+			if int(ph.get("price_amount_micros", 0)) == 0:
+				trial = _days(str(ph.get("billing_period", "")))
+			else:
+				price = str(ph.get("formatted_price", ""))
+		var entry: Dictionary = pass_plans.get(plan, {"price": price, "trial_days": 0, "offer_id": ""})
+		if price != "":
+			entry.price = price
+		if trial > 0:
+			entry.trial_days = trial
+			entry.offer_id = str(o.get("offer_id", ""))
+		pass_plans[plan] = entry
+
+## "P3D" / "P1W" / "P1M" → days.
+static func _days(period: String) -> int:
+	var n := int(period.substr(1, period.length() - 2))
+	match period.right(1):
+		"D": return n
+		"W": return n * 7
+		"M": return n * 30
+		"Y": return n * 365
+	return 0
 
 func _on_purchases(response: Dictionary) -> void:
 	var code := int(response.get("response_code", -1))
@@ -155,7 +220,9 @@ func _verify(product_id: String, token: String, store_name: String) -> Dictionar
 	var body: Dictionary = res.body
 	if body.get("granted", false):
 		_save.bank += int(body.get("drops", 0))
-	_save.set_entitlements(body.get("entitlements", []))
+	var keys: Array = body.get("entitlements", [])
+	_save.set_entitlements(keys)
+	_save.set_pass(keys.has("pass"))
 	_save.save_to_disk()
 	_online.queue_sync()
 	return res
@@ -163,4 +230,9 @@ func _verify(product_id: String, token: String, store_name: String) -> Dictionar
 func _granted(product_id: String, body: Dictionary) -> void:
 	_online.track("purchase", {"product": product_id, "granted": body.get("granted", false)})
 	products_changed.emit()
-	purchase_finished.emit(product_id, "Thank you, patron." if product_id == "sunstone_patron" else "Received.")
+	var message := "Received."
+	if product_id == "sunstone_patron":
+		message = "Thank you, patron."
+	elif product_id == Shop.PASS_ID:
+		message = "The Pass is yours. Everything is open."
+	purchase_finished.emit(product_id, message)
