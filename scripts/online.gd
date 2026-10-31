@@ -37,7 +37,7 @@ var base_url := DEV_BASE if OS.is_debug_build() and OS.get_name() != "iOS" else 
 var player := {} ## {id, name, isAnonymous} once signed in
 var push_token := "" ## this phone's notification token (Push), forgotten on sign-out
 var reachable := false ## the last call to our server got an answer
-var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, storeOpen…
+var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, minBuild…
 
 var _api_key := ""
 var _state := {} ## refresh_token, jwt, jwt_exp, player, save_revision, links

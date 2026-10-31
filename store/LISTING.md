@@ -197,6 +197,6 @@ subscription notifications, a refresh when it lapses); refunds end it.
 5. Replace `sunstone-api/google-play-service-account.json` (currently a copy of the
    Firebase admin key) with a real Play service account, invited in Play Console
    with "View financial data" — then purchases verify.
-6. Create the in-app products above; set `GAME_STORE_OPEN=true` on the server.
+6. Create the in-app products above (the store is always open; no server switch).
 7. AdMob: app + rewarded + interstitial units → config; `GAME_ADS_ENABLED=true`.
 8. Closed test (12 testers × 14 days if your account needs it) → production.

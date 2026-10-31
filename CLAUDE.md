@@ -273,7 +273,7 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   Google's TEST ad units and test app id — never use live ad ids in development.
   `scripts/ads.gd` (consent → init → rewarded/interstitial, paced),
   `scripts/store.gd` (Play Billing; every purchase verified by the server).
-  The server's `/config` switches ads and the store on/off.
+  The server's `/config` switches ads on/off; the store (Play and App Store) is always open.
 - **Live ad ids (never committed):** `ads_config.json` in the repo root
   (`{"android": {"rewarded", "interstitial", "rewarded_interstitial"}, "ios": {…}}`,
   shipped with exports) and the AdMob App IDs in `override.cfg` (`[admob]` /

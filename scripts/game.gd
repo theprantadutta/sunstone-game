@@ -217,7 +217,6 @@ func _ready() -> void:
 	add_child(updates)
 	online.config_loaded.connect(func(c: Dictionary):
 		ads.configure(c.get("adsEnabled", false), int(c.get("interstitialEveryRuns", 4)), save.has_entitlement("no_ads"))
-		store.open = c.get("storeOpen", false)
 		updates.set_min_build(int(c.get("minBuild", 0)))
 		# The server may switch a seasonal event on or off.
 		var before := Themes.event_id()

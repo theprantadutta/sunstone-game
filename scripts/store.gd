@@ -21,7 +21,6 @@ const PRODUCTS := [
 	{"id": "sunstone_drops_large", "title": "A chest of sun-drops", "text": "12,000 sun-drops.", "drops": 12000},
 ]
 
-var open := false ## the server's switch (GAME_STORE_OPEN)
 var prices := {} ## product id → formatted price from the store
 ## The pass's plans as Play offers them to this player: base plan id →
 ## {price, trial_days, offer_id} (offer_id "" = no trial; Play leaves the
@@ -57,7 +56,7 @@ func setup(online: Online, save: SaveData) -> void:
 
 ## The pass can be bought here (Play only for now).
 func pass_ready() -> bool:
-	return open and _billing != null and _billing.is_ready() and not pass_plans.is_empty()
+	return _billing != null and _billing.is_ready() and not pass_plans.is_empty()
 
 func buy_pass(plan: String) -> void:
 	if not pass_ready() or not pass_plans.has(plan):
@@ -76,8 +75,8 @@ func manage_pass() -> void:
 ## The store can sell right now.
 func ready_to_sell() -> bool:
 	if _apple != null:
-		return open and _apple.ready_to_sell()
-	return open and _billing != null and _billing.is_ready() and not prices.is_empty()
+		return _apple.ready_to_sell()
+	return _billing != null and _billing.is_ready() and not prices.is_empty()
 
 func buy(product_id: String) -> void:
 	if not ready_to_sell():
