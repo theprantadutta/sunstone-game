@@ -38,6 +38,7 @@ var player := {} ## {id, name, isAnonymous} once signed in
 var push_token := "" ## this phone's notification token (Push), forgotten on sign-out
 var reachable := false ## the last call to our server got an answer
 var config := {} ## the server's switches: adsEnabled, interstitialEveryRuns, minBuild…
+var firebase: Firebase ## Analytics + Crashlytics: gets every tracked event and the player id
 
 var _api_key := ""
 var _state := {} ## refresh_token, jwt, jwt_exp, player, save_revision, links
@@ -113,6 +114,8 @@ func _sign_in() -> bool:
 	_state.player = player
 	_write_state()
 	print("[online] signed in as %s (guest: %s)" % [player.get("name", "?"), player.get("isAnonymous", "?")])
+	if firebase:
+		firebase.set_user(str(player.get("id", "")))
 	signed_in.emit(player)
 	return true
 
@@ -206,6 +209,8 @@ func delete_account() -> bool:
 			{"idToken": token}, _firebase_headers())
 	_state = {}
 	player = {}
+	if firebase:
+		firebase.set_user("")
 	_outbox.clear()
 	_write_state()
 	_write_json(OUTBOX_PATH, _outbox)
@@ -396,6 +401,8 @@ func sign_out() -> String:
 	print("[online] signed out")
 	_state = {}
 	player = {}
+	if firebase:
+		firebase.set_user("")
 	_write_state()
 	return ""
 
@@ -516,9 +523,16 @@ func sync_save() -> bool:
 # --------------------------------------------------------------- analytics
 
 func track(event: String, props := {}) -> void:
+	if firebase:
+		firebase.event(event, props)
 	_events.append({"name": event, "at": Time.get_datetime_string_from_system(true) + "Z", "props": props})
 	if _events.size() >= 20:
 		_flush_events()
+
+## Sends what's queued now (the app is going to the background, and may not
+## come back before the 30 s timer).
+func flush_now() -> void:
+	_flush_events()
 
 func _flush_events() -> void:
 	if _events.is_empty() or _state.get("jwt", "") == "":

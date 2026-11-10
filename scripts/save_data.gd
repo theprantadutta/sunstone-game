@@ -23,6 +23,7 @@ var bank: int: ## sun-drops to spend; assigning records an earning or a spend
 		else:
 			spent += (earned - spent) - v
 var runs := 0
+var launches := 0 ## times the game was opened on this phone (first-launch funnel)
 var tutorial_runs := 0 ## move hints show for the first two runs
 var taught := {} ## hint id → true once the player has learned it (each shows until then)
 
@@ -103,6 +104,7 @@ func _apply(d: Dictionary) -> void:
 	earned = int(d.get("earned", d.get("bank", 0)))
 	spent = int(d.get("spent", 0))
 	runs = int(d.get("runs", 0))
+	launches = int(d.get("launches", 0))
 	tutorial_runs = int(d.get("tutorial_runs", 0))
 	var tg: Variant = d.get("taught", {})
 	taught = tg if tg is Dictionary else {}
@@ -151,7 +153,7 @@ func _apply(d: Dictionary) -> void:
 func to_dict() -> Dictionary:
 	return {
 		"version": VERSION,
-		"best": best, "earned": earned, "spent": spent, "bank": bank, "runs": runs, "tutorial_runs": tutorial_runs, "taught": taught,
+		"best": best, "earned": earned, "spent": spent, "bank": bank, "runs": runs, "launches": launches, "tutorial_runs": tutorial_runs, "taught": taught,
 		"total_distance": total_distance, "total_drops": total_drops, "best_drops": best_drops,
 		"flares": flares, "deepest_dusk": deepest_dusk, "play_seconds": play_seconds,
 		"deaths": deaths,

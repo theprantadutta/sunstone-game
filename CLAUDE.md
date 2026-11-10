@@ -14,8 +14,8 @@ at the cost of a lump of light. Light is sight (outside it the world is bare
 ink on night paper, and past the stone's reach not even that), and light is
 life: when it fails, the jaguar pack behind you catches up. Head-on hits end
 the run. The UI is the **Codex**
-(Maya codex pages, glyph-block buttons). Store title **Sunstone: Dusk Run**
-(launcher label "Sunstone"), package `com.pranta.sunstone`. Visual identity:
+(Maya codex pages, glyph-block buttons). Store title **Sunstone: Maya Temple Runner**
+(was "Sunstone: Dusk Run" until Nov 2026; launcher label "Sunstone"), package `com.pranta.sunstone`. Visual identity:
 **`DESIGN.md`** — read it before touching UI or 3D art. Roadmap: **`PLAN.md`**.
 The hold-to-blaze version (1.0.x, ruleset 1) is in git history before the
 `lanes` branch.
@@ -61,7 +61,8 @@ scripts/
   themes.gd             characters (look + outfit + price) and seasonal events
                         that restyle Houses, scenery, motes, fire, sky, runner
   online.gd             Firebase Auth (REST, silent guest) → our JWT; run outbox;
-                        leaderboards; account; cloud save merge; analytics
+                        leaderboards; account; cloud save merge; analytics events
+  firebase.gd           Firebase Analytics + Crashlytics through the plugin (release only)
   sfx.gd                audio + vibration
 tools/make_audio.py     synthesizes every sound + the night music (pure Python)
 tools/make_icon.py      app icon, adaptive layers, boot splash
@@ -134,6 +135,20 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   (`save.push_on`). The phone (token, UTC offset, on/off) goes to
   `PUT /push/device` whenever it changes and on resume; sign-out forgets it.
   What to send and when is the server's job (sunstone-api `Push/`).
+- **Analytics and crashes** (`firebase.gd`, plugin `logEvent`/`setUser`/
+  `setCollection`/`recordError`): every `online.track()` event also goes to
+  Firebase Analytics; the first-launch funnel is `app_open` → `title_shown` →
+  `howto_open` / `lesson` → `run_start` → `run_end`. Godot errors (a `Logger`
+  added with `OS.add_logger`) become Crashlytics non-fatals (each place once a
+  session, at most 25); native crashes are Crashlytics NDK's. **Release builds
+  only**: debug exports get manifest meta-data that keeps both off, and the game
+  switches them off too. Firebase starts by itself from resources the export
+  plugin writes out of `google-services.json` at each export
+  (`android/build/res/values/sunstone_firebase.xml`, with a fresh Crashlytics
+  build id), since there's no Google Gradle plugin. Firebase libs are one
+  release train (BoM 33.7.0: messaging 24.1.0, analytics 22.1.2, crashlytics
+  19.3.0): change them together, in the export plugin and the AAR's build.gradle.
+  Don't use `has_method` on the plugin singleton (false for plugin methods).
 - **Taps reach a control twice** (a touch, then an emulated click): custom
   controls act on release only after their own press (`_down`), or toggles
   flip and flip back.

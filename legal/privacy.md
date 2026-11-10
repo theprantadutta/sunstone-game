@@ -2,7 +2,7 @@
 
 Sunstone: Dusk Run ("the game") is made by Pranta Dutta. This policy says what the game collects, why, and how to have it deleted.
 
-Last updated: 4 October 2026.
+Last updated: 10 November 2026.
 
 ## What the game collects
 
@@ -14,7 +14,9 @@ Last updated: 4 October 2026.
 
 **Your progress.** Your save (records, glyphs, sun-drops, what you've bought with them, settings) is stored on our server so you can restore it on a new phone.
 
-**How the game is played.** Small events such as "a run started", "a glyph was claimed" or "a purchase was made", with the time. They help us improve the game. They don't include your name or email.
+**How the game is played.** Small events such as "the game was opened", "a run started", "a glyph was claimed" or "a purchase was made", with the time. They go to our server and to Google Firebase Analytics, which also records basic device information (model, Android version, country, an app-instance ID) and how long the game is used. They help us see where new players get stuck and improve the game. They don't include your name or email; Analytics knows your account only by its random ID.
+
+**Crashes and errors.** If the game crashes or hits an error, Google Firebase Crashlytics sends a report: what went wrong and where in the game's code, the device model, Android version and free memory, and your account's random ID. It is used only to fix bugs.
 
 **Purchases.** If you buy something, Google Play or Apple's App Store handles the payment. We receive the product and the store's proof of purchase (an order number and purchase token from Google, or a signed transaction from Apple), which we check so the item is granted once. We never see your payment details.
 
@@ -26,11 +28,11 @@ The game does not collect your contacts, location, photos or files.
 
 ## How it's used and shared
 
-We use this information to run the game: to sign you in, keep your progress, show the ranks, grant purchases and improve the game. We don't sell it. It is shared only with the services that make the game work: Google Firebase (sign-in and notifications), Apple (Sign in with Apple), Google Play and the App Store (purchases), Google AdMob (ads) and the server that hosts the game's data.
+We use this information to run the game: to sign you in, keep your progress, show the ranks, grant purchases and improve the game. We don't sell it. It is shared only with the services that make the game work: Google Firebase (sign-in, notifications, analytics and crash reports), Apple (Sign in with Apple), Google Play and the App Store (purchases), Google AdMob (ads) and the server that hosts the game's data.
 
 ## Keeping and deleting it
 
-Your data is kept while your account exists. You can delete your account at any time in the game: Settings, Account, Delete account. That removes your runs, ranks, save, events, notification tokens and purchase records from our server and deletes your sign-in account. Purchases already made stay recorded by Google Play or the App Store.
+Your data is kept while your account exists. You can delete your account at any time in the game: Settings, Account, Delete account. That removes your runs, ranks, save, events, notification tokens and purchase records from our server and deletes your sign-in account. Firebase Analytics and Crashlytics data is not linked to your name or email and is deleted by Google after its retention period (Analytics: 14 months; Crashlytics: 90 days). Purchases already made stay recorded by Google Play or the App Store.
 
 You can also ask for deletion by email (below). We will do it within 30 days.
 

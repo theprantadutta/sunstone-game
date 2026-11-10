@@ -29,16 +29,17 @@ DUSK_LOW = (240, 154, 94)
 
 # (raw file, caption, small line) — in store order (Play shows up to 8).
 SHOTS = [
-    ("01_title.png", "Carry the sun", "Through the Maya underworld, one night at a time."),
-    ("02_leap.png", "Swipe, leap, slide", "Three lanes. One wrong move ends the night."),
-    ("03_flare.png", "Tap to flare", "Light the road ahead. Jaguars turn to stone."),
-    ("04_pack.png", "The pack is behind you", "Let your light die and they catch you."),
-    ("05_fire.png", "Six Houses of Xibalba", "Gloom, Knives, Cold, Jaguars, Bats and Fire."),
-    ("06_dawn.png", "Make it to dawn", "Then the next night begins."),
-    ("07_shop.png", "Choose your runner", "Runners, outfits, hats and stones."),
-    ("08_glyphs.png", "Earn twenty-four glyphs", "Every one drawn like a scribe's sign."),
+    # Action first: the store feed shows only the first two or three.
+    ("02_leap.png", "Swipe. Leap. Slide.", "Three lanes through the Maya underworld."),
+    ("04_pack.png", "Outrun the jaguars", "Let your light die and the pack catches you."),
+    ("03_flare.png", "Tap to flare", "Light the road. Turn jaguars to stone."),
+    ("05_fire.png", "Six deadly Houses", "Gloom, Knives, Cold, Jaguars, Bats and Fire."),
+    ("06_dawn.png", "Make it to dawn", "Then the next night runs faster."),
+    ("01_title.png", "Carry the sun", "An endless runner, one night at a time."),
+    ("07_shop.png", "Choose your runner", "Runners, outfits, hats and stone hues."),
+    ("08_glyphs.png", "24 glyphs to earn", "Daily dusk, ranks and gifts every day."),
 ]
-SIZES = {"phone": (1080, 2160, 330), "tablet": (1080, 1920, 320)} # width, height, caption band
+SIZES = {"phone": (1080, 2160, 360), "tablet": (1080, 1920, 340)} # width, height, caption band
 # Where each set goes: Play wants tablet shots in two slots (7- and 10-inch),
 # both 9:16; one 1080x1920 set meets both rules.
 DESTS = {"phone": ["phone"], "tablet": ["tablet-7in", "tablet-10in"]}
@@ -89,8 +90,8 @@ def screenshot(raw, caption, line, kind="phone"):
     bd = ImageDraw.Draw(band)
     rule(bd, 60, W - 60, 36)
     rule(bd, 60, W - 60, band_h - 36)
-    centered(bd, caption, fitted(DELA, caption, 78, W - 140), W / 2, band_h * 0.236, INK)
-    centered(bd, line, fitted(NUNITO, line, 40, W - 140, 900), W / 2, band_h * 0.594, CINNABAR)
+    centered(bd, caption, fitted(DELA, caption, 104, W - 120), W / 2, band_h * 0.19, INK)
+    centered(bd, line, fitted(NUNITO, line, 44, W - 120, 900), W / 2, band_h * 0.62, CINNABAR)
     canvas.paste(band, (0, 0))
     shot = Image.open(raw).convert("RGB")
     # Fit the phone screen below the band, with an ink frame.

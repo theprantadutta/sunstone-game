@@ -13,7 +13,9 @@ App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## App details
 
-- **App name** (30 max): `Sunstone: Dusk Run`
+- **App name** (30 max): `Sunstone: Maya Temple Runner` (was "Sunstone: Dusk Run"
+  until Nov 2026; the new one carries the words people search for: Maya,
+  temple, runner. The launcher label stays "Sunstone".)
 - **Package**: `com.pranta.sunstone`
 - **Category**: Game → Arcade
 - **Tags**: Runner, Arcade, Casual, Offline (playable offline)
@@ -23,13 +25,13 @@ App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## Short description (80 max)
 
-Carry the sun through the Maya underworld. Swipe, leap, and flare to dawn.
+Endless runner in a Maya temple. Swipe, leap, slide and outrun the jaguars!
 
 ## Full description (4000 max)
 
 Every night, the sun goes down into Xibalba, the Maya underworld, and must cross it to rise again at dawn. Tonight, you carry it.
 
-Sunstone: Dusk Run is a runner where your light is everything. Your Sunstone is the only light on a winding causeway through the dark: it shows you the road, and it keeps the jaguars away.
+Sunstone is an endless runner where your light is everything. Your Sunstone is the only light on a winding temple causeway through the dark: it shows you the road, and it keeps the jaguars away.
 
 SWIPE, LEAP, SLIDE
 Three lanes and sudden death. Swipe left and right round fallen stelae, swipe up to leap low walls and pits, swipe down to slide under stone lintels and diving bats. Hit something head-on and the night is over.
@@ -71,7 +73,7 @@ Special nights arrive with the seasons, with new scenery, new looks and new surp
 MADE FOR ONE THUMB
 Simple to pick up, hard to master. Play in short bursts or chase one more dawn. Your progress is saved to your account, so sign in with Google to keep it on any phone.
 
-Sunstone: Dusk Run is free to play. It contains ads and optional in-app purchases. You can remove ads with a one-time purchase.
+Sunstone is free to play. It contains ads and optional in-app purchases: remove ads with a one-time purchase, or open everything with the Sunstone Pass (monthly or yearly, with a free trial).
 
 Carry the sun. Make it to dawn.
 

@@ -206,6 +206,8 @@ func _ready() -> void:
 	save.load_from_disk()
 	online = Online.new()
 	add_child(online)
+	online.firebase = Firebase.new()
+	add_child(online.firebase)
 	ads = Ads.new()
 	add_child(ads)
 	store = Store.new()
@@ -297,6 +299,12 @@ func _ready() -> void:
 		if state == State.TITLE:
 			_spawn_runner()
 			ui.show_title(save))
+	# First-launch funnel: open → title → (how to play) → lessons → first run.
+	# Queued now, sent once the guest session exists.
+	save.launches += 1
+	save.save_to_disk()
+	online.track("app_open", {"launches": save.launches, "runs": save.runs,
+		"version": str(ProjectSettings.get_setting("application/config/version", ""))})
 	online.start(save)
 	if FileAccess.file_exists("user://perf_noui"):
 		ui.visible = false
@@ -883,6 +891,7 @@ func _hint(key: String, text: String, learned_on_show := true, gesture := UiKit.
 func _learn(key: String) -> void:
 	if not save.taught.has(key) and _hints.has(key):
 		save.taught[key] = true
+		online.track("lesson", {"key": key, "runs": save.runs})
 		ui.dismiss_hint()
 	if _coach == key:
 		_end_coach()
@@ -1607,6 +1616,8 @@ func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
 			_pause()
+			if online:
+				online.flush_now()
 		NOTIFICATION_APPLICATION_RESUMED:
 			# Notifications may have been allowed in the phone's settings meanwhile.
 			if push:

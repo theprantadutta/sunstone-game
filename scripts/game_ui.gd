@@ -66,6 +66,7 @@ var _menu_icons := {} ## page name → GlyphIcon, for badges
 var _market: Control
 var _market_body: Control
 var _market_tab := 0
+var _title_tracked := false ## title_shown is sent once per session
 var _market_note: Label
 var _offer: Control
 var _day_tag: Label
@@ -397,6 +398,9 @@ func _build_title() -> void:
 func show_title(save: SaveData) -> void:
 	# Shown again while already up (progress synced, a look changed): no replay.
 	var already := _title.visible and not _hud.visible
+	if not _title_tracked and _online:
+		_title_tracked = true
+		_online.track("title_shown", {"runs": save.runs, "launches": save.launches})
 	_hide_all()
 	if save.best > 0:
 		_best.set_text("Best %s m" % UiKit.thousands(save.best), save.best)
@@ -2217,6 +2221,8 @@ const HOWTO := [
 ## How to play: the swipes, the flare, the light and the pack, on one
 ## scrolling codex page.
 func _open_howto() -> void:
+	if _online:
+		_online.track("howto_open", {"runs": _save.runs})
 	if _howto:
 		_howto.queue_free()
 	var vp := get_viewport().get_visible_rect().size

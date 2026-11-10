@@ -2,7 +2,7 @@
 
 This policy covers purchases in Sunstone: Dusk Run ("the game"), made by Pranta Dutta.
 
-Last updated: 3 October 2026.
+Last updated: 10 November 2026.
 
 ## Who handles payments
 
@@ -16,9 +16,13 @@ You pay Google Play (on Android) or Apple's App Store (on iPhone and iPad), not 
 
 ## When we'll help
 
-- **Something you paid for didn't arrive.** First try Market, Restore purchases. If it still isn't there, email us with the order number and we will grant it or support your refund.
+- **Something you paid for didn't arrive.** First try Shop, Treasury, Restore purchases. If it still isn't there, email us with the order number and we will grant it or support your refund.
 - **Charged twice, or bought by mistake.** Email us soon after. On Google Play we can refund it. On the App Store, ask Apple and we will back up your request.
 - **Sun-drop packs you've already spent.** These are usually not refunded, except where the law says otherwise.
+
+## The Sunstone Pass (subscription)
+
+Cancel any time in Google Play (Payments & subscriptions, Subscriptions) and you won't be charged again; the Pass stays until the end of the month or year you've paid for. Cancel during the free trial and you pay nothing. Google Play handles subscription refunds under its own rules; within 48 hours of a charge you can usually ask Google directly as above, and after that email us with the order number. A refunded Pass ends straight away.
 
 ## What can't be refunded
 
@@ -26,11 +30,11 @@ Sun-drops and everything bought with them only exist inside the game and have no
 
 ## After a refund
 
-When a purchase is refunded, what it granted (sun-drops, Remove ads, Patron) may be taken back from your account.
+When a purchase is refunded, what it granted (sun-drops, Remove ads, Patron, the looks sold on their own, or the Sunstone Pass) may be taken back from your account.
 
 ## Keeping what you bought
 
-Remove ads and Patron stay with the Google or Apple account you bought them with. On a new phone, or after reinstalling, sign in to the same store account and use Market, Restore purchases. Sun-drop packs are added to your save, and that comes back if you signed in with Google or Apple in the game (Settings, Account).
+Remove ads and Patron stay with the Google or Apple account you bought them with. On a new phone, or after reinstalling, sign in to the same store account and use Shop, Treasury, Restore purchases. Sun-drop packs are added to your save, and that comes back if you signed in with Google or Apple in the game (Settings, Account).
 
 If you delete your account in the game, your saved progress, including sun-drops from packs, is deleted with it. Remove ads and Patron can still be restored from the store.
 

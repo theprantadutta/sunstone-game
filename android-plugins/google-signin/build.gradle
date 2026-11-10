@@ -1,6 +1,7 @@
 // Sunstone's own Android bits: Google sign-in (Android's Credential Manager),
 // the display refresh rate, Play in-app updates, sharing a run card, and
-// notifications (Firebase Cloud Messaging). A Godot Android plugin (v2). Builds an AAR into addons/sunstone_google_signin/bin,
+// notifications (Firebase Cloud Messaging), Firebase Analytics events and
+// Crashlytics (crashes, and script errors as non-fatals). A Godot Android plugin (v2). Builds an AAR into addons/sunstone_google_signin/bin,
 // which the export plugin there hands to Godot's Gradle build. Versions follow
 // the Godot 4.7.2 Android build template (AGP 8.6.1, Kotlin 2.1.21, SDK 36).
 //
@@ -36,6 +37,8 @@ dependencies {
     compileOnly 'com.google.android.play:app-update:2.1.0'
     compileOnly 'androidx.core:core:1.13.1'
     compileOnly 'com.google.firebase:firebase-messaging:24.1.0'
+    compileOnly 'com.google.firebase:firebase-analytics:22.1.2'
+    compileOnly 'com.google.firebase:firebase-crashlytics:19.3.0'
 }
 
 tasks.register('copyAar', Copy) {

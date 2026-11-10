@@ -17,6 +17,10 @@ import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import android.os.Bundle
+import org.godotengine.godot.Dictionary
 import android.os.Build
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -45,8 +49,10 @@ import org.godotengine.godot.plugin.UsedByGodot
  * Google account sheet (Credential Manager) and hands the game a Google ID
  * token, which the game passes to Firebase Auth to link the player's guest
  * account. The display's refresh rate (see [setRefreshRate]). Play's
- * in-app updates (see [checkUpdate]). Sharing a run card. And notifications
- * through Firebase Cloud Messaging (see [initPush]).
+ * in-app updates (see [checkUpdate]). Sharing a run card. Notifications
+ * through Firebase Cloud Messaging (see [initPush]). And Firebase Analytics
+ * and Crashlytics (see [logEvent]); Firebase starts by itself from the
+ * resources the export plugin writes out of google-services.json.
  */
 class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
 
@@ -298,6 +304,85 @@ class GoogleSignInPlugin(godot: Godot) : GodotPlugin(godot) {
             }
         }
     }
+
+    // ------------------------------------------------ analytics and crashes
+
+    /**
+     * Turns Analytics and Crashlytics on or off for this install (the game
+     * switches them off in debug builds, so testing doesn't count).
+     */
+    @UsedByGodot
+    fun setCollection(enabled: Boolean) {
+        val act = activity ?: return
+        try {
+            FirebaseAnalytics.getInstance(act).setAnalyticsCollectionEnabled(enabled)
+            FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(enabled)
+        } catch (e: Exception) {
+            // Firebase not configured in this build (no google-services.json)
+        }
+    }
+
+    /** One Analytics event; [params] values are strings, numbers or bools. */
+    @UsedByGodot
+    fun logEvent(name: String, params: Dictionary) {
+        val act = activity ?: return
+        try {
+            val b = Bundle()
+            for ((k, v) in params) {
+                when (v) {
+                    is String -> b.putString(k, v.take(100))
+                    is Int -> b.putLong(k, v.toLong())
+                    is Long -> b.putLong(k, v)
+                    is Float -> b.putDouble(k, v.toDouble())
+                    is Double -> b.putDouble(k, v)
+                    is Boolean -> b.putLong(k, if (v) 1L else 0L)
+                    null -> {}
+                    else -> b.putString(k, v.toString().take(100))
+                }
+            }
+            FirebaseAnalytics.getInstance(act).logEvent(name, b)
+        } catch (e: Exception) {
+        }
+    }
+
+    /** Our player id (a server GUID, nothing personal) on events and crashes. */
+    @UsedByGodot
+    fun setUser(id: String) {
+        val act = activity ?: return
+        try {
+            FirebaseAnalytics.getInstance(act).setUserId(id.ifEmpty { null })
+            FirebaseCrashlytics.getInstance().setUserId(id)
+        } catch (e: Exception) {
+        }
+    }
+
+    /** A line in the log that goes with the next crash report. */
+    @UsedByGodot
+    fun crashLog(line: String) {
+        try {
+            FirebaseCrashlytics.getInstance().log(line)
+        } catch (e: Exception) {
+        }
+    }
+
+    /**
+     * A script or engine error as a Crashlytics non-fatal. [where] is
+     * "file:line function", made the top frame so each error groups by place.
+     */
+    @UsedByGodot
+    fun recordError(message: String, where: String) {
+        try {
+            val error = ScriptError(message)
+            val file = where.substringBefore(':').ifEmpty { "godot" }
+            val line = where.substringAfter(':', "0").substringBefore(' ').toIntOrNull() ?: 0
+            val function = where.substringAfter(' ', "").ifEmpty { "?" }
+            error.stackTrace = arrayOf(StackTraceElement("GDScript", function, file, line))
+            FirebaseCrashlytics.getInstance().recordException(error)
+        } catch (e: Exception) {
+        }
+    }
+
+    class ScriptError(message: String) : Exception(message)
 
     // -------------------------------------------------------- notifications
 
