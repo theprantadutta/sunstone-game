@@ -6,6 +6,26 @@ Xcode. This is written for a coding agent (or a person) on that Mac. Read
 key files. Ask the owner before touching any external account (App Store
 Connect, Firebase, AdMob). Commit messages carry no co-author or AI lines.
 
+## Before anything else: three files from the owner
+
+A fresh clone on the Mac is missing three gitignored files that only live on
+the owner's Windows PC. **At the start of a Mac session, check for them and, if
+any is missing, ask the owner to copy them over** (AirDrop or USB, never chat
+or email). Everything else the Mac needs is already on the Mac.
+
+| File (repo-relative) | What it holds | Without it |
+|---|---|---|
+| `ads_config.json` | Live AdMob ad unit ids (`android` and `ios` blocks) | Release builds show no ads |
+| `override.cfg` | Live AdMob App IDs (`[admob]` `general/android/app_id`, `general/ios/app_id`) | Release builds keep Google's test App ID |
+| `.godot/export_credentials.cfg` | The export presets' saved passwords (keystore and signing) | Release exports can't sign |
+
+Copy `.godot/export_credentials.cfg` as that one file only, not the rest of
+`.godot/` (a cache Godot rebuilds). All three stay gitignored: never commit them.
+
+```bash
+for f in ads_config.json override.cfg .godot/export_credentials.cfg; do [ -f "$f" ] || echo "MISSING: $f"; done
+```
+
 ## What already exists
 
 | Piece | Where | State |
