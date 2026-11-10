@@ -152,9 +152,13 @@ xcrun simctl launch --console booted com.pranta.sunstone   # game prints show he
    in object file built for iOS"). A native plugin has no simulator slice:
    the AdMob iOS libs (`addons/admob/ios/bin`) or GodotApplePlugins. For a
    Simulator-only build, leave that plugin out of the export (its plugin
-   checkbox in the iOS preset, or `exclude_filter`) and build again. The game
-   runs without either: `ads.gd` and `store.gd` check for the singletons, and
-   the store then just says it's closed. Put them back for device builds.
+   checkbox in the iOS preset, or `exclude_filter`) and build again. Without GodotApplePlugins
+   the game is fine: `apple_store.gd` checks `ClassDB.class_exists("StoreKitManager")`
+   and the store just says it's closed. Without the AdMob libs it's
+   **unverified**: `ads.gd` calls the addon's `MobileAds` wrapper
+   (`MobileAds.initialize`), which should only warn when its native singleton is
+   missing; if it errors instead, guard that call with `Engine.has_singleton(...)`
+   for Simulator builds. Put both back for device builds.
 3. **Google Mobile Ads package won't resolve.** Xcode pulls it through Swift
    Package Manager on the first build; it needs network access. File → Packages
    → Reset Package Caches, then build again.
