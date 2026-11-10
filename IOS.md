@@ -71,7 +71,9 @@ on Android. Keep it that way. Naming `StoreKitManager`, `StoreTransaction` or
    - `https://github.com/theprantadutta/sunstone-game` (public)
    - `https://github.com/theprantadutta/sunstone-api` (private)
 
-   Then ask the owner to copy over the gitignored files, which never go to GitHub:
+   On the owner's own Mac everything below is already in place except the three
+   files at the top of this doc. On a different Mac, ask the owner for these
+   gitignored files too (they never go to GitHub):
    - `google-services.json`, `ads_config.json`, `override.cfg`;
    - `addons/admob/ios/bin/` (AdMob iOS libs). If it is missing, unzip `ios-template-v4.7.2.zip` into it, keeping at least `ads/` and `package.gd`. The zip is at https://github.com/poingstudios/godot-admob-plugin/releases/download/v5.1.0/ios-template-v4.7.2.zip.
    - `GoogleService-Info.plist`, from step 4 above.
@@ -89,8 +91,8 @@ on Android. Keep it that way. Naming `StoreKitManager`, `StoreTransaction` or
    - Open the project and turn on automatic signing with the team. Xcode resolves the Google Mobile Ads Swift package; it needs network access.
    - Check that the **Sign in with Apple** and **In-App Purchase** capabilities show in Signing & Capabilities. Add them there if the entitlement didn't carry.
    - Run on a real iPhone.
-6. **Test on the device** (debug build = Google test ads, LAN dev API):
-   - The dev API at `http://192.168.0.141:8395` must be running on the PC (see `../sunstone-api`). iOS asks for **local network** access the first time; allow it. If requests still fail, check ATS. The preset sets `NSAllowsLocalNetworking`, and a `files/api_base` file in the app's user dir overrides the base URL.
+6. **Test on the device** (debug build = Google test ads, **production API**):
+   - On iOS every build calls `https://sunstone.pranta.dev` (`online.gd`: the LAN dev API is used only by Android debug builds), so test runs and guests land in the production database. To use a local API instead, put its URL in a `files/api_base` file in the app's user dir. iOS asks for **local network** access the first time; allow it. The preset sets `NSAllowsLocalNetworking` for this.
    - Sign-in: a guest account appears and runs and the cloud save sync. Watch the Xcode console for `[online]` lines.
    - **Ads**:
      - the consent form, then the ATT prompt (if the IDFA message is set up);
@@ -110,6 +112,85 @@ on Android. Keep it that way. Naming `StoreKitManager`, `StoreTransaction` or
    - Archive in Xcode and upload to TestFlight.
    - App Store privacy labels: match the Data safety table in `store/LISTING.md`. Tracking is "Yes" only if ATT is on. The AdMob SDK ships its own privacy manifest.
    - Age rating: the same answers as the IARC section.
+
+## If the game won't run on the Mac (notes from the Windows side)
+
+Written by the session that built the game, for whoever picks it up on a Mac.
+The Simulator was never tried from Windows, so treat this as a map, not a log.
+
+**Simulator or device?** The Simulator should work on an Apple Silicon Mac:
+Godot 4.7.2's iOS templates carry simulator slices, and the game uses the
+Compatibility renderer on mobile (`project.godot`
+`renderer/rendering_method.mobile="gl_compatibility"`); keep it that way, since
+the Mobile/Vulkan renderer is the one that struggles in the Simulator and was
+too slow on the Android test tablet anyway. The Simulator needs no Team ID or
+signing; a real iPhone does. Use the Simulator for UI, menus, sign-in with
+email, runs, ranks and test ads; a real iPhone for swipe feel, frame rate and
+real sandbox purchases. Simulator frame rates mean nothing.
+
+**Command-line path** (no Godot window on the owner's screen):
+
+```bash
+godot --headless --path . --import
+godot --headless --path . --export-debug "iOS" build/ios/Sunstone.xcodeproj
+xcodebuild -project build/ios/Sunstone.xcodeproj -scheme Sunstone   -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16'   -derivedDataPath build/ios/dd build
+xcrun simctl boot "iPhone 16" 2>/dev/null; open -a Simulator
+xcrun simctl install booted "$(find build/ios/dd -name '*.app' -path '*iphonesimulator*' | head -1)"
+xcrun simctl launch --console booted com.pranta.sunstone   # game prints show here
+```
+
+(The scheme and device names may differ: `xcodebuild -list` and
+`xcrun simctl list devices` tell you.)
+
+**When it fails, in the order I'd suspect:**
+
+1. **Export fails before Xcode.** The export templates must be exactly
+   4.7.2-stable (Godot refuses others), and the iOS preset needs
+   `export_project_only=true` from the headless command line. If GDScript parse
+   errors appear, run `--import` once: new `class_name` scripts need it.
+2. **Linking fails for the Simulator** ("building for iOS Simulator, but linking
+   in object file built for iOS"). A native plugin has no simulator slice:
+   the AdMob iOS libs (`addons/admob/ios/bin`) or GodotApplePlugins. For a
+   Simulator-only build, leave that plugin out of the export (its plugin
+   checkbox in the iOS preset, or `exclude_filter`) and build again. The game
+   runs without either: `ads.gd` and `store.gd` check for the singletons, and
+   the store then just says it's closed. Put them back for device builds.
+3. **Google Mobile Ads package won't resolve.** Xcode pulls it through Swift
+   Package Manager on the first build; it needs network access. File → Packages
+   → Reset Package Caches, then build again.
+4. **Black or empty screen.** Check the console for renderer errors first. The
+   boot splash is the k'in glyph on plum (`#2a1b3d`); a plum screen that never
+   reaches the title means the main scene stalled, usually a script error at
+   startup: read the console. Apple-plugin classes must stay untyped and found
+   through `ClassDB` (see above); a typed reference to one breaks the build.
+5. **Starts, but nothing online works.** Expected offline: the game is fully
+   playable as a guest without the server, and runs queue in an outbox. Online
+   needs `GoogleService-Info.plist` (Firebase Auth over REST) and the production
+   API at `https://sunstone.pranta.dev`; `GET /health` there should answer
+   `{"status":"ok"}`.
+6. **Taps act twice, or toggles flip back.** That's the touch-then-emulated-click
+   behaviour described in CLAUDE.md; custom controls handle it. If something new
+   misbehaves on iOS only, look there first.
+
+**Android-only on purpose (don't chase these on iOS):** the
+`SunstoneGoogleSignIn` plugin, so Google sign-in (iOS uses Sign in with Apple
+and email), notifications (`push.gd`), Firebase Analytics and Crashlytics
+(`firebase.gd`, release Android only), Play in-app updates, run-card sharing
+and the refresh-rate lock. All are guarded by `Engine.has_singleton(...)`, so
+they're silent no-ops on iOS. The **Sunstone Pass** subscription is Play only
+too; on iOS its shop tab says it opens soon.
+
+**Dev switches** are files in the app's user dir (Godot's `user://`). In the
+Simulator: `xcrun simctl get_app_container booted com.pranta.sunstone data`,
+then the files go where Godot's user dir lives inside it (on iOS that's
+`Documents/`). The useful ones: `autopilot` (plays itself), `dev_start`
+(start metres), `dev_untaught` (every hint again), `dev_ads_eager` (no ad
+pacing), `api_base` (another server). The full list is in CLAUDE.md.
+
+**Checks that run anywhere** (headless, no device): parse a script with
+`godot --headless --path . --check-only --script scripts/<x>.gd`, the save
+merge with `godot --headless --path . -s dev/check_save_merge.gd`, the calendar
+with `-s dev/check_calendar.gd`.
 
 ## Not done yet (decide with the owner)
 
