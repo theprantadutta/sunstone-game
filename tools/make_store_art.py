@@ -8,7 +8,7 @@ Reads <raw>/phone/*.png (a 1080-wide phone) and <raw>/tablet/*.png (the Tab A9,
   store/screenshots/tablet-7in/NN.png   1080x1920 (9:16, as Play's 7-inch and
   store/screenshots/tablet-10in/NN.png  10-inch tablet slots both require)
   store/feature-graphic.png        1024x500
-Raw shots live in store/raw/ (gitignored).
+Raw shots live in store/raw/ (committed, so any machine can rebuild the art).
 """
 import os
 import sys

@@ -337,7 +337,7 @@ shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
 - Store copy, Data safety / content rating answers, IAP product table and the
   release checklist: **`store/LISTING.md`**. Art: `store/screenshots/{phone,tablet-7in,tablet-10in}/`
   and `store/feature-graphic.png`. Regenerate with `python tools/make_store_art.py`
-  from raw shots in `store/raw/{phone,tablet}/` (gitignored, same file names as
+  from raw shots in `store/raw/{phone,tablet}/` (committed, same file names as
   `SHOTS` in the tool).
 - Privacy policy, terms and refund policy: `legal/{privacy,terms,refund}.md` (shown in-game
   under Settings → Privacy & terms; host the same files for the stores).
