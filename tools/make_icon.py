@@ -1,4 +1,5 @@
-"""Draws the Sunstone app icon, Android adaptive-icon layers and the boot splash.
+"""Draws the Sunstone app icon, Android adaptive-icon layers, the iOS dark and
+tinted icons and the boot splash.
 
     python tools/make_icon.py
 
@@ -39,8 +40,17 @@ def sky(size):
     return img
 
 
-def mark(d, size, scale=1.0, cy_frac=0.5):
-    """Sun + rays + stepped pyramid, centred; [scale] shrinks it into a safe zone."""
+def mark(d, size, scale=1.0, cy_frac=0.5, pal=None):
+    """Sun + rays + stepped pyramid, centred; [scale] shrinks it into a safe zone.
+    [pal] swaps colours by name (the iOS dark and tinted icons)."""
+    pal = pal or {}
+    CINNABAR = pal.get("cinnabar", globals()["CINNABAR"])
+    GOLD = pal.get("gold", globals()["GOLD"])
+    GOLD_DEEP = pal.get("gold_deep", globals()["GOLD_DEEP"])
+    GOLD_LIGHT = pal.get("gold_light", globals()["GOLD_LIGHT"])
+    JADE = pal.get("jade", globals()["JADE"])
+    JADE_LIGHT = pal.get("jade_light", globals()["JADE_LIGHT"])
+    MAYA_BLUE = pal.get("maya_blue", globals()["MAYA_BLUE"])
     s = size * scale
     cx = size / 2
     cy = size * cy_frac
@@ -76,11 +86,25 @@ def mark(d, size, scale=1.0, cy_frac=0.5):
     d.rectangle([cx - dw / 2, base_y - tier_h * 1.7, cx + dw / 2, base_y], fill=GOLD)
 
 
-def render(size, background=True, scale=1.0, cy_frac=0.5):
+def render(size, background=True, scale=1.0, cy_frac=0.5, pal=None):
     big = size * 2
     img = sky(big) if background else Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    mark(ImageDraw.Draw(img), big, scale, cy_frac)
+    mark(ImageDraw.Draw(img), big, scale, cy_frac, pal)
     return img.resize((size, size), Image.LANCZOS)
+
+
+# iOS 18 home-screen styles. Both are the mark alone on transparent: iOS lays
+# its own dark backdrop under the dark icon and colours the tinted one, which
+# must be grayscale. The jade steps are lifted so they read on near-black.
+DARK = {"jade": (36, 122, 104), "jade_light": (58, 156, 134)}
+TINTED = {"cinnabar": (120, 120, 120), "gold": (236, 236, 236), "gold_deep": (176, 176, 176),
+          "gold_light": (255, 255, 255), "jade": (92, 92, 92), "jade_light": (128, 128, 128),
+          "maya_blue": (200, 200, 200)}
+
+
+def ios_variants():
+    render(1024, background=False, pal=DARK).save(os.path.join(OUT, "icon_dark.png"))
+    render(1024, background=False, pal=TINTED).save(os.path.join(OUT, "icon_tinted.png"))
 
 
 def main():
@@ -93,6 +117,7 @@ def main():
     # Adaptive icon: the mark inside the 66% safe zone, sky as its own layer.
     render(432, background=False, scale=0.62).save(os.path.join(OUT, "adaptive_foreground.png"))
     sky(432).save(os.path.join(OUT, "adaptive_background.png"))
+    ios_variants()
     # Boot splash: the mark alone on dusk violet.
     splash = Image.new("RGB", (1024, 1024), DUSK)
     fg = render(1024, background=False, scale=0.7)
