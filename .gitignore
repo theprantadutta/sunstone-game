@@ -18,3 +18,6 @@ override.cfg
 addons/GodotApplePluginsRuntime/
 addons/GodotApplePluginsStoreKit/
 addons/GodotApplePluginsAuthenticationServices/
+
+# macOS Finder files
+.DS_Store
