@@ -26,7 +26,7 @@ const CHARACTERS := [
 			"hat": "none", "mouth": "smile", "build": 1.05, "freckles": false},
 		"outfit": {"shirt": Color("#E3A82F"), "scarf": Color("#2F8A6E"), "trousers": Color("#EFE3C8"), "shoe": Color("#3B2618"),
 			"pack": Color("#2F6B5A")}},
-	{"id": "nina", "title": "Nina", "price": {"product": "char_nina"},
+	{"id": "nina", "title": "Nina", "price": {"product": "sunstone_char_nina"},
 		"look": {"skin": Color("#F2C4A0"), "hair": "buns", "hair_col": Color("#C8602A"), "eyes": Color("#3A7A5A"),
 			"hat": "none", "fem": true, "mouth": "grin", "freckles": true, "build": 0.9},
 		"outfit": {"shirt": Color("#3FA7B5"), "scarf": Color("#F2E0B0"), "trousers": Color("#5A3A6A"), "shoe": Color("#C8402F"),
