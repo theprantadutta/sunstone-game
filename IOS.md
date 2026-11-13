@@ -6,6 +6,33 @@ Xcode. This is written for a coding agent (or a person) on that Mac. Read
 key files. Ask the owner before touching any external account (App Store
 Connect, Firebase, AdMob). Commit messages carry no co-author or AI lines.
 
+## Status (2026-11-13): submitted to App Review
+
+1.4.1 (build 11) and all 8 in-app purchases went to review together. What the
+Mac session found, for whoever picks this up next:
+
+- **Android owes a release:** the Nina fix (`ca634d6`) is in iOS build 11 but not
+  on Play yet. See CLAUDE.md → Release.
+- **The Simulator can't run this game.** Godot 4.7.2's iOS simulator template is
+  x86_64 only, and current simulator runtimes are arm64 only. A self-built arm64
+  simulator library crashed in Godot's SwiftUI startup. Test the real device build
+  on an Apple Silicon Mac as an iPad app instead:
+  `xcodebuild -project build/ios/Sunstone.xcodeproj -scheme Sunstone -configuration Debug -destination 'id=<the Mac's id from -showdestinations>,variant=Designed for iPad' -derivedDataPath build/ios/ddmac -allowProvisioningUpdates build`,
+  then put the `.app` in `X.app/Wrapper/` with a `WrappedBundle -> Wrapper/Sunstone.app`
+  symlink and `open X.app`. The owner's Mac is registered as a dev device.
+- **Release IPA:** `--export-release "iOS" build/ios-release/Sunstone.xcodeproj`, then
+  archive with `CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Development"`
+  (the export hard-codes Distribution, which clashes with automatic signing), then
+  `xcodebuild -exportArchive` with method `app-store-connect`, which re-signs with
+  Distribution. The owner uploads with Transporter; check the build number it
+  shows before delivering. Every upload needs a new `application/version`.
+- **App Store Connect** has the listing, the screenshots (from `store/appstore/`), the
+  privacy answers (our data plus the Google Mobile Ads SDK's own privacy manifest),
+  age rating 13+ and Free in 175 countries. In-app purchase review screenshots must
+  be a device screenshot size (2064×2752 worked).
+- `tools/make_icon.py` `ios_variants()` draws the iOS 18 dark and tinted icons
+  (`assets/icon/icon_dark.png`, `icon_tinted.png`, wired into the iOS preset).
+
 ## Before anything else: three files from the owner
 
 A fresh clone on the Mac is missing three gitignored files that only live on
@@ -182,7 +209,7 @@ and email), notifications (`push.gd`), Firebase Analytics and Crashlytics
 (`firebase.gd`, release Android only), Play in-app updates, run-card sharing
 and the refresh-rate lock. All are guarded by `Engine.has_singleton(...)`, so
 they're silent no-ops on iOS. The **Sunstone Pass** subscription is Play only
-too; on iOS its shop tab says it opens soon.
+too; on iOS its shop shelf is hidden (App Review rejects "coming soon" placeholders).
 
 **Dev switches** are files in the app's user dir (Godot's `user://`). In the
 Simulator: `xcrun simctl get_app_container booted com.pranta.sunstone data`,

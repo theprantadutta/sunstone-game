@@ -311,8 +311,24 @@ Apple through GodotApplePlugins (installed on the Mac, gitignored). Its classes
 don't exist on Android, so `apple_store.gd` and `online.gd` `link_apple()` use
 them **untyped via ClassDB**; never name them as types.
 
+**Status:** iOS 1.4.1 (build 11) was submitted to App Review on 2026-11-13 with
+all 8 in-app purchases (App Store Connect app id 6818707768). The iOS preset
+keeps its own version (`[preset.2.options]` `application/short_version` and
+`application/version`), apart from the Android presets. `config/name.ios="Sunstone"`
+in `project.godot` is the iOS home-screen name. The Pass is Play only, so its shop
+shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
+
 ## Release
 
+- **Next Play release must ship the Nina fix.** Since 1.3.0 `themes.gd` asked
+  the stores for `char_nina`, which exists nowhere (Play, the App Store and
+  sunstone-api all use `sunstone_char_nina`), so Nina never got a price and
+  couldn't be bought on Android either. Fixed in `ca634d6`, so far shipped on iOS
+  only. To release it: bump `version/code` (9 or higher) and `version/name` in
+  the three Android presets and `config/version` in `project.godot` (iOS is on
+  1.4.1, so 1.4.1 keeps the two in step), export the AAB, put it on the internal
+  test track, and on the tablet check Shop → Runners → Nina shows a price and a
+  purchase goes through (the server grants `nina`), then promote it.
 - `--export-release "Android Play" build/sunstone.aab` → signed AAB. Upload key:
   `C:\android-keys\sunstone\` (outside the repo; password in
   `.godot/export_credentials.cfg`, gitignored). Upload SHA-1
