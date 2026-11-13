@@ -1893,7 +1893,7 @@ func _run_tour() -> void:
 		print("[profile] --- lap %d ---" % (lap + 1))
 		_phase("title")
 		await _wait(5.0)
-		for i in Shop.SHELVES.size():
+		for i in ui.market_tabs.size():
 			ui._market_tab = i
 			if i == 0:
 				ui._open_market()

@@ -1546,7 +1546,9 @@ class ItemCard:
 				x0 += 24.0
 			draw_string(small, Vector2(x0, size.y - 16), price, HORIZONTAL_ALIGNMENT_LEFT, -1, 21, UiKit.INK)
 
-const MARKET_TABS := Shop.SHELVES
+## The Pass is a Play subscription: on iOS its shelf stays out of the shop
+## rather than promising it "soon" (App Review rejects placeholders).
+var market_tabs: Array = Shop.SHELVES.filter(func(s: String) -> bool: return s != "Pass" or OS.get_name() != "iOS")
 var _shop_sel := {} ## shelf → selected item id
 var _preview: SubViewport
 var _preview_root: Node3D
@@ -1570,10 +1572,10 @@ func _open_market() -> void:
 	# Tabs and the 3D preview live as long as the page: switching shelves only
 	# rebuilds the cards (rebuilding everything froze a phone for ~0.1 s).
 	_shop_tabs.clear()
-	for i in MARKET_TABS.size():
+	for i in market_tabs.size():
 		var row := 0 if i < 4 else 1
 		var col := i if i < 4 else i - 4
-		var tab := UiKit.GlyphButton.new(MARKET_TABS[i],
+		var tab := UiKit.GlyphButton.new(market_tabs[i],
 			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
 		tab.font_size = 19
 		tab.position = Vector2(56 + col * 124, 136 + row * 76)
@@ -1637,7 +1639,7 @@ func _fill_market() -> void:
 	var body := _market_body
 	for i in _shop_tabs.size():
 		_shop_tabs[i].set_kind(UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
-	var looks: bool = MARKET_TABS[_market_tab] in ["Runners", "Outfits", "Hats", "Stones"]
+	var looks: bool = market_tabs[_market_tab] in ["Runners", "Outfits", "Hats", "Stones"]
 	if _preview_box:
 		_preview_box.visible = looks
 		_preview.render_target_update_mode = SubViewport.UPDATE_ALWAYS if looks else SubViewport.UPDATE_DISABLED
@@ -1649,7 +1651,7 @@ func _fill_market() -> void:
 	var drop := UiKit.DropGlyph.new(32)
 	drop.position = Vector2(508, 58)
 	body.add_child(drop)
-	var shelf: String = MARKET_TABS[_market_tab]
+	var shelf: String = market_tabs[_market_tab]
 	match shelf:
 		"Charms": _fill_charms(body)
 		"Boosts": _fill_boosts(body)
