@@ -318,7 +318,7 @@ func _ready() -> void:
 	if not FileAccess.file_exists("user://perf_hz"):
 		_lock_refresh()
 	_go_title()
-	ui.play_splash()
+	_launch()
 	if _shots:
 		_run_shots()
 	elif _video:
@@ -327,6 +327,25 @@ func _ready() -> void:
 		_run_tour()
 	elif _autopilot:
 		get_tree().create_timer(1.5).timeout.connect(_start_run)
+
+## The splash flies into the title; a brand-new player (no run yet) then goes
+## straight into their first run, where the lessons teach each swipe. Most
+## first launches used to stop at the title without pressing Run.
+const FIRST_RUN_BEAT := 1.2 ## seconds on the title first, to see the wordmark
+var _first_run_armed := false ## a touch on the title before the beat cancels it
+
+func _launch() -> void:
+	var first := save.runs == 0 and not (_shots or _video or _tour or _autopilot)
+	_first_run_armed = first
+	await ui.play_splash()
+	if not first:
+		return
+	await _wait(FIRST_RUN_BEAT)
+	if _first_run_armed and state == State.TITLE and daily_key == "" and not ui.page_open():
+		_first_run_armed = false
+		online.track("first_run_auto", {})
+		_start_run()
+	_first_run_armed = false
 
 # ------------------------------------------------------------- states ---
 
@@ -923,6 +942,13 @@ func _teach() -> void:
 	while d < speed * 1.15 and near.is_empty():
 		near = world.occupant(s + d, _lane, 0.25)
 		d += 0.5
+	# A jaguar that has leapt into his lane is a danger too (not part of the road).
+	for j in _jags:
+		var ahead: float = -(j.pos as Vector3).z - s
+		var jlane: int = j.lane
+		if j.state != "wait" and jlane == _lane and ahead > speed * 0.35 and ahead < speed * 1.15 \
+				and (near.is_empty() or ahead < float(near.s) - s):
+			near = {"kind": "jaguar", "s": s + ahead}
 	if near.is_empty() or near.s - s < 3.0:
 		return
 	var key := "jump" if near.kind in ["wall", "pit"] else ("slide" if near.kind == "lintel" else "dodge")
@@ -1497,6 +1523,12 @@ func _place_halo(_delta: float) -> void:
 	_halo.scale = Vector3.ONE * size
 
 # --------------------------------------------------------------- input ---
+
+## Any touch or key on the title before the first run starts by itself
+## (opening a page, the shop, Settings...) leaves the player there.
+func _input(event: InputEvent) -> void:
+	if _first_run_armed and event.is_pressed() and not event.is_echo() 			and (event is InputEventScreenTouch or event is InputEventMouseButton or event is InputEventKey):
+		_first_run_armed = false
 
 ## One thumb: a swipe is a move (one per touch), a short touch that didn't
 ## swipe is a flare.

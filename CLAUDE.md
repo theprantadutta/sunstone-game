@@ -152,6 +152,11 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
 - **Taps reach a control twice** (a touch, then an emulated click): custom
   controls act on release only after their own press (`_down`), or toggles
   flip and flip back.
+- **First launch** (`game.gd _launch`): a player with no runs yet goes straight
+  from the splash into their first run after a 1.2 s beat on the title (the
+  lessons take over), tracked as `first_run_auto`. Any touch on the title before
+  then cancels it. Since 1.4.1: Nov 2026 analytics showed first opens stopping at
+  the title.
 - **Second wind**: once per run — rise past what ended it, nearby jaguars gone,
   light ≥ 0.6, 1.5 s shield.
 - **The look** (`codex.gd`): no real lights or shadows. Flat three-band shading
@@ -338,7 +343,8 @@ shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
 - Store copy, Data safety / content rating answers, IAP product table and the
   release checklist: **`store/LISTING.md`**. Art: `store/screenshots/{phone,tablet-7in,tablet-10in}/`
   and `store/feature-graphic.png`. Promo video + YouTube thumbnail: `store/video/`
-  (tools and recipe in `store/video/tools/`). Regenerate with `python tools/make_store_art.py`
+  (tools and recipe in `store/video/tools/`). Store listing experiment assets: `store/experiments/`
+  (icon B: `python tools/make_icon_variant.py`). Regenerate with `python tools/make_store_art.py`
   from raw shots in `store/raw/{phone,tablet}/` (committed, same file names as
   `SHOTS` in the tool).
 - Privacy policy, terms and refund policy: `legal/{privacy,terms,refund}.md` (shown in-game
