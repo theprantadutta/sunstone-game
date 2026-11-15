@@ -6,3 +6,4 @@ outro.png
 *.mp4
 preview*.png
 music.mp3
+__pycache__/
