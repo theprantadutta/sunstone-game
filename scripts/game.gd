@@ -178,6 +178,9 @@ var _invincible := false
 ## look, no event, can't die), freezing each and printing "[shot] name" so
 ## the host can screencap it. The save is never touched.
 var _shots := FileAccess.file_exists("user://dev_shots")
+## Dev: `files/dev_video` plays the promo-video sequence (title, every House,
+## the pack, dawn, the shop) by itself, printing "[video] name" at each cut.
+var _video := FileAccess.file_exists("user://dev_video")
 var _force_blaze := -1.0 ## >= 0 holds a flare at that strength (shots)
 var _tour_seed := 0 ## the tour plays the same road every time
 var _page_scaled := false
@@ -318,6 +321,8 @@ func _ready() -> void:
 	ui.play_splash()
 	if _shots:
 		_run_shots()
+	elif _video:
+		_run_video()
 	elif _tour:
 		_run_tour()
 	elif _autopilot:
@@ -400,7 +405,7 @@ func _go_title() -> void:
 	ui.show_title(save)
 	sfx.play_music()
 	# After the second run, once: a reminder at dusk?
-	if push and push.available() and not save.push_asked and save.runs >= 2 and not _shots and not _tour:
+	if push and push.available() and not save.push_asked and save.runs >= 2 and not _shots and not _tour and not _video:
 		save.push_asked = true
 		save.save_to_disk()
 		get_tree().create_timer(0.8).timeout.connect(func():
@@ -1969,6 +1974,73 @@ func _set_experiment(name: String, on: bool) -> void:
 			Codex.glow().next_pass = null if on else Codex.outline()
 		"scale-0.8":
 			get_viewport().scaling_3d_scale = 0.8 if on else 1.0
+
+# ------------------------------------------------------------ promo video ---
+
+## Live footage for the store video: the autopilot runs (it can't die) through
+## each House of the first two nights, then the pack, dawn and the shop. The
+## host screen-records and cuts at the "[video]" marks. The save is never
+## written (no run ends).
+func _run_video() -> void:
+	Themes.choose_event("none")
+	_spawn_runner()
+	_tour_seed = 2024
+	await _wait(3.0)
+	_go_title()
+	print("[video] title")
+	await _wait(6.0)
+	_autopilot = true
+	_invincible = true
+	for n in [1, 2]:
+		var plan := Nights.plan(n, _tour_seed)
+		var starts := Nights.house_starts(n)
+		for k in plan.size():
+			_go_title()
+			_dev_start = starts[k] + (5.0 if n == 1 and k == 0 else 1.0)
+			_start_run()
+			print("[video] house:%s" % plan[k])
+			await _wait(11.0)
+	# The light failing, the pack at his heels.
+	_go_title()
+	_dev_start = 120.0
+	_dev_pack = true
+	_start_run()
+	print("[video] pack")
+	await _wait(2.0)
+	light = 0.2
+	await _wait(7.0)
+	_dev_pack = FileAccess.file_exists("user://dev_pack")
+	# Through the last House into the sunrise.
+	_go_title()
+	_dev_start = Nights.start(2) - 40.0
+	_start_run()
+	print("[video] dawn")
+	await _wait(10.0)
+	_autopilot = false
+	_invincible = false
+	_dev_start = 0.0
+	_go_title()
+	await _wait(1.5)
+	ui._market_tab = 0
+	ui._open_market()
+	print("[video] shop")
+	await _wait(6.0)
+	for i in [1, 2, 3]:
+		ui._market_tab = i
+		ui._fill_market()
+		print("[video] shop:" + Shop.SHELVES[i])
+		await _wait(2.5)
+	ui._market.visible = false
+	ui._free_preview()
+	ui._open_glyphs()
+	print("[video] glyphs")
+	await _wait(4.0)
+	ui.close_modal()
+	ui._open_daily()
+	print("[video] daily")
+	await _wait(4.0)
+	ui.close_modal()
+	print("[video] done")
 
 # ------------------------------------------------------------ store shots ---
 

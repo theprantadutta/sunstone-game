@@ -1,0 +1,13 @@
+{"music_start": 0, "segments": [
+  {"src": "rec1.mp4", "a": 10.8, "b": 14.8, "chip": "ENDLESS RUNNER", "title": "Carry the sun", "sub": "Every night the sun crosses the Maya underworld. Tonight, you carry it."},
+  {"src": "rec1.mp4", "a": 17.0, "b": 23.0, "chip": "SWIPE", "title": "Swipe. Leap. Slide.", "sub": "Three lanes along a temple causeway in the dark."},
+  {"src": "rec1.mp4", "a": 28.0, "b": 34.0, "chip": "HOUSE OF JAGUARS", "title": "Tap to flare", "sub": "Light the road. Turn jaguars to stone."},
+  {"src": "rec1.mp4", "a": 39.3, "b": 44.3, "chip": "HOUSE OF BATS", "title": "Mind the bats", "sub": "Flare too much and they dive at you."},
+  {"src": "rec1.mp4", "a": 61.3, "b": 66.3, "chip": "HOUSE OF COLD", "title": "Keep your light alive", "sub": "Here the stone drains fast. Grab every sun-drop."},
+  {"src": "rec1.mp4", "a": 72.5, "b": 77.5, "chip": "HOUSE OF KNIVES", "title": "Six deadly Houses", "sub": "Each with its own rules and its own look."},
+  {"src": "rec1.mp4", "a": 85.8, "b": 91.4, "chip": "THE PACK", "title": "Outrun the jaguars", "sub": "Let your light die and the pack catches you."},
+  {"src": "rec1.mp4", "a": 92.2, "b": 96.5, "chip": "DAWN", "title": "Make it to dawn", "sub": "Then the next night runs faster."},
+  {"src": "rec1.mp4", "a": 104.0, "b": 112.5, "chip": "SHOP", "title": "Choose your runner", "sub": "Runners, outfits, hats and stone hues."},
+  {"src": "rec1.mp4", "a": 117.3, "b": 120.6, "chip": "GLYPHS", "title": "24 glyphs to earn", "sub": "Each one drawn like a scribe's sign."},
+  {"src": "rec1.mp4", "a": 121.2, "b": 124.6, "chip": "DAILY DUSK", "title": "A new road every day", "sub": "Everyone runs the same causeway. Climb the ranks."}
+]}

@@ -209,7 +209,8 @@ adb -s R83X309RLNR shell monkey -p com.pranta.sunstone -c android.intent.categor
   should be one vsync.
 - **Dev switches:** `files/dev_light` (e.g. `0.3`) sets the starting light;
   `files/dev_untaught` shows every hint again; `files/dev_pack` keeps the pack
-  at his heels. Debug builds log `[coach]` lessons and deaths (for scripted
+  at his heels. `files/dev_video` plays the promo-video sequence by itself
+  (see `store/video/tools/README.md`). Debug builds log `[coach]` lessons and deaths (for scripted
   first-run checks).
 - **Perf switches** (dev): with autopilot on, logcat prints fps / frame-time /
   draw calls every 2 s. Flag files in `files/` toggle features without a rebuild:
@@ -336,7 +337,8 @@ shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
 - Release builds call `https://sunstone.pranta.dev` (debug: the LAN dev API).
 - Store copy, Data safety / content rating answers, IAP product table and the
   release checklist: **`store/LISTING.md`**. Art: `store/screenshots/{phone,tablet-7in,tablet-10in}/`
-  and `store/feature-graphic.png`. Regenerate with `python tools/make_store_art.py`
+  and `store/feature-graphic.png`. Promo video + YouTube thumbnail: `store/video/`
+  (tools and recipe in `store/video/tools/`). Regenerate with `python tools/make_store_art.py`
   from raw shots in `store/raw/{phone,tablet}/` (committed, same file names as
   `SHOTS` in the tool).
 - Privacy policy, terms and refund policy: `legal/{privacy,terms,refund}.md` (shown in-game
