@@ -21,9 +21,7 @@ These scripts build `../sunstone-promo-landscape.mp4` (1920x1080, 30 fps, about 
 
 ## 2. Music
 
-`music.mp3` is "Tribal Drums Epic Action" by Stereo_Color: https://pixabay.com/music/percussion-tribal-drums-epic-action-493732/
-
-It is under the Pixabay Content License: free for commercial use, no attribution needed, but not to be redistributed on its own, so it stays out of git. Download it into this folder before rendering.
+The game's own night music, `assets/audio/music.wav` (made by `tools/make_audio.py`, a seamless loop), looped under the video. It's ours, so YouTube's Content ID has nothing to match. Don't swap in stock music: the first upload used a Pixabay track ("royalty-free") and YouTube flagged it as claimed content, because some Pixabay artists register their tracks with Content ID.
 
 ## 3. Render
 

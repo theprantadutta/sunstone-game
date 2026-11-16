@@ -26,7 +26,9 @@ CREAM = (250, 240, 220)
 DELA = GAME / "assets" / "fonts" / "DelaGothicOne-Regular.ttf"
 NUNITO = GAME / "assets" / "fonts" / "Nunito-Variable.ttf"
 PAPER = GAME / "assets" / "ui" / "paper.png"
-MUSIC = D / "music.mp3"  # Pixabay: "Tribal Drums Epic Action" by Stereo_Color
+# The game's own night music (tools/make_audio.py, a seamless loop): ours, so no
+# Content ID claim. (A Pixabay track got the first upload claimed on YouTube.)
+MUSIC = GAME / "assets" / "audio" / "music.wav"
 
 INTRO, OUTRO, FADE = 3.0, 4.5, 0.3
 PH = 980
@@ -193,7 +195,7 @@ def main():
     for p, du in zip(caps, durs):
         inputs += ["-loop", "1", "-t", f"{du:.3f}", "-i", str(p)]
     music_i = cap0 + len(scenes)
-    inputs += ["-ss", str(cfg.get("music_start", 0)), "-i", str(MUSIC)]
+    inputs += ["-stream_loop", "-1", "-i", str(MUSIC)]
 
     fc = []
     for sp in srcs:
@@ -219,7 +221,7 @@ def main():
     fc.append(f"[{n + 2}:v]fps=30,format=yuv420p,fade=in:st=0:d=0.35,fade=out:st={INTRO - 0.35}:d=0.35,setsar=1[in]")
     fc.append(f"[{n + 3}:v]fps=30,format=yuv420p,fade=in:st=0:d=0.35,fade=out:st={OUTRO - 0.6}:d=0.6,setsar=1[out]")
     fc.append("[in][demo][out]concat=n=3:v=1:a=0[v]")
-    fc.append(f"[{music_i}:a]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,volume=0.85,"
+    fc.append(f"[{music_i}:a]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,volume=1.3,"
               f"afade=in:st=0:d=0.5,afade=out:st={total - 2.0:.3f}:d=2.0[aud]")
     cmd = [FF, "-hide_banner", "-loglevel", "error", "-y", *inputs, "-filter_complex", ";".join(fc),
            "-map", "[v]", "-map", "[aud]", "-t", f"{total:.2f}", "-c:v", "libx264", "-crf", "19",
