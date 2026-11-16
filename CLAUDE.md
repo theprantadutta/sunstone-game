@@ -116,11 +116,20 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   clears it, and the dodge hint names the clear side. Hints draw their gesture
   (`UiKit.HintStrip`: a direction, TAP, BOTH_WAYS, NONE). **Head start** boost: the sun carries you 300 m at 2.6× over
   everything, landing on clear road (not on the daily dusk).
-- **Launch** is one continuous picture: the Android splash is plain plum
-  (`[splash]` custom theme attributes: no icon; `screen/background_color` so
-  no black frame), Godot's boot splash is the k'in glyph on the same plum
-  (`tools/make_splash.py`, stretch "keep"), and `GameUI.play_splash` takes that
-  exact image over and flies it into the title wordmark while the plum fades.
+- **Launch** is one continuous picture, the k'in glyph on plum from the tap to
+  the title. On Android the system splash shows it (`[splash]` theme attributes:
+  `windowSplashScreenAnimatedIcon` = `@drawable/sunstone_splash`, from
+  `android-res/`, copied into the Gradle build at export by
+  `addons/sunstone_google_signin`), sized per width class (80 / 91 / 94 dp,
+  `tools/make_splash.py`) to match. Godot's boot image is off on Android
+  (`boot_splash/show_image.android=false`); the main scene is `scenes/boot.tscn`
+  (`scripts/boot.gd`, tiny and self-contained so it draws on the first frame),
+  which draws the same glyph at the same place, then sets the Java system
+  property `sunstone.splash`; the export plugin patches `GodotApp.java` so the
+  system splash waits for that (6 s at most) and fades over an identical picture.
+  Then `main.tscn` loads and `GameUI.play_splash` flies the glyph into the title
+  wordmark (`GameUI.Splash` uses the same geometry). Elsewhere (iOS) the boot
+  image shows as before and boot.gd matches it.
 - **Settings** (Settings and the pause page): music, sound, vibration, battery
   saver (3D at 70% scale, no MSAA, no motes), swipe sensitivity (Light 3% /
   Normal 4.5% / Firm 7% of the short screen side); How to play; Rate Sunstone
@@ -326,6 +335,13 @@ shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
 
 ## Release
 
+- **Android 1.4.2 (code 10)** is the next Play release: the Nina fix, the first
+  run starting by itself, the jaguar lesson, the splash above, and layout fixes
+  from a player report (Glyphs grid over its text on every screen; Records'
+  deepest night, the Daily dusk day name, results headline and big distances,
+  ranks, HUD banner vs pops: `UiKit.fit` shrinks a one-line label to its box;
+  call it before setting the label's size, since a Label never sizes below its
+  text). iOS stays on 1.4.1 (build 11).
 - **Next Play release must ship the Nina fix.** Since 1.3.0 `themes.gd` asked
   the stores for `char_nina`, which exists nowhere (Play, the App Store and
   sunstone-api all use `sunstone_char_nina`), so Nina never got a price and

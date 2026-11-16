@@ -392,7 +392,7 @@ func sign_out() -> String:
 		return "This phone isn't signed in to an account."
 	await _flush_outbox()
 	if not _outbox.is_empty() or not await sync_save():
-		return "Can't reach the temple, so your latest progress isn't saved yet. Try again when you're online."
+		return "Can't reach the temple. Your progress isn't saved yet."
 	if push_token != "":
 		# This phone stops hearing about this account.
 		await api(HTTPClient.METHOD_POST, "/push/device/forget", {"token": push_token})

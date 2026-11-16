@@ -39,6 +39,15 @@ static func paper() -> Texture2D:
 		_paper = load("res://assets/ui/paper.png")
 	return _paper
 
+## Shrinks [l]'s font until its text fits in [width] (a one-line label whose
+## text can outgrow its box: a long day name, a deep night, a big number).
+static func fit(l: Label, width: float, min_size := 16) -> Label:
+	var ls := l.label_settings
+	# The label's own measure (text plus whatever the theme adds), not the font's.
+	while ls.font_size > min_size and l.get_minimum_size().x > width:
+		ls.font_size -= 1
+	return l
+
 static func label(text: String, font: Font, size: int, color: Color, outline := 0, outline_color := INK) -> Label:
 	var l := Label.new()
 	l.text = text

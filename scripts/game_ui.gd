@@ -460,7 +460,8 @@ func _build_hud() -> void:
 
 	_banner = Banner.new()
 	_hud.add_child(_banner)
-	_pin(_banner, Rect2(0.5, 0.25, 0, 0), Rect2(-270, 0, 540, 140))
+	# Below the stack of pops ("Close!", "Sun-string", at _top + 230..394).
+	_pin(_banner, TOP_CENTER, Rect2(-270, _top + 410, 540, 140))
 
 	_hint = UiKit.HintStrip.new()
 	_hud.add_child(_hint)
@@ -531,11 +532,15 @@ func play_splash() -> void:
 	_wordmark.replay()
 	layer.queue_free()
 
-## The splash overlay: the boot splash's plum and its glyph, drawn exactly
-## where the engine drew them (the image fitted to the screen, centred).
+## The splash overlay: the launch splash's plum and its glyph, drawn exactly
+## where the system drew them. On Android that's the system splash (Godot's
+## boot image is off there, so Android keeps its splash up until the game runs):
+## the glyph centred, its marks reaching 80 / 91 / 94 dp by screen width
+## (tools/make_splash.py). Elsewhere it's the boot image, fitted and centred.
 class Splash:
 	extends Control
 	const GLYPH_R := 150.0 / 1024.0 ## the glyph's radius in the image (tools/make_splash.py)
+	const OUTER := 1.0 + 26.0 / 58.0 ## the marks' outer edge, in glyph radii
 	const BG := Color(0.1647, 0.1059, 0.2392)
 	var _tex: Texture2D = preload("res://assets/icon/splash.png")
 	var _t := 0.0
@@ -550,8 +555,21 @@ class Splash:
 		_to = target
 		queue_redraw()
 
+	## The side the splash image is drawn at, at the start of the flight.
+	func _start_side() -> float:
+		if OS.get_name() != "Android":
+			return minf(size.x, size.y)
+		var screen := Vector2(DisplayServer.screen_get_size())
+		var density := DisplayServer.screen_get_dpi() / 160.0
+		if screen.x <= 0.0 or density <= 0.0:
+			return minf(size.x, size.y)
+		var sw := minf(screen.x, screen.y) / density # smallest width, dp
+		var outer_dp := 80.0 if sw < 400.0 else (91.0 if sw < 600.0 else 94.0)
+		var px_per_unit := screen.x / size.x
+		return outer_dp / OUTER * density / px_per_unit / GLYPH_R
+
 	func _draw() -> void:
-		var d := minf(size.x, size.y)
+		var d := _start_side()
 		var from := size / 2.0
 		var c := from.lerp(_to, _t) if _t > 0.0 else from
 		# Shrinks to the wordmark's glyph (radius 58).
@@ -795,6 +813,7 @@ func _open_daily() -> void:
 	page.add_child(block)
 	var name_l := UiKit.label("%d %s" % [day[0], day[1]], UiKit.display_font(), 54, UiKit.INK)
 	name_l.position = Vector2(232, 160)
+	UiKit.fit(name_l, 312.0) # "13 Chikchan" is wider than the page at 54
 	page.add_child(name_l)
 	var date_l := UiKit.label(_friendly_date(today), UiKit.text_font(900), 26, UiKit.CINNABAR)
 	date_l.position = Vector2(236, 238)
@@ -861,6 +880,9 @@ class DayBlock:
 
 ## The collection: twenty glyphs in a grid; tap one to read it, and take its
 ## sun-drops once it's earned.
+const GLYPH_TILE := 100.0 ## a glyph tile's side (its minimum size)
+const GLYPH_PITCH := 106.0 ## row to row: 6 rows from y 140 end at 770, above the rule at 790
+
 func _open_glyphs() -> void:
 	if _glyphs:
 		_glyphs.queue_free()
@@ -909,8 +931,9 @@ func _open_glyphs() -> void:
 		var tile := UiKit.GlyphTile.new()
 		tile.index = i
 		tile.state = _save.glyphs.get(d.id, "")
-		tile.position = Vector2(58 + (i % 4) * 124, 140 + (i / 4) * 126)
-		tile.size = Vector2(114, 114)
+		# Six rows of four must end above the rule at 790 (the detail text below).
+		tile.position = Vector2(65 + (i % 4) * 124, 140 + (i / 4) * GLYPH_PITCH)
+		tile.size = Vector2(GLYPH_TILE, GLYPH_TILE)
 		tile.chosen.connect(func(): show.call(i))
 		page.add_child(tile)
 		tiles.append(tile)
@@ -1103,8 +1126,8 @@ func _rank_row(body: Control, row: Dictionary, y: float) -> void:
 	rank.position = Vector2(58, y)
 	body.add_child(rank)
 	var n := UiKit.label(str(row.get("name", "")) + ("  (you)" if mine else ""), UiKit.text_font(900), 26, color)
-	n.position = Vector2(126, y + 2)
-	n.size = Vector2(250, 40)
+	n.position = Vector2(140, y + 2) # room for a four-digit rank
+	n.size = Vector2(220, 40)
 	n.clip_text = true
 	body.add_child(n)
 	var d := UiKit.label("%s m" % UiKit.thousands(int(row.get("distance", 0))), UiKit.display_font(), 26, color)
@@ -1227,7 +1250,7 @@ func _open_account() -> void:
 			if _settings:
 				_settings.visible = false
 		else:
-			status.text = "Can't reach the temple right now. Try again later."))
+			status.text = "Can't reach the temple right now."))
 	page.open()
 
 ## A small glyph block with an inked eye: tap to show the password, tap
@@ -2384,8 +2407,11 @@ func _open_records() -> void:
 		page.add_child(name_l)
 		var val := UiKit.label(row[1], UiKit.display_font(), 28, UiKit.CINNABAR if row[0] == "Best distance" else UiKit.INK)
 		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		val.position = Vector2(300, y - 2)
-		val.size = Vector2(244, 40)
+		# From just past its name to the margin, shrunk to fit ("Night 12, 45% to dawn").
+		var vx := 58.0 + name_l.get_minimum_size().x + 18.0
+		UiKit.fit(val, 544.0 - vx) # before sizing: a Label never sizes below its text
+		val.position = Vector2(vx, y - 2)
+		val.size = Vector2(544.0 - vx, 40)
 		page.add_child(val)
 		y += 64.0
 	if top != "":
@@ -2424,12 +2450,16 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var night_l := UiKit.label(night_line, UiKit.text_font(900), 24, UiKit.CINNABAR)
 	night_l.position = Vector2(58, 40)
 	page.add_child(night_l)
-	var head := UiKit.wrapped(cause, UiKit.display_font(), 36, UiKit.INK, Vector2(56, 74), 508, 96)
+	var head := UiKit.wrapped(cause, UiKit.display_font(), 30, UiKit.INK, Vector2(56, 74), 508, 96)
 	page.add_child(head)
 	_rule(page, 172, 21)
 
 	var dist := UiKit.label("0 m", UiKit.display_font(), 88, UiKit.INK)
 	dist.position = Vector2(52, 180)
+	# Sized for the final count, so a 10 km run stays clear of the Maya numeral.
+	dist.text = "%s m" % UiKit.thousands(metres)
+	UiKit.fit(dist, 446.0)
+	dist.text = "0 m"
 	page.add_child(dist)
 	var maya := MayaNumber.new()
 	maya.position = Vector2(510, 196)

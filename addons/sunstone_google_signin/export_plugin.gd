@@ -62,6 +62,8 @@ class AndroidExport:
 		var out := "res://android/build/res/values/sunstone_firebase.xml"
 		if not DirAccess.dir_exists_absolute("res://android/build/res/values"):
 			return # no Gradle build template installed
+		_copy_android_res()
+		_patch_activity()
 		var cfg := _firebase_values()
 		if cfg.is_empty():
 			DirAccess.remove_absolute(out) # no Firebase in this build
@@ -79,6 +81,37 @@ class AndroidExport:
 		var f := FileAccess.open(out, FileAccess.WRITE)
 		if f:
 			f.store_string(xml)
+
+	## The system splash (the k'in glyph on plum) stays up until the game's boot
+	## scene has drawn the same picture (scripts/boot.gd sets the Java system
+	## property "sunstone.splash"), or 6 s at most, so nothing blinks between them.
+	## GodotApp.java belongs to the Gradle template (installed per machine), so
+	## the change is made here at every export.
+	const SPLASH_KEEP := "splashScreen.setKeepOnScreenCondition(() -> godot.getRunStatus() != Godot.RunStatus.STARTED);"
+	const SPLASH_OURS := "final long sunstoneDeadline = android.os.SystemClock.uptimeMillis() + 6000; splashScreen.setKeepOnScreenCondition(() -> System.getProperty(\"sunstone.splash\") == null && android.os.SystemClock.uptimeMillis() < sunstoneDeadline);"
+	func _patch_activity() -> void:
+		var path := "res://android/build/src/main/java/com/godot/game/GodotApp.java"
+		var src := FileAccess.get_file_as_string(path)
+		if src == "" or src.contains("sunstone.splash"):
+			return
+		var gate := "if (godot != null && godot.getDisableGodotSplash()) {"
+		if not src.contains(SPLASH_KEEP) or not src.contains(gate):
+			push_warning("GodotApp.java changed: the splash hand-over patch wasn't applied")
+			return
+		src = src.replace(gate, "{").replace(SPLASH_KEEP, SPLASH_OURS)
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f:
+			f.store_string(src)
+
+	## android-res/ (the splash icon in each width class, from tools/make_splash.py)
+	## goes into the Gradle build's res/, which is regenerated and gitignored.
+	func _copy_android_res() -> void:
+		var src := "res://android-res"
+		for folder in DirAccess.get_directories_at(src):
+			var to := "res://android/build/res/" + folder
+			DirAccess.make_dir_recursive_absolute(to)
+			for file in DirAccess.get_files_at(src + "/" + folder):
+				DirAccess.copy_absolute(src + "/" + folder + "/" + file, to + "/" + file)
 
 	## What Google's Gradle plugin would generate from google-services.json.
 	func _firebase_values() -> Dictionary:
