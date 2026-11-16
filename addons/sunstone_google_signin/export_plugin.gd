@@ -64,6 +64,7 @@ class AndroidExport:
 			return # no Gradle build template installed
 		_copy_android_res()
 		_patch_activity()
+		_enable_r8()
 		var cfg := _firebase_values()
 		if cfg.is_empty():
 			DirAccess.remove_absolute(out) # no Firebase in this build
@@ -99,6 +100,27 @@ class AndroidExport:
 			push_warning("GodotApp.java changed: the splash hand-over patch wasn't applied")
 			return
 		src = src.replace(gate, "{").replace(SPLASH_KEEP, SPLASH_OURS)
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f:
+			f.store_string(src)
+
+	## R8 on release builds (Play flags unoptimised apps): shrink and optimise
+	## with our keep rules (sunstone-proguard.pro). build.gradle belongs to the
+	## Gradle template, so the change is made here at every export.
+	const R8_LINE := "minifyEnabled true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'sunstone-proguard.pro'"
+	func _enable_r8() -> void:
+		DirAccess.copy_absolute("res://addons/sunstone_google_signin/sunstone-proguard.pro", "res://android/build/sunstone-proguard.pro")
+		var path := "res://android/build/build.gradle"
+		var src := FileAccess.get_file_as_string(path)
+		if src == "" or src.contains("sunstone-proguard.pro"):
+			return
+		# The release block inside buildTypes (signingConfigs has one too).
+		var re := RegEx.create_from_string(r"buildTypes \{[\s\S]*?\n([ \t]*)release \{\n")
+		var m := re.search(src)
+		if m == null:
+			push_warning("build.gradle changed: R8 wasn't enabled")
+			return
+		src = src.substr(0, m.get_end()) + m.get_string(1) + "    " + R8_LINE + "\n" + src.substr(m.get_end())
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		if f:
 			f.store_string(src)

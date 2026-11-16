@@ -295,6 +295,17 @@ No Flutter anywhere — the game is pure Godot, so FlutterFire doesn't apply.
   internal-testing track).
 - **In-app review**: `addons/InappReviewPlugin` (Cengiz, 5.3), asked after a
   new best ≥ 500 m with 5+ runs, at most monthly and 3 times ever.
+- **R8** shrinks and optimises release builds (not debug), without renaming
+  (`-dontobfuscate`, so Crashlytics needs no mapping upload): the export plugin
+  adds `minifyEnabled` to the Gradle template's release build type and copies
+  `addons/sunstone_google_signin/sunstone-proguard.pro` (keeps Godot, our plugin
+  and the AdMob plugin whole). Dex went 29 MB -> 7 MB. A new plugin that Godot
+  calls by name needs a keep rule there. To test a release build on a device
+  over a debug install, re-sign it with Godot's debug keystore (apksigner).
+- Play's "deprecated edge-to-edge APIs" note points at
+  `com.google.android.play.core.hsdp.service.HsdpShimActivity`, which comes from
+  the AdMob SDK (`play-services-ads` 25.5.0 -> `com.google.android.play:hsdp`),
+  not our code; left alone until Google updates it.
 - The Play preset ships armeabi-v7a, arm64-v8a and x86_64 (the AAB splits per
   device); debug presets build arm64 only, for speed.
 - Exports use the Gradle build (`android/build`, regenerated, gitignored).
