@@ -60,12 +60,12 @@ func pass_ready() -> bool:
 
 func buy_pass(plan: String) -> void:
 	if not pass_ready() or not pass_plans.has(plan):
-		purchase_finished.emit(Shop.PASS_ID, "The Pass isn't on sale here yet.")
+		purchase_finished.emit(Shop.PASS_ID, tr("The Pass isn't on sale here yet."))
 		return
 	var offer: String = pass_plans[plan].offer_id
 	var r: Dictionary = _billing.purchase_subscription(Shop.PASS_ID, plan, offer)
 	if int(r.get("response_code", 0)) != BillingClient.BillingResponseCode.OK:
-		purchase_finished.emit(Shop.PASS_ID, "Google Play couldn't start the purchase.")
+		purchase_finished.emit(Shop.PASS_ID, tr("Google Play couldn't start the purchase."))
 
 ## Play's own page for the pass (cancel, change plan, payment).
 func manage_pass() -> void:
@@ -80,14 +80,14 @@ func ready_to_sell() -> bool:
 
 func buy(product_id: String) -> void:
 	if not ready_to_sell():
-		purchase_finished.emit(product_id, "The treasury is closed right now.")
+		purchase_finished.emit(product_id, tr("The treasury is closed right now."))
 		return
 	if _apple != null:
 		_apple.buy(product_id)
 		return
 	var r: Dictionary = _billing.purchase(product_id)
 	if int(r.get("response_code", 0)) != BillingClient.BillingResponseCode.OK:
-		purchase_finished.emit(product_id, "Google Play couldn't start the purchase.")
+		purchase_finished.emit(product_id, tr("Google Play couldn't start the purchase."))
 
 ## Asks Play for anything bought but not finished (and the server for what
 ## this player owns) — the "Restore purchases" button, and every launch.
@@ -214,7 +214,7 @@ func _verify(product_id: String, token: String, store_name: String) -> Dictionar
 	var res := await _online.verify_purchase(product_id, token, store_name)
 	if res.code != 200:
 		if res.code == 400 or res.code == 409:
-			purchase_finished.emit(product_id, "That purchase couldn't be verified.")
+			purchase_finished.emit(product_id, tr("That purchase couldn't be verified."))
 		return res
 	var body: Dictionary = res.body
 	if body.get("granted", false):
@@ -229,9 +229,9 @@ func _verify(product_id: String, token: String, store_name: String) -> Dictionar
 func _granted(product_id: String, body: Dictionary) -> void:
 	_online.track("purchase", {"product": product_id, "granted": body.get("granted", false)})
 	products_changed.emit()
-	var message := "Received."
+	var message := tr("Received.")
 	if product_id == "sunstone_patron":
-		message = "Thank you, patron."
+		message = tr("Thank you, patron.")
 	elif product_id == Shop.PASS_ID:
-		message = "The Pass is yours. Everything is open."
+		message = tr("The Pass is yours. Everything is open.")
 	purchase_finished.emit(product_id, message)

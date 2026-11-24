@@ -53,6 +53,7 @@ var _update_btn: UiKit.GlyphButton
 var _danger: UiKit.DangerFlash
 var _pause: Control
 var _settings: Control
+var _language: Control
 var _results: Control
 var _records: Control
 var _howto: Control
@@ -126,8 +127,12 @@ class DawnTrack:
 			var hx := lerpf(x0, x1, f)
 			draw_line(Vector2(hx, y - 10), Vector2(hx, y + 10), Color(UiKit.STUCCO, 0.8), 3.0, true)
 		var font := UiKit.text_font(900)
-		draw_string_outline(font, Vector2(x1 - 70, y - 16), "Dawn", HORIZONTAL_ALIGNMENT_RIGHT, 70, 22, 8, UiKit.INK)
-		draw_string(font, Vector2(x1 - 70, y - 16), "Dawn", HORIZONTAL_ALIGNMENT_RIGHT, 70, 22, UiKit.OCHRE_LIGHT if dawn else UiKit.STUCCO)
+		var word := tr("Dawn")
+		var fs := 22
+		while fs > 14 and font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 150:
+			fs -= 1
+		draw_string_outline(font, Vector2(x1 - 160, y - 16), word, HORIZONTAL_ALIGNMENT_RIGHT, 160, fs, 8, UiKit.INK)
+		draw_string(font, Vector2(x1 - 160, y - 16), word, HORIZONTAL_ALIGNMENT_RIGHT, 160, fs, UiKit.OCHRE_LIGHT if dawn else UiKit.STUCCO)
 		UiKit.draw_kin(self, Vector2(xp, y), 13.0, 1.0, 3.0)
 
 ## A slip of codex that names the House you just entered, then fades.
@@ -168,8 +173,15 @@ class Banner:
 		UiKit.draw_rule(self, Vector2(14, size.y - 10), Vector2(size.x - 14, size.y - 10), UiKit.CINNABAR, 3.0, 37)
 		var big := UiKit.display_font()
 		var small := UiKit.text_font(900)
-		draw_string(big, Vector2(0, size.y * 0.52), _title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 42, UiKit.INK)
-		draw_string(small, Vector2(0, size.y * 0.52 + 44), _sub, HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, UiKit.CINNABAR)
+		# Shrunk to fit: House names run long in some languages.
+		var bs := 42
+		while bs > 22 and big.get_string_size(_title, HORIZONTAL_ALIGNMENT_LEFT, -1, bs).x > size.x - 40:
+			bs -= 1
+		var ss := 26
+		while ss > 16 and small.get_string_size(_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss).x > size.x - 40:
+			ss -= 1
+		draw_string(big, Vector2(0, size.y * 0.52), _title, HORIZONTAL_ALIGNMENT_CENTER, size.x, bs, UiKit.INK)
+		draw_string(small, Vector2(0, size.y * 0.52 + 44), _sub, HORIZONTAL_ALIGNMENT_CENTER, size.x, ss, UiKit.CINNABAR)
 
 func _ready() -> void:
 	layer = 10
@@ -201,14 +213,14 @@ func _back() -> void:
 
 ## True while a page covers the world (any menu page, pause, results).
 func page_open() -> bool:
-	for page in [_confirm_page, _howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
+	for page in [_confirm_page, _language, _howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks, _pause, _results]:
 		if page and is_instance_valid(page) and page.visible:
 			return true
 	return false
 
 ## Closes whichever title page is open (settings, records...); true when one was.
 func close_modal() -> bool:
-	for page in [_confirm_page, _howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
+	for page in [_confirm_page, _language, _howto, _legal, _email, _account, _settings, _records, _daily, _glyphs, _offerings, _market, _ranks]:
 		if page and is_instance_valid(page) and page.visible:
 			page.visible = false
 			return true
@@ -226,6 +238,15 @@ class FontWarmup:
 		for c in range(32, 127):
 			text += char(c)
 		text += "áéíóúñ·’—…"
+		# Every letter the current language uses (each once), from its translations.
+		var tr_obj := TranslationServer.get_translation_object(TranslationServer.get_locale())
+		if tr_obj:
+			var seen := {}
+			for m in tr_obj.get_translated_message_list():
+				for c in m:
+					if c.unicode_at(0) > 126 and not seen.has(c):
+						seen[c] = true
+						text += c
 		var y := 10.0
 		for size in [16, 19, 21, 22, 24, 26, 28, 30, 32, 34, 36, 38, 42, 46, 48, 52, 88, 92]:
 			draw_string(UiKit.display_font(), Vector2(0, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(1, 1, 1, 0.004))
@@ -341,7 +362,7 @@ func _build_title() -> void:
 	_title.add_child(_wordmark)
 	_pin(_wordmark, TOP_CENTER, Rect2(-320, _top + 6, 640, 300))
 
-	var run := UiKit.GlyphButton.new("Run", UiKit.GlyphButton.Kind.PRIMARY)
+	var run := UiKit.GlyphButton.new(tr("Run"), UiKit.GlyphButton.Kind.PRIMARY)
 	run.font_size = 48
 	_title.add_child(run)
 	_pin(run, BOTTOM_CENTER, Rect2(-200, -400, 400, 128))
@@ -369,7 +390,8 @@ func _build_title() -> void:
 		_pin(b, BOTTOM_CENTER, Rect2(x0 + gap * i - 42, -158, 84, 84))
 		b.pressed.connect(item[2])
 		_menu_icons[item[1]] = b
-		var l := UiKit.label(item[1], UiKit.text_font(900), 22, UiKit.STUCCO, 8)
+		var l := UiKit.label(tr(item[1]), UiKit.text_font(900), 22, UiKit.STUCCO, 8)
+		UiKit.fit(l, 110.0, 14) # translations run longer than the gap between icons
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_title.add_child(l)
 		_pin(l, BOTTOM_CENTER, Rect2(x0 + gap * i - 58, -70, 116, 34))
@@ -388,7 +410,7 @@ func _build_title() -> void:
 	gear.pressed.connect(_open_settings)
 
 	# A downloaded update, waiting for a restart (AppUpdates).
-	_update_btn = UiKit.GlyphButton.new("Restart to update", UiKit.GlyphButton.Kind.SECONDARY)
+	_update_btn = UiKit.GlyphButton.new(tr("Restart to update"), UiKit.GlyphButton.Kind.SECONDARY)
 	_update_btn.font_size = 26
 	_title.add_child(_update_btn)
 	_pin(_update_btn, TOP_CENTER, Rect2(-190, _top + 312, 380, 76))
@@ -403,9 +425,9 @@ func show_title(save: SaveData) -> void:
 		_online.track("title_shown", {"runs": save.runs, "launches": save.launches})
 	_hide_all()
 	if save.best > 0:
-		_best.set_text("Best %s m" % UiKit.thousands(save.best), save.best)
+		_best.set_text(tr("Best %s m") % UiKit.thousands(save.best), save.best)
 	else:
-		_best.set_text("Carry the sun to dawn")
+		_best.set_text(tr("Carry the sun to dawn"))
 	_title.visible = true
 	if not already:
 		_wordmark.replay()
@@ -423,7 +445,7 @@ func _refresh_title() -> void:
 
 func _build_hud() -> void:
 	_hud = _layer()
-	_distance = UiKit.label("Night 1", UiKit.display_font(), 46, UiKit.STUCCO, 12)
+	_distance = UiKit.label(tr("Night %d") % 1, UiKit.display_font(), 46, UiKit.STUCCO, 12)
 	_hud.add_child(_distance)
 	_pin(_distance, TOP_LEFT, Rect2(28, _top - 4, 320, 70))
 	_house = UiKit.label("", UiKit.text_font(900), 24, UiKit.OCHRE_LIGHT, 8)
@@ -436,7 +458,7 @@ func _build_hud() -> void:
 	_drops = UiKit.label("0", UiKit.text_font(900), 30, UiKit.OCHRE_LIGHT, 10)
 	_hud.add_child(_drops)
 	_pin(_drops, TOP_LEFT, Rect2(70, _top + 92, 90, 44))
-	_metres = UiKit.label("0 m", UiKit.text_font(900), 26, UiKit.STUCCO, 8)
+	_metres = UiKit.label(tr("%s m") % "0", UiKit.text_font(900), 26, UiKit.STUCCO, 8)
 	_hud.add_child(_metres)
 	_pin(_metres, TOP_LEFT, Rect2(150, _top + 96, 180, 40))
 
@@ -468,7 +490,7 @@ func _build_hud() -> void:
 	_pin(_hint, Rect2(0.5, 0.74, 0, 0), Rect2(-270, 0, 540, 112))
 
 	# The head start, offered for the first moments of a run.
-	_dash_btn = UiKit.GlyphButton.new("Head start")
+	_dash_btn = UiKit.GlyphButton.new(tr("Head start"))
 	_hud.add_child(_dash_btn)
 	_pin(_dash_btn, Rect2(0.5, 0.88, 0, 0), Rect2(-170, -50, 340, 96))
 	_dash_btn.pressed.connect(func(): dash_pressed.emit())
@@ -480,7 +502,7 @@ func show_update_ready() -> void:
 
 ## Offers the head start ([count] held) for a few seconds.
 func show_dash(count: int) -> void:
-	_dash_btn.text = "Head start  ×%d" % count if count > 1 else "Head start"
+	_dash_btn.text = tr("Head start  ×%d") % count if count > 1 else tr("Head start")
 	if _dash_btn._label:
 		_dash_btn._label.text = _dash_btn.text
 	_dash_btn.modulate.a = 1.0
@@ -496,17 +518,21 @@ func hide_dash() -> void:
 ## [day_name] is the tzolk'in day during a daily dusk, "" otherwise.
 func show_hud(day_name := "") -> void:
 	_hide_all()
-	_day_tag.text = "Daily dusk: %s" % day_name if day_name != "" else ""
+	_day_tag.text = tr("Daily dusk: %s") % day_name if day_name != "" else ""
+	_day_tag.label_settings.font_size = 24
+	UiKit.fit(_day_tag, 300.0, 16)
 	_hud.visible = true
 
 func set_run_numbers(metres: int, drop_count: int) -> void:
-	_metres.text = "%s m" % UiKit.thousands(metres)
+	_metres.text = tr("%s m") % UiKit.thousands(metres)
 	_drops.text = str(drop_count)
 
 ## Which night, which House, and how far to dawn (0..1).
 func set_night(n: int, house: String, t: float, dawn: bool) -> void:
-	_distance.text = "Night %d" % n
-	_house.text = "The sun is rising" if dawn else house
+	_distance.text = tr("Night %d") % n
+	_house.text = tr("The sun is rising") if dawn else tr(house)
+	_house.label_settings.font_size = 24
+	UiKit.fit(_house, 300.0, 16)
 	_dawn.set_progress(1.0 if dawn else t, dawn)
 
 ## The launch: the boot splash's sun glyph (same image, same place) rises
@@ -599,7 +625,7 @@ func pop(text: String) -> void:
 
 ## Names the House you just walked into.
 func show_banner(title: String, sub: String) -> void:
-	_banner.show_banner(title, sub)
+	_banner.show_banner(tr(title), tr(sub))
 
 ## The Sunstone's charge, how far night has fallen, and how close the jaguars are.
 ## The least light a flare needs (marked on the sun meter's ring).
@@ -667,7 +693,7 @@ func _settings_rows(page: Control, y: float) -> float:
 		rows.append(["Notifications", "push_on"])
 	for row in rows:
 		var key: String = row[1]
-		var t := UiKit.Toggle.new(row[0], _save.get(key))
+		var t := UiKit.Toggle.new(tr(row[0]), _save.get(key))
 		t.position = Vector2(56, y)
 		t.size = Vector2(488, 76)
 		t.toggled.connect(func(on: bool):
@@ -681,12 +707,12 @@ func _settings_rows(page: Control, y: float) -> float:
 		y += 84
 		i += 1
 	# How long a swipe must be before it counts.
-	var swipe_l := UiKit.label("Swipe", UiKit.text_font(900), 30, UiKit.INK)
+	var swipe_l := UiKit.label(tr("Swipe"), UiKit.text_font(900), 30, UiKit.INK)
 	swipe_l.position = Vector2(58, y + 18)
 	page.add_child(swipe_l)
 	var tabs: Array[UiKit.GlyphButton] = []
 	for k in 3:
-		var b := UiKit.GlyphButton.new(["Light", "Normal", "Firm"][k],
+		var b := UiKit.GlyphButton.new([tr("Light"), tr("Normal"), tr("Firm")][k],
 			UiKit.GlyphButton.Kind.PRIMARY if _save.swipe == k else UiKit.GlyphButton.Kind.SECONDARY)
 		b.font_size = 19
 		b.position = Vector2(206 + k * 114, y + 6)
@@ -710,20 +736,20 @@ func show_pause() -> void:
 	var m := _modal(978 + (84 if push and push.available() else 0))
 	_pause = m[0]
 	var page: UiKit.Page = m[1]
-	_headline(page, "Paused")
+	_headline(page, tr("Paused"))
 	var y := _settings_rows(page, 140)
-	var resume := UiKit.GlyphButton.new("Resume", UiKit.GlyphButton.Kind.PRIMARY)
+	var resume := UiKit.GlyphButton.new(tr("Resume"), UiKit.GlyphButton.Kind.PRIMARY)
 	resume.position = Vector2(56, y + 18)
 	resume.size = Vector2(488, 112)
 	resume.pressed.connect(func(): resume_pressed.emit())
 	page.add_child(resume)
-	var home := UiKit.GlyphButton.new("Home", UiKit.GlyphButton.Kind.SECONDARY)
+	var home := UiKit.GlyphButton.new(tr("Home"), UiKit.GlyphButton.Kind.SECONDARY)
 	home.font_size = 30
 	home.position = Vector2(56, y + 140)
 	home.size = Vector2(488, 96)
 	home.pressed.connect(func(): home_pressed.emit())
 	page.add_child(home)
-	var how := UiKit.GlyphButton.new("How to play", UiKit.GlyphButton.Kind.SECONDARY)
+	var how := UiKit.GlyphButton.new(tr("How to play"), UiKit.GlyphButton.Kind.SECONDARY)
 	how.font_size = 26
 	how.position = Vector2(56, y + 246)
 	how.size = Vector2(488, 76)
@@ -734,60 +760,118 @@ func show_pause() -> void:
 func _open_settings() -> void:
 	if _settings:
 		_settings.queue_free()
-	var m := _modal(1030 + (64 if _ads.privacy_options_required() else 0) + (84 if push and push.available() else 0))
+	var m := _modal(1122 + (64 if _ads.privacy_options_required() else 0) + (84 if push and push.available() else 0))
 	_settings = m[0]
 	var page: UiKit.Page = m[1]
-	_headline(page, "Settings")
+	_headline(page, tr("Settings"))
 	var y := _settings_rows(page, 140)
 	var who: String = _online.player.get("name", "")
-	var acc := UiKit.label("Your runner" if who != "" else "Not signed in yet", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	var acc := UiKit.label(tr("Your runner") if who != "" else tr("Not signed in yet"), UiKit.text_font(900), 24, UiKit.CINNABAR)
 	acc.position = Vector2(58, y + 6)
 	page.add_child(acc)
-	var name_l := UiKit.label(who if who != "" else "Offline", UiKit.display_font(), 26, UiKit.INK)
+	var name_l := UiKit.label(who if who != "" else tr("Offline"), UiKit.display_font(), 26, UiKit.INK)
 	name_l.position = Vector2(58, y + 40)
 	# Long names stop short of the Account button.
 	name_l.size = Vector2(300, 44)
 	name_l.clip_text = true
 	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	page.add_child(name_l)
-	var account := UiKit.GlyphButton.new("Account", UiKit.GlyphButton.Kind.SECONDARY)
+	var account := UiKit.GlyphButton.new(tr("Account"), UiKit.GlyphButton.Kind.SECONDARY)
 	account.font_size = 24
 	account.position = Vector2(384, y + 18)
 	account.size = Vector2(160, 72)
 	account.pressed.connect(_open_account)
 	page.add_child(account)
 	if _ads.privacy_options_required():
-		var privacy := UiKit.GlyphButton.new("Ad privacy", UiKit.GlyphButton.Kind.SECONDARY)
+		var privacy := UiKit.GlyphButton.new(tr("Ad privacy"), UiKit.GlyphButton.Kind.SECONDARY)
 		privacy.font_size = 22
 		privacy.position = Vector2(384, y + 88)
 		privacy.size = Vector2(160, 60)
 		privacy.pressed.connect(func(): _ads.show_privacy_options())
 		page.add_child(privacy)
 		y += 64
-	var how := UiKit.GlyphButton.new("How to play", UiKit.GlyphButton.Kind.SECONDARY)
+	var how := UiKit.GlyphButton.new(tr("How to play"), UiKit.GlyphButton.Kind.SECONDARY)
 	how.font_size = 22
 	how.position = Vector2(56, y + 112)
 	how.size = Vector2(238, 80)
 	how.pressed.connect(_open_howto)
 	page.add_child(how)
-	var rate := UiKit.GlyphButton.new("Rate Sunstone", UiKit.GlyphButton.Kind.SECONDARY)
+	var rate := UiKit.GlyphButton.new(tr("Rate Sunstone"), UiKit.GlyphButton.Kind.SECONDARY)
 	rate.font_size = 22
 	rate.position = Vector2(306, y + 112)
 	rate.size = Vector2(238, 80)
 	rate.pressed.connect(_rate)
 	page.add_child(rate)
 	y += 92
-	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
+	var lang := UiKit.GlyphButton.new(tr("Language: %s") % language_name(TranslationServer.get_locale()), UiKit.GlyphButton.Kind.SECONDARY)
+	lang.font_size = 24
+	lang.position = Vector2(56, y + 112)
+	lang.size = Vector2(488, 80)
+	lang.pressed.connect(_open_language)
+	page.add_child(lang)
+	y += 92
+	var done := UiKit.GlyphButton.new(tr("Done"), UiKit.GlyphButton.Kind.PRIMARY)
 	done.position = Vector2(56, y + 116)
 	done.size = Vector2(488, 112)
 	done.pressed.connect(func(): _settings.visible = false)
 	page.add_child(done)
-	var legal := UiKit.GlyphButton.new("Privacy & terms", UiKit.GlyphButton.Kind.SECONDARY)
+	var legal := UiKit.GlyphButton.new(tr("Privacy & terms"), UiKit.GlyphButton.Kind.SECONDARY)
 	legal.font_size = 22
 	legal.position = Vector2(56, y + 238)
 	legal.size = Vector2(488, 62)
 	legal.pressed.connect(_open_legal)
 	page.add_child(legal)
+	page.open()
+
+# ------------------------------------------------------------- language ---
+
+## The game's languages, each named in itself. "" = follow the phone.
+const LANGUAGES := [["", "Phone language"], ["en", "English"], ["hi", "हिन्दी"], ["bn", "বাংলা"],
+	["ar", "العربية"], ["pt", "Português"], ["id", "Bahasa Indonesia"], ["es", "Español"],
+	["tr", "Türkçe"], ["ru", "Русский"], ["de", "Deutsch"], ["it", "Italiano"], ["vi", "Tiếng Việt"]]
+
+## Sets the language: [code] from LANGUAGES, or "" for the phone's own.
+static func apply_language(code: String) -> void:
+	TranslationServer.set_locale(code if code != "" else OS.get_locale())
+
+## [locale]'s name in its own language ("pt_BR" -> "Português"); English otherwise.
+static func language_name(locale: String) -> String:
+	var lang := locale.split("_")[0]
+	for l in LANGUAGES:
+		if l[0] == lang:
+			return l[1]
+	return "English"
+
+func _open_language() -> void:
+	if _language:
+		_language.queue_free()
+	var rows := ceili(LANGUAGES.size() / 2.0)
+	var m := _modal(300 + rows * 84)
+	_language = m[0]
+	var page: UiKit.Page = m[1]
+	_headline(page, tr("Language"))
+	for i in LANGUAGES.size():
+		var code: String = LANGUAGES[i][0]
+		var label: String = tr(LANGUAGES[i][1]) if code == "" else LANGUAGES[i][1]
+		var b := UiKit.GlyphButton.new(label,
+			UiKit.GlyphButton.Kind.PRIMARY if code == _save.lang else UiKit.GlyphButton.Kind.SECONDARY)
+		# Each name stays in its own language: never through tr().
+		b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+		b.font_size = 24
+		b.position = Vector2(56 + (i % 2) * 250, 150 + (i / 2) * 84)
+		b.size = Vector2(238, 72)
+		b.pressed.connect(func():
+			_save.lang = code
+			_save.save_to_disk()
+			apply_language(code)
+			# Every page was built in the old language: start the title over.
+			get_tree().reload_current_scene())
+		page.add_child(b)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.SECONDARY)
+	close.position = Vector2(56, 170 + rows * 84)
+	close.size = Vector2(488, 80)
+	close.pressed.connect(func(): _language.visible = false)
+	page.add_child(close)
 	page.open()
 
 # ---------------------------------------------------------------- daily ---
@@ -802,7 +886,7 @@ func _open_daily() -> void:
 	_daily = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 37
-	_headline(page, "Daily dusk")
+	_headline(page, tr("Daily dusk"))
 
 	# The day, as a scribe would write it: its number in Maya numerals beside
 	# its name, in a glyph block.
@@ -819,23 +903,23 @@ func _open_daily() -> void:
 	date_l.position = Vector2(236, 238)
 	page.add_child(date_l)
 
-	var note := UiKit.wrapped("One causeway for everyone, all day. A new one at midnight UTC.",
+	var note := UiKit.wrapped(tr("One causeway for everyone, all day. A new one at midnight UTC."),
 		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 320), 486, 80)
 	page.add_child(note)
 	_rule(page, 418, 41)
 
 	var best := _save.daily_best(today)
-	var best_l := UiKit.label("Today's best: %s m" % UiKit.thousands(best) if best >= 0 else "Not run yet today",
+	var best_l := UiKit.label(tr("Today's best: %s m") % UiKit.thousands(best) if best >= 0 else tr("Not run yet today"),
 		UiKit.text_font(900), 30, UiKit.INK)
 	best_l.position = Vector2(58, 438)
 	page.add_child(best_l)
 	var streak := _save.live_streak(today)
 	if streak > 1:
-		var st := UiKit.label("%d days in a row" % streak, UiKit.display_font(), 26, UiKit.CINNABAR)
+		var st := UiKit.label(tr("%d days in a row") % streak, UiKit.display_font(), 26, UiKit.CINNABAR)
 		st.position = Vector2(58, 482)
 		page.add_child(st)
 
-	var run := UiKit.GlyphButton.new("Run today's dusk", UiKit.GlyphButton.Kind.PRIMARY)
+	var run := UiKit.GlyphButton.new(tr("Run today's dusk"), UiKit.GlyphButton.Kind.PRIMARY)
 	run.font_size = 32
 	run.position = Vector2(56, 540)
 	run.size = Vector2(488, 112)
@@ -843,7 +927,7 @@ func _open_daily() -> void:
 		_daily.visible = false
 		daily_pressed.emit())
 	page.add_child(run)
-	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 28
 	close.position = Vector2(56, 662)
 	close.size = Vector2(488, 76)
@@ -857,7 +941,7 @@ const MONTHS := ["January", "February", "March", "April", "May", "June", "July",
 ## "2026-10-01" → "1 October 2026".
 static func _friendly_date(key: String) -> String:
 	var p := key.split("-")
-	return "%d %s %s" % [p[2].to_int(), MONTHS[p[1].to_int() - 1], p[0]]
+	return "%d %s %s" % [p[2].to_int(), TranslationServer.translate(MONTHS[p[1].to_int() - 1]), p[0]]
 
 ## A day's number in a glyph block, written in Maya numerals.
 class DayBlock:
@@ -890,8 +974,8 @@ func _open_glyphs() -> void:
 	_glyphs = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 53
-	_headline(page, "Glyphs")
-	var count := UiKit.label("%d of %d" % [_save.glyphs.size(), Glyphs.DEFS.size()], UiKit.text_font(900), 26, UiKit.CINNABAR)
+	_headline(page, tr("Glyphs"))
+	var count := UiKit.label(tr("%d of %d") % [_save.glyphs.size(), Glyphs.DEFS.size()], UiKit.text_font(900), 26, UiKit.CINNABAR)
 	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	count.position = Vector2(344, 62)
 	count.size = Vector2(200, 36)
@@ -902,12 +986,12 @@ func _open_glyphs() -> void:
 	page.add_child(title)
 	var text := UiKit.wrapped("", UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 848), 486, 70)
 	page.add_child(text)
-	var take := UiKit.GlyphButton.new("Take", UiKit.GlyphButton.Kind.PRIMARY)
+	var take := UiKit.GlyphButton.new(tr("Take"), UiKit.GlyphButton.Kind.PRIMARY)
 	take.font_size = 30
 	take.position = Vector2(56, 940)
 	take.size = Vector2(300, 100)
 	page.add_child(take)
-	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 28
 	close.position = Vector2(370, 940)
 	close.size = Vector2(174, 100)
@@ -921,11 +1005,13 @@ func _open_glyphs() -> void:
 		var st: String = _save.glyphs.get(d.id, "")
 		for t in tiles:
 			t.selected = t.index == i
-		title.text = d.title
-		text.text = "%s  Pays %d sun-drops." % [d.text, d.reward] if st != "claimed" else "%s  Taken." % d.text
+		title.text = tr(d.title)
+		text.text = tr("%s  Pays %d sun-drops.") % [tr(d.text), d.reward] if st != "claimed" else tr("%s  Taken.") % tr(d.text)
+		# Two lines fit above the buttons; longer languages get a smaller font.
+		text.label_settings.font_size = 26
+		UiKit.fit_wrapped(text, 86.0, 18)
 		take.visible = st == "earned"
-		take.text = "Take %d" % d.reward
-		take.get_child(0).text = take.text
+		take.text = tr("Take %d") % d.reward
 	for i in Glyphs.DEFS.size():
 		var d: Dictionary = Glyphs.DEFS[i]
 		var tile := UiKit.GlyphTile.new()
@@ -972,8 +1058,8 @@ func _open_offerings() -> void:
 	_offerings = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 61
-	_headline(page, "Offerings")
-	page.add_child(UiKit.wrapped("The temple leaves a gift each day you return. Miss a day and it waits for you.",
+	_headline(page, tr("Offerings"))
+	page.add_child(UiKit.wrapped(tr("The temple leaves a gift each day you return. Miss a day and it waits for you."),
 		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 136), 486, 70))
 	var days: Array[UiKit.OfferingDay] = []
 	for i in SaveData.OFFERINGS.size():
@@ -994,7 +1080,7 @@ func _open_offerings() -> void:
 		days.append(d)
 	_rule(page, 572, 67)
 	var take := UiKit.GlyphButton.new(
-		"Take today's gift" if ready else "Come back tomorrow",
+		tr("Take today's gift") if ready else tr("Come back tomorrow"),
 		UiKit.GlyphButton.Kind.PRIMARY if ready else UiKit.GlyphButton.Kind.SECONDARY)
 	take.font_size = 30
 	take.position = Vector2(56, 596)
@@ -1012,10 +1098,10 @@ func _open_offerings() -> void:
 			if d.state == "today":
 				d.state = "taken"
 				d.queue_redraw()
-		take.get_child(0).text = "+%d sun-drops" % got
+		take.get_child(0).text = tr("+%d sun-drops") % got
 		_refresh_title()
 		if _ads.rewarded_ready():
-			var twice := UiKit.GlyphButton.new("Watch to double it", UiKit.GlyphButton.Kind.SECONDARY)
+			var twice := UiKit.GlyphButton.new(tr("Watch to double it"), UiKit.GlyphButton.Kind.SECONDARY)
 			twice.font_size = 24
 			twice.position = Vector2(56, 716)
 			twice.size = Vector2(488, 70)
@@ -1025,7 +1111,7 @@ func _open_offerings() -> void:
 					_save.bank += got
 					_save.save_to_disk()
 					_online.queue_sync()
-					take.get_child(0).text = "+%d sun-drops" % (got * 2)
+					take.get_child(0).text = tr("+%d sun-drops") % (got * 2)
 					_refresh_title())
 			page.add_child(twice)
 		else:
@@ -1044,12 +1130,12 @@ func _open_ranks() -> void:
 	_ranks = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 97
-	_headline(page, "Ranks")
+	_headline(page, tr("Ranks"))
 	_ranks_body = Control.new()
 	_ranks_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ranks_body.size = Vector2(600, 1080)
 	page.add_child(_ranks_body)
-	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 28
 	close.position = Vector2(56, 970)
 	close.size = Vector2(488, 84)
@@ -1064,7 +1150,7 @@ func _fill_ranks() -> void:
 	var body := _ranks_body
 	for i in RANK_BOARDS.size():
 		var b: Array = RANK_BOARDS[i]
-		var tab := UiKit.GlyphButton.new(b[1], UiKit.GlyphButton.Kind.PRIMARY if b[0] == _ranks_board else UiKit.GlyphButton.Kind.SECONDARY)
+		var tab := UiKit.GlyphButton.new(tr(b[1]), UiKit.GlyphButton.Kind.PRIMARY if b[0] == _ranks_board else UiKit.GlyphButton.Kind.SECONDARY)
 		tab.font_size = 22
 		tab.position = Vector2(56 + i * 124, 138)
 		tab.size = Vector2(116, 70)
@@ -1073,13 +1159,13 @@ func _fill_ranks() -> void:
 			_fill_ranks())
 		body.add_child(tab)
 	var period_note := {
-		"dusk": "Today's dusk: %s" % MayaCalendar.tzolkin_name(MayaCalendar.today_utc()),
-		"day": "Free runs today (UTC)", "week": "Free runs this week", "all": "Every free run, ever",
+		"dusk": tr("Today's dusk: %s") % MayaCalendar.tzolkin_name(MayaCalendar.today_utc()),
+		"day": tr("Free runs today (UTC)"), "week": tr("Free runs this week"), "all": tr("Every free run, ever"),
 	}
 	var note := UiKit.label(period_note[_ranks_board], UiKit.text_font(900), 24, UiKit.CINNABAR)
 	note.position = Vector2(58, 220)
 	body.add_child(note)
-	var reading := UiKit.label("Reading the records…", UiKit.text_font(800), 26, UiKit.INK)
+	var reading := UiKit.label(tr("Reading the records…"), UiKit.text_font(800), 26, UiKit.INK)
 	reading.position = Vector2(58, 280)
 	body.add_child(reading)
 	var board := _ranks_board
@@ -1089,12 +1175,12 @@ func _fill_ranks() -> void:
 		return
 	reading.queue_free()
 	if data.is_empty():
-		body.add_child(UiKit.wrapped("The temple's records can't be reached right now. Your runs are kept and sent when they can be.",
+		body.add_child(UiKit.wrapped(tr("The temple's records can't be reached right now. Your runs are kept and sent when they can be."),
 			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 280), 486, 120))
 		return
 	var top: Array = data.get("top", [])
 	if top.is_empty():
-		body.add_child(UiKit.wrapped("No one has run this yet. Be the first name in the codex.",
+		body.add_child(UiKit.wrapped(tr("No one has run this yet. Be the first name in the codex."),
 			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 280), 486, 80))
 	var y := 266.0
 	for row in top.slice(0, 10):
@@ -1109,11 +1195,11 @@ func _fill_ranks() -> void:
 		_rule(body, y + 10, 101)
 		_rank_row(body, me, y + 26)
 	elif not me is Dictionary:
-		var hint := UiKit.label("Run to take your place here.", UiKit.text_font(800), 24, UiKit.INK)
+		var hint := UiKit.label(tr("Run to take your place here."), UiKit.text_font(800), 24, UiKit.INK)
 		hint.position = Vector2(58, maxf(y + 20, 520))
 		body.add_child(hint)
 	var players := int(data.get("players", 0))
-	var count := UiKit.label("%s %s" % [UiKit.thousands(players), "runner" if players == 1 else "runners"], UiKit.text_font(900), 22, UiKit.CINNABAR)
+	var count := UiKit.label(tr("%s runner") % UiKit.thousands(players) if players == 1 else tr("%s runners") % UiKit.thousands(players), UiKit.text_font(900), 22, UiKit.CINNABAR)
 	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	count.position = Vector2(344, 222)
 	count.size = Vector2(200, 30)
@@ -1125,12 +1211,12 @@ func _rank_row(body: Control, row: Dictionary, y: float) -> void:
 	var rank := UiKit.label("%d" % int(row.get("rank", 0)), UiKit.display_font(), 26, color)
 	rank.position = Vector2(58, y)
 	body.add_child(rank)
-	var n := UiKit.label(str(row.get("name", "")) + ("  (you)" if mine else ""), UiKit.text_font(900), 26, color)
+	var n := UiKit.label(tr("%s  (you)") % str(row.get("name", "")) if mine else str(row.get("name", "")), UiKit.text_font(900), 26, color)
 	n.position = Vector2(140, y + 2) # room for a four-digit rank
 	n.size = Vector2(220, 40)
 	n.clip_text = true
 	body.add_child(n)
-	var d := UiKit.label("%s m" % UiKit.thousands(int(row.get("distance", 0))), UiKit.display_font(), 26, color)
+	var d := UiKit.label(tr("%s m") % UiKit.thousands(int(row.get("distance", 0))), UiKit.display_font(), 26, color)
 	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	d.position = Vector2(364, y)
 	d.size = Vector2(180, 40)
@@ -1148,8 +1234,8 @@ func _open_account() -> void:
 	_account = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 103
-	_headline(page, "Account")
-	var label := UiKit.label("Your name on the ranks", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	_headline(page, tr("Account"))
+	var label := UiKit.label(tr("Your name on the ranks"), UiKit.text_font(900), 24, UiKit.CINNABAR)
 	label.position = Vector2(58, 140)
 	page.add_child(label)
 	var field := UiKit.text_field(str(_online.player.get("name", "")))
@@ -1158,19 +1244,19 @@ func _open_account() -> void:
 	page.add_child(field)
 	var status := UiKit.wrapped("", UiKit.text_font(800), 24, UiKit.CINNABAR, Vector2(58, 262), 486, 34)
 	page.add_child(status)
-	var save_name := UiKit.GlyphButton.new("Save name", UiKit.GlyphButton.Kind.PRIMARY)
+	var save_name := UiKit.GlyphButton.new(tr("Save name"), UiKit.GlyphButton.Kind.PRIMARY)
 	save_name.font_size = 28
 	save_name.position = Vector2(56, 304)
 	save_name.size = Vector2(488, 96)
 	save_name.pressed.connect(func():
-		status.text = "Saving…"
+		status.text = tr("Saving…")
 		var err := await _online.rename(field.text.strip_edges())
-		status.text = err if err != "" else "Saved.")
+		status.text = err if err != "" else tr("Saved."))
 	page.add_child(save_name)
 	_rule(page, 426, 107)
 	# How progress is kept: a guest's lives on this phone only.
 	var kept := UiKit.wrapped(_online.linked_summary() if not guest
-			else "Your progress lives on this phone. Sign in to keep it on any phone.",
+			else tr("Your progress lives on this phone. Sign in to keep it on any phone."),
 		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 440), 486, 64)
 	page.add_child(kept)
 	var y := 528.0
@@ -1180,20 +1266,20 @@ func _open_account() -> void:
 		if provider == "Apple":
 			link = _apple_button()
 		else:
-			var google := UiKit.GlyphButton.new("Sign in with Google", UiKit.GlyphButton.Kind.PRIMARY)
+			var google := UiKit.GlyphButton.new(tr("Sign in with Google"), UiKit.GlyphButton.Kind.PRIMARY)
 			google.font_size = 26
 			link = google
 		link.position = Vector2(56, y)
 		link.size = Vector2(488, 88)
 		link.connect("pressed", func():
-			kept.text = "Asking %s…" % provider
+			kept.text = tr("Asking %s…") % provider
 			var err := await _online.link_account()
 			if err == "" and not _online.is_guest():
 				_after_account_change()
 			else:
-				kept.text = err if err != "" else "Your progress lives on this phone. Sign in to keep it on any phone.")
+				kept.text = err if err != "" else tr("Your progress lives on this phone. Sign in to keep it on any phone."))
 		page.add_child(link)
-		var email := UiKit.GlyphButton.new("Use email", UiKit.GlyphButton.Kind.SECONDARY)
+		var email := UiKit.GlyphButton.new(tr("Use email"), UiKit.GlyphButton.Kind.SECONDARY)
 		email.font_size = 26
 		email.position = Vector2(56, y + 100)
 		email.size = Vector2(488, 80)
@@ -1201,21 +1287,21 @@ func _open_account() -> void:
 		page.add_child(email)
 		y += 206
 	else:
-		var sign_out := UiKit.GlyphButton.new("Sign out", UiKit.GlyphButton.Kind.SECONDARY)
+		var sign_out := UiKit.GlyphButton.new(tr("Sign out"), UiKit.GlyphButton.Kind.SECONDARY)
 		sign_out.font_size = 26
 		sign_out.position = Vector2(56, y)
 		sign_out.size = Vector2(488, 80)
-		sign_out.pressed.connect(func(): _confirm("Sign out?",
-			"Your progress is saved to your account first. Sign in again any time to get it back on this phone.",
-			"Sign out", func():
-			kept.text = "Saving your progress…"
+		sign_out.pressed.connect(func(): _confirm(tr("Sign out?"),
+			tr("Your progress is saved to your account first. Sign in again any time to get it back on this phone."),
+			tr("Sign out"), func():
+			kept.text = tr("Saving your progress…")
 			var err := await _online.sign_out()
 			if err != "":
 				kept.text = err
 				return
 			_save.reset_all()
 			_save.save_to_disk()
-			kept.text = "Signed out. Sign in again any time to get your progress back."
+			kept.text = tr("Signed out. Sign in again any time to get your progress back.")
 			account_reset.emit()
 			await get_tree().create_timer(1.6).timeout
 			if is_instance_valid(page):
@@ -1223,34 +1309,34 @@ func _open_account() -> void:
 		page.add_child(sign_out)
 		y += 106
 	_rule(page, y, 109)
-	page.add_child(UiKit.wrapped("Deleting your account removes your runs, ranks and cloud save from the server and starts this phone fresh.",
+	page.add_child(UiKit.wrapped(tr("Deleting your account removes your runs, ranks and cloud save from the server and starts this phone fresh."),
 		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, y + 16), 486, 90))
-	var delete := UiKit.GlyphButton.new("Delete account", UiKit.GlyphButton.Kind.SECONDARY)
+	var delete := UiKit.GlyphButton.new(tr("Delete account"), UiKit.GlyphButton.Kind.SECONDARY)
 	delete.font_size = 23
 	delete.position = Vector2(56, y + 134)
 	delete.size = Vector2(300, 84)
 	page.add_child(delete)
-	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 26
 	close.position = Vector2(370, y + 134)
 	close.size = Vector2(174, 84)
 	close.pressed.connect(func(): _account.visible = false)
 	page.add_child(close)
-	delete.pressed.connect(func(): _confirm("Delete account?",
-		"Your runs, ranks and cloud save are removed from the server and this phone starts fresh. This can't be undone.",
-		"Delete", func():
-		status.text = "Deleting…"
+	delete.pressed.connect(func(): _confirm(tr("Delete account?"),
+		tr("Your runs, ranks and cloud save are removed from the server and this phone starts fresh. This can't be undone."),
+		tr("Delete"), func():
+		status.text = tr("Deleting…")
 		if await _online.delete_account():
 			_save.reset_all()
 			_save.save_to_disk()
-			status.text = "Deleted. This phone starts fresh."
+			status.text = tr("Deleted. This phone starts fresh.")
 			account_reset.emit()
 			await get_tree().create_timer(1.4).timeout
 			_account.visible = false
 			if _settings:
 				_settings.visible = false
 		else:
-			status.text = "Can't reach the temple right now."))
+			status.text = tr("Can't reach the temple right now.")))
 	page.open()
 
 ## A small glyph block with an inked eye: tap to show the password, tap
@@ -1303,9 +1389,9 @@ class EyeToggle:
 ## Once, on the title after the second run: may the game remind them at dusk?
 ## (Android then asks for the permission itself.)
 func ask_for_push() -> void:
-	_confirm("A word at dusk?",
-		"When dusk falls and you haven't run yet, the Sunstone can remind you. Never at night, never more than once a day.",
-		"Remind me", func(): push.turn_on(), "Not now", func(): push.turn_off())
+	_confirm(tr("A word at dusk?"),
+		tr("When dusk falls and you haven't run yet, the Sunstone can remind you. Never at night, never more than once a day."),
+		tr("Remind me"), func(): push.turn_on(), tr("Not now"), func(): push.turn_off())
 
 ## Asks before something that can't be taken back: [title], a line of [text],
 ## and [yes] (the cinnabar button) or Cancel. [then] runs on yes.
@@ -1325,7 +1411,7 @@ func _confirm(title: String, text: String, yes: String, then: Callable, no := "C
 		_confirm_page.visible = false
 		then.call())
 	page.add_child(ok)
-	var cancel := UiKit.GlyphButton.new(no, UiKit.GlyphButton.Kind.SECONDARY)
+	var cancel := UiKit.GlyphButton.new(tr(no), UiKit.GlyphButton.Kind.SECONDARY)
 	cancel.font_size = 28
 	cancel.position = Vector2(56, 474)
 	cancel.size = Vector2(488, 76)
@@ -1355,28 +1441,28 @@ func _open_email() -> void:
 	_email = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 131
-	_headline(page, "Use email")
-	page.add_child(UiKit.wrapped("Sign in to your account, or create one to keep this phone's progress.",
+	_headline(page, tr("Use email"))
+	page.add_child(UiKit.wrapped(tr("Sign in to your account, or create one to keep this phone's progress."),
 		UiKit.text_font(800), 24, UiKit.INK, Vector2(58, 140), 486, 64))
-	var email_label := UiKit.label("Email", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	var email_label := UiKit.label(tr("Email"), UiKit.text_font(900), 24, UiKit.CINNABAR)
 	email_label.position = Vector2(58, 214)
 	page.add_child(email_label)
 	var email := UiKit.text_field("")
 	email.max_length = 254
-	email.placeholder_text = "you@example.com"
+	email.placeholder_text = tr("you@example.com")
 	email.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
 	email.add_theme_font_size_override("font_size", 28)
 	email.add_theme_color_override("font_placeholder_color", Color(UiKit.INK, 0.35))
 	email.position = Vector2(56, 250)
 	email.size = Vector2(488, 72)
 	page.add_child(email)
-	var password_label := UiKit.label("Password", UiKit.text_font(900), 24, UiKit.CINNABAR)
+	var password_label := UiKit.label(tr("Password"), UiKit.text_font(900), 24, UiKit.CINNABAR)
 	password_label.position = Vector2(58, 336)
 	page.add_child(password_label)
 	var password := UiKit.text_field("")
 	password.max_length = 128
 	password.secret = true
-	password.placeholder_text = "at least 6 characters"
+	password.placeholder_text = tr("at least 6 characters")
 	password.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
 	password.add_theme_font_size_override("font_size", 28)
 	password.add_theme_color_override("font_placeholder_color", Color(UiKit.INK, 0.35))
@@ -1393,22 +1479,22 @@ func _open_email() -> void:
 	page.add_child(eye)
 	var note := UiKit.wrapped("", UiKit.text_font(800), 23, UiKit.CINNABAR, Vector2(58, 456), 486, 60)
 	page.add_child(note)
-	var sign_in := UiKit.GlyphButton.new("Sign in", UiKit.GlyphButton.Kind.PRIMARY)
+	var sign_in := UiKit.GlyphButton.new(tr("Sign in"), UiKit.GlyphButton.Kind.PRIMARY)
 	sign_in.font_size = 28
 	sign_in.position = Vector2(56, 540)
 	sign_in.size = Vector2(488, 92)
 	page.add_child(sign_in)
-	var create := UiKit.GlyphButton.new("Create account", UiKit.GlyphButton.Kind.SECONDARY)
+	var create := UiKit.GlyphButton.new(tr("Create account"), UiKit.GlyphButton.Kind.SECONDARY)
 	create.font_size = 26
 	create.position = Vector2(56, 644)
 	create.size = Vector2(488, 80)
 	page.add_child(create)
-	var forgot := UiKit.GlyphButton.new("Forgot password?", UiKit.GlyphButton.Kind.SECONDARY)
+	var forgot := UiKit.GlyphButton.new(tr("Forgot password?"), UiKit.GlyphButton.Kind.SECONDARY)
 	forgot.font_size = 21
 	forgot.position = Vector2(56, 738)
 	forgot.size = Vector2(300, 74)
 	page.add_child(forgot)
-	var back := UiKit.GlyphButton.new("Back", UiKit.GlyphButton.Kind.SECONDARY)
+	var back := UiKit.GlyphButton.new(tr("Back"), UiKit.GlyphButton.Kind.SECONDARY)
 	back.font_size = 24
 	back.position = Vector2(370, 738)
 	back.size = Vector2(174, 74)
@@ -1431,18 +1517,18 @@ func _open_email() -> void:
 			return
 		_email.visible = false
 		_after_account_change()
-	sign_in.pressed.connect(func(): run.call("Signing in…",
+	sign_in.pressed.connect(func(): run.call(tr("Signing in…"),
 		func() -> String: return await _online.email_sign_in(email.text, password.text)))
-	create.pressed.connect(func(): run.call("Creating your account…",
+	create.pressed.connect(func(): run.call(tr("Creating your account…"),
 		func() -> String: return await _online.email_create(email.text, password.text)))
 	forgot.pressed.connect(func():
 		if busy[0]:
 			return
 		busy[0] = true
-		note.text = "Sending…"
+		note.text = tr("Sending…")
 		var err := await _online.email_reset(email.text)
 		busy[0] = false
-		note.text = err if err != "" else "If that email has an account, a reset link is on its way.")
+		note.text = err if err != "" else tr("If that email has an account, a reset link is on its way."))
 	email.text_submitted.connect(func(_t: String): password.grab_focus())
 	password.text_submitted.connect(func(_t: String): sign_in.pressed.emit())
 	page.open()
@@ -1480,13 +1566,13 @@ func _open_legal() -> void:
 		scroll.scroll_vertical = 0
 	for i in docs.size():
 		var d: Array = docs[i]
-		var tab := UiKit.GlyphButton.new(d[1], UiKit.GlyphButton.Kind.SECONDARY)
+		var tab := UiKit.GlyphButton.new(tr(d[1]), UiKit.GlyphButton.Kind.SECONDARY)
 		tab.font_size = 18
 		tab.position = Vector2(56 + i * 120, 52)
 		tab.size = Vector2(114, 70)
 		tab.pressed.connect(func(): show.call(d[0]))
 		page.add_child(tab)
-	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.PRIMARY)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.PRIMARY)
 	close.font_size = 24
 	close.position = Vector2(420, 52)
 	close.size = Vector2(124, 70)
@@ -1591,14 +1677,14 @@ func _open_market() -> void:
 	_market = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 71
-	_headline(page, "Shop")
+	_headline(page, tr("Shop"))
 	# Tabs and the 3D preview live as long as the page: switching shelves only
 	# rebuilds the cards (rebuilding everything froze a phone for ~0.1 s).
 	_shop_tabs.clear()
 	for i in market_tabs.size():
 		var row := 0 if i < 4 else 1
 		var col := i if i < 4 else i - 4
-		var tab := UiKit.GlyphButton.new(market_tabs[i],
+		var tab := UiKit.GlyphButton.new(tr(market_tabs[i]),
 			UiKit.GlyphButton.Kind.PRIMARY if i == _market_tab else UiKit.GlyphButton.Kind.SECONDARY)
 		tab.font_size = 19
 		tab.position = Vector2(56 + col * 124, 136 + row * 76)
@@ -1614,7 +1700,7 @@ func _open_market() -> void:
 	_market_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_market_body.size = Vector2(600, 1100)
 	page.add_child(_market_body)
-	var close := UiKit.GlyphButton.new("Close", UiKit.GlyphButton.Kind.SECONDARY)
+	var close := UiKit.GlyphButton.new(tr("Close"), UiKit.GlyphButton.Kind.SECONDARY)
 	close.font_size = 28
 	close.position = Vector2(56, 996)
 	close.size = Vector2(488, 80)
@@ -1734,20 +1820,20 @@ func _fill_shelf(body: Control, shelf: String) -> void:
 	var cards := {}
 	for item in items:
 		var card := ItemCard.new()
-		card.title = str(item.title).split(" the ")[0]
+		card.title = str(item.title).split(" the ")[0] if shelf == "Runners" else tr(str(item.title)) # runners: the proper name, untranslated
 		card.chips = _chips(shelf, item)
 		var worn: bool = item.id == _worn(shelf)
 		if worn:
-			card.state = "Wearing" if shelf != "Runners" else "Running"
+			card.state = tr("Wearing") if shelf != "Runners" else tr("Running")
 		elif _owns_item(item):
-			card.state = "Yours"
+			card.state = tr("Yours")
 		else:
 			var dp := Shop.drops_price(item)
 			if dp > 0:
 				card.price = UiKit.thousands(dp)
 				card.drops_price = true
 			else:
-				card.price = str(_store.prices.get(Shop.product_of(item), "In store"))
+				card.price = str(_store.prices.get(Shop.product_of(item), tr("In store")))
 		card.selected = item.id == _shop_sel[shelf]
 		var id: String = item.id
 		card.chosen.connect(func():
@@ -1793,20 +1879,20 @@ func _shop_choose(shelf: String) -> void:
 	_preview_runner = Shop.dress(character, outfit, hat, hue)
 	_preview_root.add_child(_preview_runner)
 	_preview_runner.rotation.y = PI + 0.5
-	_shop_caption.text = item.title
+	_shop_caption.text = tr(item.title)
 	var label: Label = _shop_action.get_child(0)
 	var worn: bool = item.id == _worn(shelf)
 	var dp := Shop.drops_price(item)
 	if worn:
-		label.text = "Running as %s" % item.title.split(" ")[0] if shelf == "Runners" else ("In the stone" if shelf == "Stones" else "Wearing")
+		label.text = tr("Running as %s") % item.title.split(" ")[0] if shelf == "Runners" else (tr("In the stone") if shelf == "Stones" else tr("Wearing"))
 	elif _owns_item(item):
-		label.text = ("Run as %s" % item.title.split(" ")[0]) if shelf == "Runners" else ("Use this hue" if shelf == "Stones" else "Wear")
+		label.text = (tr("Run as %s") % item.title.split(" ")[0]) if shelf == "Runners" else (tr("Use this hue") if shelf == "Stones" else tr("Wear"))
 	elif dp > 0:
-		label.text = ("Buy for %s" % UiKit.thousands(dp)) if _save.bank >= dp else ("%s sun-drops" % UiKit.thousands(dp))
+		label.text = (tr("Buy for %s") % UiKit.thousands(dp)) if _save.bank >= dp else (tr("%s sun-drops") % UiKit.thousands(dp))
 	elif Shop.product_of(item) != "":
-		label.text = "Buy for %s" % _store.prices.get(Shop.product_of(item), "…") if _store.ready_to_sell() else "Treasury closed"
+		label.text = tr("Buy for %s") % _store.prices.get(Shop.product_of(item), "…") if _store.ready_to_sell() else tr("Treasury closed")
 	else:
-		label.text = "Patrons only"
+		label.text = tr("Patrons only")
 
 ## The button: buy (sun-drops or the store), or put on what you own.
 func _shop_act(shelf: String) -> void:
@@ -1817,11 +1903,11 @@ func _shop_act(shelf: String) -> void:
 		var dp := Shop.drops_price(item)
 		if dp > 0:
 			if not _save.buy_item(item.id, dp):
-				_market_note.text = "Not enough sun-drops yet."
+				_market_note.text = tr("Not enough sun-drops yet.")
 				return
 			_online.track("market_buy", {"id": item.id, "shelf": shelf, "drops": dp})
 		elif Shop.product_of(item) != "":
-			_market_note.text = "Opening the store…"
+			_market_note.text = tr("Opening the store…")
 			_store.buy(Shop.product_of(item))
 			return
 		else:
@@ -1850,11 +1936,11 @@ func _fill_boosts(body: Control) -> void:
 	body.add_child(_market_note)
 	var y := 340.0
 	for b in Shop.BOOSTS:
-		var t := UiKit.label(b.title, UiKit.display_font(), 28, UiKit.INK)
+		var t := UiKit.label(tr(b.title), UiKit.display_font(), 28, UiKit.INK)
 		t.position = Vector2(58, y)
 		body.add_child(t)
-		body.add_child(UiKit.wrapped(b.text, UiKit.text_font(800), 23, UiKit.INK, Vector2(58, y + 42), 310, 90))
-		var have := UiKit.label("You hold %d" % _save.boosts(b.id), UiKit.text_font(900), 22, UiKit.CINNABAR)
+		body.add_child(UiKit.wrapped(tr(b.text), UiKit.text_font(800), 23, UiKit.INK, Vector2(58, y + 42), 310, 90))
+		var have := UiKit.label(tr("You hold %d") % _save.boosts(b.id), UiKit.text_font(900), 22, UiKit.CINNABAR)
 		have.position = Vector2(58, y + 134)
 		body.add_child(have)
 		var cost: int = b.drops
@@ -1872,7 +1958,7 @@ func _fill_boosts(body: Control) -> void:
 				_fill_market()
 				_refresh_title()
 			else:
-				_market_note.text = "Not enough sun-drops yet.")
+				_market_note.text = tr("Not enough sun-drops yet."))
 		body.add_child(btn)
 		y += 210.0
 
@@ -1887,15 +1973,15 @@ func _fill_pass(body: Control) -> void:
 		var mark := UiKit.label("•", UiKit.text_font(900), 24, UiKit.CINNABAR)
 		mark.position = Vector2(58, y)
 		body.add_child(mark)
-		var l := UiKit.label(perk, UiKit.text_font(800), 24, UiKit.INK)
+		var l := UiKit.label(tr(perk), UiKit.text_font(800), 24, UiKit.INK)
 		l.position = Vector2(92, y)
 		body.add_child(l)
 		y += 44.0
 	y += 18.0
 	if _save.has_pass():
-		body.add_child(UiKit.wrapped("The Pass is yours. Everything above is open on every phone you sign in on.",
+		body.add_child(UiKit.wrapped(tr("The Pass is yours. Everything above is open on every phone you sign in on."),
 			UiKit.text_font(800), 24, UiKit.INK, Vector2(58, y), 486, 90))
-		var manage := UiKit.GlyphButton.new("Manage in Google Play", UiKit.GlyphButton.Kind.SECONDARY)
+		var manage := UiKit.GlyphButton.new(tr("Manage in Google Play"), UiKit.GlyphButton.Kind.SECONDARY)
 		manage.font_size = 22
 		manage.position = Vector2(56, y + 110)
 		manage.size = Vector2(488, 70)
@@ -1903,33 +1989,33 @@ func _fill_pass(body: Control) -> void:
 		body.add_child(manage)
 		return
 	if not _store.pass_ready():
-		body.add_child(UiKit.wrapped("The Pass opens here soon.",
+		body.add_child(UiKit.wrapped(tr("The Pass opens here soon."),
 			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, y), 486, 80))
 		return
 	for plan in Shop.PASS_PLANS:
 		var offer: Dictionary = _store.pass_plans.get(plan.id, {})
 		if offer.is_empty():
 			continue
-		var t := UiKit.label(plan.title, UiKit.display_font(), 26, UiKit.INK)
+		var t := UiKit.label(tr(plan.title), UiKit.display_font(), 26, UiKit.INK)
 		t.position = Vector2(58, y)
 		body.add_child(t)
 		var trial: int = offer.get("trial_days", 0)
-		var line := "%s %s" % [offer.price, plan.per]
+		var line := "%s %s" % [offer.price, tr(plan.per)]
 		if trial > 0:
-			line = "%d days free, then %s" % [trial, line]
+			line = tr("%d days free, then %s") % [trial, line]
 		body.add_child(UiKit.wrapped(line, UiKit.text_font(800), 21, UiKit.INK, Vector2(58, y + 38), 300, 60))
-		var btn := UiKit.GlyphButton.new("Try free" if trial > 0 else "Join",
+		var btn := UiKit.GlyphButton.new(tr("Try free") if trial > 0 else tr("Join"),
 			UiKit.GlyphButton.Kind.PRIMARY)
 		btn.font_size = 24
 		btn.position = Vector2(384, y + 6)
 		btn.size = Vector2(160, 70)
 		var id: String = plan.id
 		btn.pressed.connect(func():
-			_market_note.text = "Opening the store…"
+			_market_note.text = tr("Opening the store…")
 			_store.buy_pass(id))
 		body.add_child(btn)
 		y += 112.0
-	body.add_child(UiKit.wrapped("Renews until you cancel in Google Play. Cancel during the free days and you pay nothing.",
+	body.add_child(UiKit.wrapped(tr("Renews until you cancel in Google Play. Cancel during the free days and you pay nothing."),
 		UiKit.text_font(800), 19, UiKit.INK, Vector2(58, y + 4), 486, 70))
 
 ## Real-money items through the store, priced by it in local currency.
@@ -1938,7 +2024,7 @@ func _fill_treasury(body: Control) -> void:
 	_market_note.position = Vector2(58, 300)
 	body.add_child(_market_note)
 	if not _store.ready_to_sell():
-		body.add_child(UiKit.wrapped("The treasury opens soon. Everything here will also be yours on any phone you sign in on.",
+		body.add_child(UiKit.wrapped(tr("The treasury opens soon. Everything here will also be yours on any phone you sign in on."),
 			UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 340), 486, 120))
 		return
 	var y := 336.0
@@ -1946,11 +2032,11 @@ func _fill_treasury(body: Control) -> void:
 		# Bought for good only: the pass's no-ads ends with it.
 		var owned: bool = (p.id == "sunstone_remove_ads" and _save.entitlements.has("no_ads")) \
 			or (p.id == "sunstone_patron" and _save.entitlements.has("patron"))
-		var t := UiKit.label(p.title, UiKit.display_font(), 24, UiKit.INK)
+		var t := UiKit.label(tr(p.title), UiKit.display_font(), 24, UiKit.INK)
 		t.position = Vector2(58, y)
 		body.add_child(t)
-		body.add_child(UiKit.wrapped(p.text, UiKit.text_font(800), 21, UiKit.INK, Vector2(58, y + 34), 300, 56))
-		var btn := UiKit.GlyphButton.new("Yours" if owned else str(_store.prices.get(p.id, "…")),
+		body.add_child(UiKit.wrapped(tr(p.text), UiKit.text_font(800), 21, UiKit.INK, Vector2(58, y + 34), 300, 56))
+		var btn := UiKit.GlyphButton.new(tr("Yours") if owned else str(_store.prices.get(p.id, "…")),
 			UiKit.GlyphButton.Kind.SECONDARY if owned else UiKit.GlyphButton.Kind.PRIMARY)
 		btn.font_size = 22
 		btn.position = Vector2(384, y + 6)
@@ -1958,41 +2044,41 @@ func _fill_treasury(body: Control) -> void:
 		var id: String = p.id
 		if not owned:
 			btn.pressed.connect(func():
-				_market_note.text = "Opening the store…"
+				_market_note.text = tr("Opening the store…")
 				_store.buy(id))
 		body.add_child(btn)
 		y += 104.0
-	var restore := UiKit.GlyphButton.new("Restore purchases", UiKit.GlyphButton.Kind.SECONDARY)
+	var restore := UiKit.GlyphButton.new(tr("Restore purchases"), UiKit.GlyphButton.Kind.SECONDARY)
 	restore.font_size = 22
 	restore.position = Vector2(56, 872)
 	restore.size = Vector2(488, 62)
 	restore.pressed.connect(func():
-		_market_note.text = "Asking the store…"
+		_market_note.text = tr("Asking the store…")
 		await _store.restore()
-		_market_note.text = "Up to date.")
+		_market_note.text = tr("Up to date."))
 	body.add_child(restore)
 
 func _fill_charms(body: Control) -> void:
 	var y := 312.0
 	for ch in Market.CHARMS:
 		var tier := _save.charm_tier(ch.id)
-		var t := UiKit.label(ch.title, UiKit.display_font(), 28, UiKit.INK)
+		var t := UiKit.label(tr(ch.title), UiKit.display_font(), 28, UiKit.INK)
 		t.position = Vector2(58, y)
 		body.add_child(t)
-		body.add_child(UiKit.wrapped(ch.text, UiKit.text_font(800), 23, UiKit.INK, Vector2(58, y + 40), 486, 60))
+		body.add_child(UiKit.wrapped(tr(ch.text), UiKit.text_font(800), 23, UiKit.INK, Vector2(58, y + 40), 486, 60))
 		var marks := UiKit.TierMarks.new()
 		marks.tier = tier
 		marks.position = Vector2(58, y + 118)
 		marks.size = Vector2(120, 32)
 		body.add_child(marks)
-		var now := UiKit.label(ch.effects[tier - 1] if tier > 0 else "Not yet", UiKit.text_font(900), 22, UiKit.CINNABAR)
+		var now := UiKit.label(tr(ch.effects[tier - 1]) if tier > 0 else tr("Not yet"), UiKit.text_font(900), 22, UiKit.CINNABAR)
 		now.position = Vector2(184, y + 120)
 		body.add_child(now)
 		var costs: Array = ch.costs
 		var btn: UiKit.GlyphButton
 		if tier >= costs.size():
 			var by_pass := _save.has_pass() and _save.charm_bought(ch.id) < costs.size()
-			btn = UiKit.GlyphButton.new("By the Pass" if by_pass else "Complete", UiKit.GlyphButton.Kind.SECONDARY)
+			btn = UiKit.GlyphButton.new(tr("By the Pass") if by_pass else tr("Complete"), UiKit.GlyphButton.Kind.SECONDARY)
 		else:
 			var cost: int = costs[tier]
 			btn = UiKit.GlyphButton.new(UiKit.thousands(cost),
@@ -2016,7 +2102,7 @@ func _fill_charms(body: Control) -> void:
 ## U+F8FF, which only Apple's system font draws — fine, this is iOS only.
 func _apple_button() -> Button:
 	var b := Button.new()
-	b.text = "  Sign in with Apple"
+	b.text = "  " + tr("Sign in with Apple")
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray([".AppleSystemUIFont", "SF Pro Text", "Helvetica Neue"])
 	b.add_theme_font_override("font", font)
@@ -2042,8 +2128,8 @@ func show_reward_offer(reward: int) -> bool:
 	var layer: Control = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 127
-	_headline(page, "The temple's gift")
-	page.add_child(UiKit.wrapped("Watch a short ad and the temple gives you %d sun-drops. Or carry on without it." % reward,
+	_headline(page, tr("The temple's gift"))
+	page.add_child(UiKit.wrapped(tr("Watch a short ad and the temple gives you %d sun-drops. Or carry on without it.") % reward,
 		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 140), 330, 150))
 	var ring := UiKit.Countdown.new()
 	ring.seconds = 5.0
@@ -2051,12 +2137,12 @@ func show_reward_offer(reward: int) -> bool:
 	ring.position = Vector2(410, 140)
 	ring.size = Vector2(130, 130)
 	page.add_child(ring)
-	var watch := UiKit.GlyphButton.new("Watch for +%d" % reward, UiKit.GlyphButton.Kind.PRIMARY)
+	var watch := UiKit.GlyphButton.new(tr("Watch for +%d") % reward, UiKit.GlyphButton.Kind.PRIMARY)
 	watch.font_size = 28
 	watch.position = Vector2(56, 330)
 	watch.size = Vector2(488, 100)
 	page.add_child(watch)
-	var no := UiKit.GlyphButton.new("No thanks", UiKit.GlyphButton.Kind.SECONDARY)
+	var no := UiKit.GlyphButton.new(tr("No thanks"), UiKit.GlyphButton.Kind.SECONDARY)
 	no.font_size = 30
 	no.position = Vector2(56, 444)
 	no.size = Vector2(488, 96)
@@ -2086,32 +2172,32 @@ func show_second_wind(cost: int, held: int) -> void:
 	_offer = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 83
-	_headline(page, "Second wind")
-	page.add_child(UiKit.wrapped("Rise again where you fell, with the jaguars driven off and the stone relit.",
+	_headline(page, tr("Second wind"))
+	page.add_child(UiKit.wrapped(tr("Rise again where you fell, with the jaguars driven off and the stone relit."),
 		UiKit.text_font(800), 26, UiKit.INK, Vector2(58, 140), 330, 140))
 	var ring := UiKit.Countdown.new()
 	ring.position = Vector2(410, 140)
 	ring.size = Vector2(130, 130)
 	page.add_child(ring)
-	var held_l := UiKit.label("The Pass carries you" if cost == 0 else "You hold %s" % UiKit.thousands(held),
+	var held_l := UiKit.label(tr("The Pass carries you") if cost == 0 else tr("You hold %s") % UiKit.thousands(held),
 		UiKit.text_font(900), 24, UiKit.CINNABAR)
 	held_l.position = Vector2(58, 296)
 	page.add_child(held_l)
 	var can_pay := held >= cost
 	var by_ad := _ads.rewarded_ready() and cost > 0
-	var rise := UiKit.GlyphButton.new("Rise again" if cost == 0 else "Rise for %d" % cost, UiKit.GlyphButton.Kind.PRIMARY)
+	var rise := UiKit.GlyphButton.new(tr("Rise again") if cost == 0 else tr("Rise for %d") % cost, UiKit.GlyphButton.Kind.PRIMARY)
 	rise.font_size = 22 if by_ad else 30
 	rise.position = Vector2(56, 342)
 	rise.size = Vector2(238 if by_ad else 488, 108)
 	rise.visible = can_pay
 	page.add_child(rise)
-	var watch := UiKit.GlyphButton.new("Watch to rise", UiKit.GlyphButton.Kind.PRIMARY)
+	var watch := UiKit.GlyphButton.new(tr("Watch to rise"), UiKit.GlyphButton.Kind.PRIMARY)
 	watch.font_size = 22 if can_pay else 30
 	watch.position = Vector2(306 if can_pay else 56, 342)
 	watch.size = Vector2(238 if can_pay else 488, 108)
 	watch.visible = by_ad
 	page.add_child(watch)
-	var no := UiKit.GlyphButton.new("Let it end", UiKit.GlyphButton.Kind.SECONDARY)
+	var no := UiKit.GlyphButton.new(tr("Let it end"), UiKit.GlyphButton.Kind.SECONDARY)
 	no.font_size = 26
 	no.position = Vector2(56, 460)
 	no.size = Vector2(488, 80)
@@ -2151,14 +2237,14 @@ func show_second_wind(cost: int, held: int) -> void:
 static func night_name(metres: float) -> String:
 	var at := Nights.locate(maxf(metres, 0.0))
 	if at.dawn:
-		return "Dawn of night %d" % at.n
-	return "Night %d, %d%% to dawn" % [at.n, int(at.t * 100.0)]
+		return TranslationServer.translate("Dawn of night %d") % at.n
+	return TranslationServer.translate("Night %d, %d%% to dawn") % [at.n, int(at.t * 100.0)]
 
 static func duration_text(seconds: float) -> String:
 	var m := int(seconds / 60.0)
 	if m < 60:
-		return "%d min" % m
-	return "%d h %d min" % [m / 60, m % 60]
+		return TranslationServer.translate("%d min") % m
+	return TranslationServer.translate("%d h %d min") % [m / 60, m % 60]
 
 ## The record book: every count the codex keeps, one register per line.
 ## Shares the run: the results page over the painted world, the buttons
@@ -2189,7 +2275,7 @@ func _share_run(metres: int, night_line: String, page: Control, buttons: Array) 
 	var path := "user://share/run.jpg"
 	img.save_jpg(path, 0.9)
 	var where := (" (%s)" % night_line) if night_line != "" else ""
-	var text := "I carried the sun %s m through Xibalba%s in Sunstone: Dusk Run. %s" % [
+	var text := tr("I carried the sun %s m through Xibalba%s in Sunstone: Maya Temple Runner. %s") % [
 		UiKit.thousands(metres), where, PLAY_PAGE]
 	Engine.get_singleton("SunstoneGoogleSignIn").call("shareImage", ProjectSettings.globalize_path(path), text)
 
@@ -2204,12 +2290,12 @@ class ShareStrip:
 		UiKit.draw_paper(self, UiKit.torn(r, 29, 2.0))
 		UiKit.draw_rule(self, Vector2(18, 22), Vector2(size.x - 18, 22), UiKit.CINNABAR, 3.0, 31)
 		var font := UiKit.display_font()
-		var title := "Sunstone: Dusk Run"
+		var title := tr("Sunstone: Maya Temple Runner")
 		var tw := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 40).x
 		var c := Vector2(size.x / 2.0, size.y / 2.0 + 10)
 		UiKit.draw_kin(self, c - Vector2(tw / 2.0 + 38, 4), 24.0, 1.0, 3.0)
 		draw_string(font, Vector2(c.x - tw / 2.0 + 10, c.y + 8), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, UiKit.INK)
-		var sub := "On Google Play"
+		var sub := tr("On Google Play")
 		var sf := UiKit.text_font(900)
 		var sw := sf.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
 		draw_string(sf, Vector2(c.x - sw / 2.0 + 10, c.y + 40), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, UiKit.CINNABAR)
@@ -2256,7 +2342,7 @@ func _open_howto() -> void:
 	_howto = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 53
-	_headline(page, "How to play")
+	_headline(page, tr("How to play"))
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
@@ -2274,10 +2360,10 @@ func _open_howto() -> void:
 		sign.position = Vector2(14, y + 4)
 		sign.size = Vector2(104, 104)
 		content.add_child(sign)
-		var head := UiKit.label(row[1], UiKit.display_font(), 30, UiKit.CINNABAR if i == 3 else UiKit.INK)
+		var head := UiKit.label(tr(row[1]), UiKit.display_font(), 30, UiKit.CINNABAR if i == 3 else UiKit.INK)
 		head.position = Vector2(136, y)
 		content.add_child(head)
-		var text: String = row[2]
+		var text: String = tr(row[2])
 		var lines := ceili(text.length() / 24.0)
 		var body := UiKit.wrapped(text, UiKit.text_font(800), 24, UiKit.INK, Vector2(136, y + 44), 370, lines * 32.0)
 		content.add_child(body)
@@ -2289,14 +2375,14 @@ func _open_howto() -> void:
 			content.add_child(r)
 	content.custom_minimum_size = Vector2(520, y)
 	# A fade at the foot of the text: there's more below.
-	var more := UiKit.label("Scroll for more", UiKit.text_font(900), 22, Color(UiKit.CINNABAR, 0.8))
+	var more := UiKit.label(tr("Scroll for more"), UiKit.text_font(900), 22, Color(UiKit.CINNABAR, 0.8))
 	more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	more.position = Vector2(56, height - 150)
 	more.size = Vector2(488, 30)
 	page.add_child(more)
 	scroll.get_v_scroll_bar().value_changed.connect(func(v: float):
 		more.visible = v < y - scroll.size.y - 40.0)
-	var done := UiKit.GlyphButton.new("Got it", UiKit.GlyphButton.Kind.PRIMARY)
+	var done := UiKit.GlyphButton.new(tr("Got it"), UiKit.GlyphButton.Kind.PRIMARY)
 	done.position = Vector2(56, height - 116)
 	done.size = Vector2(488, 96)
 	done.pressed.connect(func(): _howto.visible = false)
@@ -2384,9 +2470,9 @@ func _open_records() -> void:
 	if _records:
 		_records.queue_free()
 	var rows := [
-		["Best distance", "%s m" % UiKit.thousands(_save.best)],
+		["Best distance", tr("%s m") % UiKit.thousands(_save.best)],
 		["Runs", UiKit.thousands(_save.runs)],
-		["Distance run", "%.1f km" % (_save.total_distance / 1000.0)],
+		["Distance run", tr("%.1f km") % (_save.total_distance / 1000.0)],
 		["Sun-drops gathered", UiKit.thousands(_save.total_drops)],
 		["Most in one run", UiKit.thousands(_save.best_drops)],
 		["Flares", UiKit.thousands(_save.flares)],
@@ -2399,10 +2485,10 @@ func _open_records() -> void:
 	_records = m[0]
 	var page: UiKit.Page = m[1]
 	page.seed = 29
-	_headline(page, "Records")
+	_headline(page, tr("Records"))
 	var y := 146.0
 	for row in rows:
-		var name_l := UiKit.label(row[0], UiKit.text_font(900), 28, UiKit.INK)
+		var name_l := UiKit.label(tr(row[0]), UiKit.text_font(900), 28, UiKit.INK)
 		name_l.position = Vector2(58, y)
 		page.add_child(name_l)
 		var val := UiKit.label(row[1], UiKit.display_font(), 28, UiKit.CINNABAR if row[0] == "Best distance" else UiKit.INK)
@@ -2416,10 +2502,10 @@ func _open_records() -> void:
 		y += 64.0
 	if top != "":
 		_rule(page, y + 4, 31)
-		var t := UiKit.wrapped("Most runs end: %s" % top.to_lower(), UiKit.text_font(900), 26, UiKit.INK, Vector2(58, y + 24), 486, 60)
+		var t := UiKit.wrapped(tr("Most runs end: %s") % tr(top).to_lower(), UiKit.text_font(900), 26, UiKit.INK, Vector2(58, y + 24), 486, 60)
 		page.add_child(t)
 		y += 96.0
-	var done := UiKit.GlyphButton.new("Done", UiKit.GlyphButton.Kind.PRIMARY)
+	var done := UiKit.GlyphButton.new(tr("Done"), UiKit.GlyphButton.Kind.PRIMARY)
 	done.position = Vector2(56, y + 24)
 	done.size = Vector2(488, 104)
 	done.pressed.connect(func(): _records.visible = false)
@@ -2450,16 +2536,16 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var night_l := UiKit.label(night_line, UiKit.text_font(900), 24, UiKit.CINNABAR)
 	night_l.position = Vector2(58, 40)
 	page.add_child(night_l)
-	var head := UiKit.wrapped(cause, UiKit.display_font(), 30, UiKit.INK, Vector2(56, 74), 508, 96)
+	var head := UiKit.wrapped(tr(cause), UiKit.display_font(), 30, UiKit.INK, Vector2(56, 74), 508, 96)
 	page.add_child(head)
 	_rule(page, 172, 21)
 
-	var dist := UiKit.label("0 m", UiKit.display_font(), 88, UiKit.INK)
+	var dist := UiKit.label(tr("%s m") % "0", UiKit.display_font(), 88, UiKit.INK)
 	dist.position = Vector2(52, 180)
 	# Sized for the final count, so a 10 km run stays clear of the Maya numeral.
-	dist.text = "%s m" % UiKit.thousands(metres)
+	dist.text = tr("%s m") % UiKit.thousands(metres)
 	UiKit.fit(dist, 446.0)
-	dist.text = "0 m"
+	dist.text = tr("%s m") % "0"
 	page.add_child(dist)
 	var maya := MayaNumber.new()
 	maya.position = Vector2(510, 196)
@@ -2469,11 +2555,11 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var glyph := UiKit.DropGlyph.new(36)
 	glyph.position = Vector2(58, 326)
 	page.add_child(glyph)
-	var drops := UiKit.label("+%d sun-drops" % drop_count, UiKit.text_font(900), 32, UiKit.INK)
+	var drops := UiKit.label(tr("+%d sun-drops") % drop_count, UiKit.text_font(900), 32, UiKit.INK)
 	drops.position = Vector2(106, 318)
 	page.add_child(drops)
 	if drop_count > 0 and _ads.rewarded_ready():
-		var twice := UiKit.GlyphButton.new("Watch: double", UiKit.GlyphButton.Kind.PRIMARY)
+		var twice := UiKit.GlyphButton.new(tr("Watch: double"), UiKit.GlyphButton.Kind.PRIMARY)
 		twice.font_size = 20
 		twice.position = Vector2(384, 310)
 		twice.size = Vector2(170, 60)
@@ -2483,31 +2569,31 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 				_save.bank += drop_count
 				_save.save_to_disk()
 				_online.queue_sync()
-				drops.text = "+%d sun-drops" % (drop_count * 2))
+				drops.text = tr("+%d sun-drops") % (drop_count * 2))
 		page.add_child(twice)
 
-	var best_text := "New best" if is_best else "Best %s m" % UiKit.thousands(best)
+	var best_text := tr("New best") if is_best else tr("Best %s m") % UiKit.thousands(best)
 	var highlight := is_best
 	if not daily.is_empty():
 		highlight = daily.is_best
-		best_text = ("New best for %s" % daily.name) if daily.is_best else ("Best for %s: %s m" % [daily.name, UiKit.thousands(daily.best)])
+		best_text = (tr("New best for %s") % daily.name) if daily.is_best else (tr("Best for %s: %s m") % [daily.name, UiKit.thousands(daily.best)])
 	var best_l := UiKit.label(best_text,
 		UiKit.display_font() if highlight else UiKit.text_font(900), 30, UiKit.CINNABAR if highlight else UiKit.INK)
 	best_l.position = Vector2(58, 372)
 	page.add_child(best_l)
 	if not new_glyphs.is_empty():
-		var g_text := "New glyph: %s" % Glyphs.def(new_glyphs[0]).title if new_glyphs.size() == 1 else "%d new glyphs" % new_glyphs.size()
+		var g_text := tr("New glyph: %s") % tr(Glyphs.def(new_glyphs[0]).title) if new_glyphs.size() == 1 else tr("%d new glyphs") % new_glyphs.size()
 		var g := UiKit.label(g_text, UiKit.display_font(), 24, UiKit.CINNABAR)
 		g.position = Vector2(58, 414)
 		page.add_child(g)
 	_rule(page, 460, 23)
 
-	var again := UiKit.GlyphButton.new("Run again", UiKit.GlyphButton.Kind.PRIMARY)
+	var again := UiKit.GlyphButton.new(tr("Run again"), UiKit.GlyphButton.Kind.PRIMARY)
 	again.position = Vector2(56, 484)
 	again.size = Vector2(508, 116)
 	again.pressed.connect(func(): again_pressed.emit())
 	page.add_child(again)
-	var home := UiKit.GlyphButton.new("Home", UiKit.GlyphButton.Kind.SECONDARY)
+	var home := UiKit.GlyphButton.new(tr("Home"), UiKit.GlyphButton.Kind.SECONDARY)
 	home.font_size = 30
 	home.position = Vector2(56, 614)
 	home.size = Vector2(508, 96)
@@ -2516,7 +2602,7 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	if Engine.has_singleton("SunstoneGoogleSignIn"):
 		# Share the run: Home steps aside for it.
 		home.size = Vector2(316, 96)
-		var share := UiKit.GlyphButton.new("Share", UiKit.GlyphButton.Kind.SECONDARY)
+		var share := UiKit.GlyphButton.new(tr("Share"), UiKit.GlyphButton.Kind.SECONDARY)
 		share.font_size = 30
 		share.position = Vector2(384, 614)
 		share.size = Vector2(180, 96)
@@ -2529,5 +2615,5 @@ func show_results(cause: String, metres: int, drop_count: int, best: int, is_bes
 	var tw := create_tween()
 	tw.tween_interval(0.5)
 	tw.tween_method(func(v: float):
-		dist.text = "%s m" % UiKit.thousands(int(v))
+		dist.text = tr("%s m") % UiKit.thousands(int(v))
 		maya.set_value(int(v)), 0.0, float(metres), 0.8).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)

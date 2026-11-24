@@ -42,7 +42,7 @@ func ready_to_sell() -> bool:
 func buy(product_id: String) -> void:
 	var product = _products.get(product_id)
 	if product == null:
-		purchase_failed.emit(product_id, "The App Store doesn't know that offering yet.")
+		purchase_failed.emit(product_id, tr("The App Store doesn't know that offering yet."))
 		return
 	_kit.purchase(product)
 
@@ -75,9 +75,9 @@ func _on_purchase(t, status: int, error_message: String) -> void:
 		USER_CANCELLED:
 			purchase_failed.emit("", "")
 		PURCHASE_PENDING:
-			purchase_failed.emit("", "Waiting for approval. It'll arrive once it's approved.")
+			purchase_failed.emit("", tr("Waiting for approval. It'll arrive once it's approved."))
 		_:
-			purchase_failed.emit("", "The App Store couldn't finish the purchase. %s" % error_message)
+			purchase_failed.emit("", tr("The App Store couldn't finish the purchase. %s") % error_message)
 
 func _on_transaction(t) -> void:
 	if t == null:

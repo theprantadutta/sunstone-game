@@ -76,6 +76,7 @@ var saver := false ## battery saver: lighter 3D
 var push_on := false ## notifications wanted (Push; the server hears it)
 var push_asked := false ## the game has asked once (after the second run)
 var push_denied := false ## Android said no: the switch opens the phone's settings
+var lang := "" ## the game's language ("" follows the phone; else a locale: hi, pt, ...)
 
 const BACKUP := "user://save.json.bak"
 
@@ -149,6 +150,7 @@ func _apply(d: Dictionary) -> void:
 	push_on = bool(d.get("push_on", false))
 	push_asked = bool(d.get("push_asked", false))
 	push_denied = bool(d.get("push_denied", false))
+	lang = str(d.get("lang", ""))
 
 func to_dict() -> Dictionary:
 	return {
@@ -164,7 +166,7 @@ func to_dict() -> Dictionary:
 		"pass_seen": pass_seen,
 		"review_asks": review_asks, "review_last": review_last,
 		"music": music, "sound": sound, "vibration": vibration, "swipe": swipe, "saver": saver,
-		"push_on": push_on, "push_asked": push_asked, "push_denied": push_denied,
+		"push_on": push_on, "push_asked": push_asked, "push_denied": push_denied, "lang": lang,
 	}
 
 ## Folds another copy of the save (the cloud's) into this one, so progress
@@ -245,7 +247,7 @@ func save_to_disk() -> void:
 
 ## Back to a brand-new save (after deleting the account). Settings stay.
 func reset_all() -> void:
-	var keep := [music, sound, vibration, swipe, saver, push_on, push_asked, push_denied]
+	var keep := [music, sound, vibration, swipe, saver, push_on, push_asked, push_denied, lang]
 	var knows := taught.duplicate()
 	var fresh := SaveData.new()
 	_apply(fresh.to_dict())
@@ -258,6 +260,7 @@ func reset_all() -> void:
 	push_on = keep[5]
 	push_asked = keep[6]
 	push_denied = keep[7]
+	lang = keep[8]
 	tutorial_runs = 2 # they already know how to play
 
 ## Folds one finished run into the records.

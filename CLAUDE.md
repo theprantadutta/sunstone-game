@@ -175,6 +175,40 @@ tools/make_paper.py     the tileable codex bark-paper texture (UI)
   Glow geometry (flames, eyes, drops, lava) always shows. Paper grain is a
   multiplied texture over the 3D view (under the UI).
 
+## Languages (since Nov 2026)
+
+English plus hi, bn, ar, pt (Brazil), id, es (Latin America), tr, ru, de, it, vi.
+They were chosen from Play's store impressions by country: India, Bangladesh,
+Egypt, Brazil, Ethiopia, Philippines, Indonesia, Pakistan, US, Türkiye, ...
+- **Text goes through `tr()`** (`TranslationServer.translate()` in static funcs),
+  with English as the key. For formatted text, translate the template first:
+  `tr("Night %d") % n`. Translators can't reorder placeholders, so keep one
+  template per sentence and never concatenate.
+- **Data strings** (glyphs, shop, Houses, death causes) stay English in their
+  consts and are `tr()`'d where they're shown. Saves and analytics keep English
+  ids and causes. These strings are listed in `i18n/data_strings.txt`, because the
+  extractor only sees `tr("…")` literals.
+- **Workflow:**
+  1. `python tools/i18n_extract.py` rebuilds `i18n/strings.csv` (keeps existing
+     translations).
+  2. Translate the new rows (rules and glossary: `i18n/TRANSLATING.md`;
+     per-locale JSON in `i18n/tr/`).
+  3. `python tools/i18n_merge.py` merges and checks placeholders.
+  4. `--import` regenerates the `.translation` files, which `project.godot`
+     lists.
+- **Fonts:** Dela Gothic One and Nunito cover Latin, Cyrillic and Vietnamese. Noto
+  Sans Devanagari, Bengali and Arabic (`assets/fonts/`, OFL) are fallbacks set in
+  `UiKit.display_font()` / `text_font()`.
+- **Fitting text:** `GlyphButton` shrinks its text to fit the button. Other
+  one-line labels use `UiKit.fit`.
+- **Language picker:** Settings → Language (`GameUI.LANGUAGES`, `save.lang`; ""
+  follows the phone). Changing it reloads the scene.
+- **Dev:** `files/dev_lang` (e.g. `hi`) forces a language on debug builds, for
+  screenshots.
+- **Play listing translations:** `store/listings/listings.json`, imported in
+  Play Console with "Import a file". The App Store still needs the same; see
+  `IOS.md`.
+
 ## Shop and themes
 
 - Everything visual is data. Characters: `Themes.CHARACTERS`. Outfits, hats,

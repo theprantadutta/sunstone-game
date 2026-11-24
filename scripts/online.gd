@@ -194,8 +194,8 @@ func rename(new_name: String) -> String:
 		_write_state()
 		return ""
 	if res.code == 0:
-		return "Can't reach the temple right now."
-	return "Use 3 to 28 letters, digits or spaces."
+		return tr("Can't reach the temple right now.")
+	return tr("Use 3 to 28 letters, digits or spaces.")
 
 ## Deletes the account everywhere: our server, then the Firebase user, then
 ## the session on this phone. True when the server confirmed.
@@ -260,11 +260,11 @@ func is_guest() -> bool:
 func linked_summary() -> String:
 	var l := links()
 	if l.has("google.com"):
-		return "Kept with Google: %s" % l["google.com"]
+		return tr("Kept with Google: %s") % tr(str(l["google.com"]))
 	if l.has("apple.com"):
-		return "Kept with Apple: %s" % l["apple.com"]
+		return tr("Kept with Apple: %s") % tr(str(l["apple.com"]))
 	if l.has("password"):
-		return "Kept with your email: %s" % l["password"]
+		return tr("Kept with your email: %s") % tr(str(l["password"]))
 	return ""
 
 ## Signs in with this platform's provider (Google, or Apple on iOS).
@@ -278,7 +278,7 @@ func link_account() -> String:
 ## token carries none and Firebase gets none.
 func link_apple() -> String:
 	if not ClassDB.class_exists("ASAuthorizationController"):
-		return "Sign in with Apple isn't available on this device."
+		return tr("Sign in with Apple isn't available on this device.")
 	_apple_auth = ClassDB.instantiate("ASAuthorizationController")
 	var on_ok := func(credential) -> void:
 		if credential == null or not ("identity_token" in credential):
@@ -295,13 +295,13 @@ func link_apple() -> String:
 	if not got[0]:
 		# Apple reports a dismissed sheet as error 1001 ("canceled").
 		var reason := str(got[1])
-		return "" if "1001" in reason or "cancel" in reason.to_lower() else "Sign in with Apple didn't work: %s" % reason
+		return "" if "1001" in reason or "cancel" in reason.to_lower() else tr("Sign in with Apple didn't work: %s") % reason
 	return await _link_idp("id_token=%s&providerId=apple.com" % got[1], "Apple")
 
 ## Signs in with Google (our Credential Manager plugin, Android).
 func link_google() -> String:
 	if not Engine.has_singleton("SunstoneGoogleSignIn"):
-		return "Google sign-in isn't available on this device."
+		return tr("Google sign-in isn't available on this device.")
 	var plugin := Engine.get_singleton("SunstoneGoogleSignIn")
 	var on_ok := func(token: String, email: String): _google_result.emit(true, token, email)
 	var on_fail := func(reason: String): _google_result.emit(false, reason, "")
@@ -312,7 +312,7 @@ func link_google() -> String:
 	plugin.disconnect("signed_in", on_ok)
 	plugin.disconnect("sign_in_failed", on_fail)
 	if not got[0]:
-		return "" if got[1] == "cancelled" else "Google sign-in didn't work: %s" % got[1]
+		return "" if got[1] == "cancelled" else tr("Google sign-in didn't work: %s") % got[1]
 	return await _link_idp("id_token=%s&providerId=google.com" % got[1], "Google")
 
 ## Links a Google / Apple token to this guest, or switches to the account
@@ -336,8 +336,8 @@ func _link_idp(post_body: String, provider: String) -> String:
 			switched = true
 		if r.code != 200:
 			if r.code == 0:
-				return "Couldn't reach %s right now. Try again in a moment." % provider
-			return "%s sign-in was refused (%s)." % [provider, _auth_message(r)]
+				return tr("Couldn't reach %s right now. Try again in a moment.") % provider
+			return tr("%s sign-in was refused (%s).") % [provider, _auth_message(r)]
 	print("[online] %s %s" % ["switched to the account of" if switched else "linked", provider])
 	return await _adopt_session(str(r.body.get("refreshToken", "")), provider)
 
@@ -352,7 +352,7 @@ func email_sign_in(email: String, password: String) -> String:
 	if r.code != 200:
 		return _auth_error(r)
 	print("[online] signed in with email")
-	return await _adopt_session(str(r.body.get("refreshToken", "")), "your email")
+	return await _adopt_session(str(r.body.get("refreshToken", "")), tr("your email"))
 
 ## Gives this guest an email and password: the same account, the same
 ## progress, now reachable from any phone.
@@ -362,7 +362,7 @@ func email_create(email: String, password: String) -> String:
 		return bad
 	var token := await _firebase_id_token()
 	if token == "":
-		return "Can't reach the temple right now. Try again in a moment."
+		return tr("Can't reach the temple right now. Try again in a moment.")
 	# signUp with the guest's idToken links the email to it (the same uid).
 	# accounts:update can't: with email enumeration protection on, Firebase
 	# refuses to set an email that way ("verify the new email first").
@@ -371,13 +371,13 @@ func email_create(email: String, password: String) -> String:
 	if r.code != 200:
 		return _auth_error(r)
 	print("[online] added an email to this account")
-	return await _adopt_session(str(r.body.get("refreshToken", _state.get("refresh_token", ""))), "your email")
+	return await _adopt_session(str(r.body.get("refreshToken", _state.get("refresh_token", ""))), tr("your email"))
 
 ## Mails a password-reset link. Answers the same whether or not the email
 ## has an account, so nobody can probe for accounts.
 func email_reset(email: String) -> String:
 	if not _looks_like_email(email):
-		return "Type the email you signed up with first."
+		return tr("Type the email you signed up with first.")
 	var r := await _http(HTTPClient.METHOD_POST, IDENTITY + "sendOobCode?key=" + _api_key,
 		{"requestType": "PASSWORD_RESET", "email": email.strip_edges()}, _firebase_headers())
 	if r.code == 200 or _auth_message(r).begins_with("EMAIL_NOT_FOUND"):
@@ -389,10 +389,10 @@ func email_reset(email: String) -> String:
 ## fresh: a new guest, a new save.
 func sign_out() -> String:
 	if is_guest():
-		return "This phone isn't signed in to an account."
+		return tr("This phone isn't signed in to an account.")
 	await _flush_outbox()
 	if not _outbox.is_empty() or not await sync_save():
-		return "Can't reach the temple. Your progress isn't saved yet."
+		return tr("Can't reach the temple. Your progress isn't saved yet.")
 	if push_token != "":
 		# This phone stops hearing about this account.
 		await api(HTTPClient.METHOD_POST, "/push/device/forget", {"token": push_token})
@@ -415,7 +415,7 @@ func _adopt_session(refresh_token: String, what: String) -> String:
 	_state.jwt = "" # re-exchange: the server records the account's new state
 	_write_state()
 	if not await ensure_session():
-		return "Signed in with %s, but the temple can't be reached right now." % what
+		return tr("Signed in with %s, but the temple can't be reached right now.") % what
 	await _refresh_links()
 	await sync_save()
 	account_changed.emit()
@@ -440,9 +440,9 @@ func _refresh_links() -> void:
 
 func _check_credentials(email: String, password: String) -> String:
 	if not _looks_like_email(email):
-		return "That doesn't look like an email address."
+		return tr("That doesn't look like an email address.")
 	if password.length() < 6:
-		return "Passwords are at least 6 characters."
+		return tr("Passwords are at least 6 characters.")
 	return ""
 
 static func _looks_like_email(email: String) -> bool:
@@ -456,25 +456,25 @@ static func _auth_message(r: Dictionary) -> String:
 ## Firebase's error codes, as sentences for a player.
 static func _auth_error(r: Dictionary) -> String:
 	if r.code == 0:
-		return "Can't reach the temple right now. Try again in a moment."
+		return TranslationServer.translate("Can't reach the temple right now. Try again in a moment.")
 	var m := _auth_message(r)
 	if m.begins_with("INVALID_LOGIN_CREDENTIALS") or m.begins_with("INVALID_PASSWORD") or m.begins_with("EMAIL_NOT_FOUND"):
-		return "That email and password don't match."
+		return TranslationServer.translate("That email and password don't match.")
 	if m.begins_with("EMAIL_EXISTS"):
-		return "That email already has an account. Sign in instead."
+		return TranslationServer.translate("That email already has an account. Sign in instead.")
 	if m.begins_with("WEAK_PASSWORD"):
-		return "Passwords are at least 6 characters."
+		return TranslationServer.translate("Passwords are at least 6 characters.")
 	if m.begins_with("INVALID_EMAIL"):
-		return "That doesn't look like an email address."
+		return TranslationServer.translate("That doesn't look like an email address.")
 	if m.begins_with("TOO_MANY_ATTEMPTS"):
-		return "Too many tries. Wait a little, then try again."
+		return TranslationServer.translate("Too many tries. Wait a little, then try again.")
 	if m.begins_with("USER_DISABLED"):
-		return "This account has been switched off."
+		return TranslationServer.translate("This account has been switched off.")
 	if m.begins_with("OPERATION_NOT_ALLOWED"):
-		return "Email sign-in isn't available right now."
+		return TranslationServer.translate("Email sign-in isn't available right now.")
 	if m.begins_with("CREDENTIAL_TOO_OLD"):
-		return "Please sign in again, then try that once more."
-	return "Sign-in was refused (%s)." % m
+		return TranslationServer.translate("Please sign in again, then try that once more.")
+	return TranslationServer.translate("Sign-in was refused (%s).") % m
 
 # -------------------------------------------------------------- cloud save
 

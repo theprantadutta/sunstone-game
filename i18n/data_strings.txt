@@ -1,0 +1,228 @@
+# Player-visible data strings from scripts/glyphs.gd, shop.gd, market.gd,
+# themes.gd, nights.gd, maya_calendar.gd, save_data.gd.
+# English literal = translation key; display code calls tr() on them.
+# A string may repeat across groups (same key, translated once).
+
+# glyphs.gd: Glyphs.DEFS[i].title
+First steps
+Past the jaguars
+First dawn
+Second dawn
+Sun bearer
+Gatherer
+Sun-hoarder
+First light
+Many suns
+Moonrise
+Deep night
+Ember walker
+Close call
+Leaper
+The low road
+Hair's breadth
+Untouched
+Today's dusk
+Three dusks
+A week of dusks
+Regular
+Devoted
+Ten thousand paces
+Treasury
+
+# glyphs.gd: Glyphs.DEFS[i].text
+Finish a run.
+Reach the House of Bats.
+Carry the sun through a night.
+Survive two nights in one run.
+Survive four nights in one run.
+Gather 50 sun-drops in one run.
+Gather 150 sun-drops in one run.
+Flare the Sunstone.
+Flare fifteen times in one run.
+Reach the House of Jaguars.
+Reach the last House of the second night.
+Run 1,000 m flaring three times or fewer.
+Let the stone nearly go out, then light it again.
+Jump 25 times in one run.
+Slide 15 times in one run.
+Make 10 close calls in one run.
+Run 1,000 m without a stumble.
+Finish a daily dusk.
+Run the daily dusk three days in a row.
+Run the daily dusk seven days in a row.
+Finish 10 runs.
+Finish 50 runs.
+Run 10 km in all.
+Gather 1,000 sun-drops in all.
+
+# shop.gd: Shop.SHELVES[i] (also used as internal shelf keys; tr() only at display)
+Runners
+Outfits
+Hats
+Stones
+Charms
+Boosts
+Pass
+Treasury
+
+# shop.gd: Shop.PASS_PLANS[i].title
+Monthly
+Yearly
+
+# shop.gd: Shop.PASS_PLANS[i].per (shown after a store price: "%s %s")
+a month
+a year
+
+# shop.gd: Shop.PASS_PERKS[i]
+Every runner, outfit, hat and stone hue
+All charms at full strength
+No ads between runs
+Second wind without sun-drops
+
+# shop.gd: Shop.OUTFITS[i].title
+Their own
+Scribe
+Jungle ranger
+Night runner
+Ajaw gold
+Feathered serpent
+Winter coat
+
+# shop.gd: Shop.HATS[i].title
+Their own
+Fedora
+Cap
+Beanie
+No hat
+Quetzal crown
+Santa hat
+
+# shop.gd: Shop.BOOSTS[i].title
+Ember shield
+Jaguar ward
+Head start
+
+# shop.gd: Shop.BOOSTS[i].text
+The first time the Sunstone goes out, it relights.
+The first jaguar to catch you turns to stone instead.
+The sun carries you over the first 300 m.
+
+# shop.gd: Shop.TREASURY[i].title
+A pouch of sun-drops
+A jar of sun-drops
+A chest of sun-drops
+Remove ads
+Patron of the temple
+
+# shop.gd: Shop.TREASURY[i].text
+1,000 sun-drops.
+5,500 sun-drops.
+12,000 sun-drops.
+No more ads between runs. Offers you choose stay.
+No ads, 2,500 sun-drops and the Obsidian hue.
+
+# market.gd: Market.CHARMS[i].title
+Ember heart
+Jaguar's patience
+Sun-drinker
+
+# market.gd: Market.CHARMS[i].text
+The stone's light drains slower.
+Jaguars stay stone a moment after your light leaves them.
+Each sun-drop restores more light.
+
+# market.gd: Market.CHARMS[i].effects[tier]
+10% slower
+20% slower
+30% slower
++0.4 s
++0.8 s
++1.2 s
++15% light
++30% light
++50% light
+
+# market.gd: Market.HUES[i].title (shown on the Stones shelf)
+Sun gold
+Jade fire
+Moon pearl
+Blood moon
+Obsidian
+
+# market.gd: Market.GARBS[i].title (legacy; no display site found, listed for completeness)
+Explorer
+Scribe
+Night runner
+Ajaw
+
+# themes.gd: Themes.CHARACTERS[i].title (only the descriptive part is translatable)
+Tomás the explorer
+
+# themes.gd: Themes.EVENTS[id].name
+The long winter night
+
+# nights.gd: Nights.HOUSES[id].name
+The dusk causeway
+House of Jaguars
+House of Bats
+House of Gloom
+House of Knives
+House of Cold
+House of Fire
+
+# nights.gd: Nights.HOUSES[id].sub
+The sun is going down
+They only move in the dark
+Bats hunt bright light
+Even embers barely glow
+Obsidian blades in the road
+The stone drains fast
+Braziers, and what waits between them
+
+# proper names, not translated (reference only; not keys)
+# Tomás
+# Ixchel
+# Kinich
+# Nina
+# maya_calendar.gd: MayaCalendar.DAY_NAMES (tzolk'in day names), shown as "%d %s" e.g. "9 K'an"
+# Imix
+# Ik'
+# Ak'b'al
+# K'an
+# Chikchan
+# Kimi
+# Manik'
+# Lamat
+# Muluk
+# Ok
+# Chuwen
+# Eb'
+# B'en
+# Ix
+# Men
+# K'ib'
+# Kab'an
+# Etz'nab'
+# Kawak
+# Ajaw
+
+# game.gd: COACH (hints, shown through tr())
+Swipe up to jump
+Swipe down to slide under
+Swipe left or right to go round
+# game.gd: death causes (stored in English, shown through tr())
+Ran into a stela
+Cut on obsidian blades
+Tripped over a low wall
+Hit a stone lintel
+Fell into a pit
+Stumbled, and the pack caught him
+Ran into a stone jaguar
+Caught by a jaguar in the dark
+The light went out, and the pack caught him
+# online.gd: linked account placeholders
+your Apple ID
+your account
+
+# game_ui.gd: LANGUAGES (the "follow the phone" choice)
+Phone language

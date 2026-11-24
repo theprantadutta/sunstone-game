@@ -18,19 +18,46 @@ const NIGHT := Color("#0B0E24") ## the dim behind an open page
 static var _display: FontFile
 static var _text := {}
 static var _paper: Texture2D
+static var _noto: Array[Font] = [] ## Devanagari, Bengali, Arabic (loaded once)
+static var _noto_at := {} ## weight → those three as FontVariations at that weight
+
+## Scripts Nunito and Dela Gothic don't cover (Hindi, Bengali, Arabic): the
+## Noto variable fonts, tried in this order when a glyph is missing.
+static func _noto_fonts() -> Array[Font]:
+	if _noto.is_empty():
+		for f in ["NotoSansDevanagari", "NotoSansBengali", "NotoSansArabic"]:
+			_noto.append(load("res://assets/fonts/%s.ttf" % f))
+	return _noto
+
+## The Noto fallbacks at a weight, so a heavy label stays heavy in any script.
+static func _noto_fonts_at(weight: int) -> Array[Font]:
+	if not _noto_at.has(weight):
+		var out: Array[Font] = []
+		for base in _noto_fonts():
+			out.append(_weighted(base, weight))
+		_noto_at[weight] = out
+	return _noto_at[weight]
+
+static func _weighted(base: Font, weight: int) -> FontVariation:
+	var fv := FontVariation.new()
+	fv.base_font = base
+	fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): weight}
+	return fv
 
 static func display_font() -> FontFile:
 	if _display == null:
 		_display = load("res://assets/fonts/DelaGothicOne-Regular.ttf")
+		_display.fallbacks = _noto_fonts_at(900) # Dela Gothic is a heavy face
 	return _display
 
 ## Nunito at a given weight (700, 800, 900) from the variable font.
 static func text_font(weight := 800) -> Font:
 	if not _text.has(weight):
 		var base: FontFile = load("res://assets/fonts/Nunito-Variable.ttf")
-		var fv := FontVariation.new()
-		fv.base_font = base
-		fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): weight}
+		if base.fallbacks.is_empty():
+			base.fallbacks = _noto_fonts()
+		var fv := _weighted(base, weight)
+		fv.fallbacks = _noto_fonts_at(weight) # the weight reaches the fallbacks too
 		_text[weight] = fv
 	return _text[weight]
 
@@ -45,6 +72,13 @@ static func fit(l: Label, width: float, min_size := 16) -> Label:
 	var ls := l.label_settings
 	# The label's own measure (text plus whatever the theme adds), not the font's.
 	while ls.font_size > min_size and l.get_minimum_size().x > width:
+		ls.font_size -= 1
+	return l
+
+## Shrinks a wrapping label's font until all its lines fit in [height].
+static func fit_wrapped(l: Label, height: float, min_size := 16) -> Label:
+	var ls := l.label_settings
+	while ls.font_size > min_size and l.get_line_count() * l.get_line_height() > height:
 		ls.font_size -= 1
 	return l
 
@@ -313,7 +347,13 @@ class GlyphButton:
 
 	enum Kind { PRIMARY, SECONDARY }
 
-	var text := ""
+	## English or already translated: shown through tr() either way.
+	var text := "":
+		set(v):
+			text = v
+			if _label:
+				_label.text = tr(v)
+				_layout()
 	var kind := Kind.PRIMARY
 	var font_size := 34
 	var _down := false
@@ -330,7 +370,7 @@ class GlyphButton:
 
 	func _ready() -> void:
 		var color := UiKit.STUCCO if kind == Kind.PRIMARY else UiKit.INK
-		_label = UiKit.label(text, UiKit.display_font(), font_size, color)
+		_label = UiKit.label(tr(text), UiKit.display_font(), font_size, color)
 		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		add_child(_label)
@@ -349,6 +389,10 @@ class GlyphButton:
 
 	func _layout() -> void:
 		_label.position = Vector2(0, (DEPTH - 2.0 if _down else 0.0) - 2.0)
+		# Translations run longer than the English the button was sized for:
+		# shrink the text (not the button) until it fits inside the cartouche.
+		_label.label_settings.font_size = font_size
+		UiKit.fit(_label, size.x - 26.0, 14)
 		_label.size = Vector2(size.x, size.y - DEPTH)
 
 	func _draw() -> void:
@@ -742,7 +786,7 @@ class Swatch:
 		if worn:
 			UiKit.draw_kin(self, Vector2(r.end.x - 20, 20), 14.0, 1.0, 2.0, false)
 		var font := UiKit.text_font(900)
-		var t: String = item.title
+		var t := tr(str(item.title))
 		var tw := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
 		draw_string(font, Vector2((size.x - tw) / 2.0, r.end.y + 26), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, UiKit.INK)
 
@@ -973,7 +1017,7 @@ class PaperSlip:
 		text = t
 		maya = m
 		if _label:
-			_label.text = t
+			_label.text = tr(t)
 			_label.position = Vector2(14, 0)
 			_label.size = Vector2(size.x - 28.0 - (44.0 if m >= 0 else 0.0), size.y)
 		queue_redraw()
@@ -1011,7 +1055,7 @@ class Toggle:
 		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
 	func _ready() -> void:
-		var l := UiKit.label(_text, UiKit.text_font(900), 32, UiKit.INK)
+		var l := UiKit.label(tr(_text), UiKit.text_font(900), 32, UiKit.INK)
 		l.position = Vector2(4, 16)
 		add_child(l)
 
@@ -1106,7 +1150,7 @@ class HintStrip:
 
 	## [held]: stays until dismissed (a move being taught), not 2.4 s.
 	func show_hint(text: String, dir: Vector2, held := false) -> void:
-		_label.text = text
+		_label.text = tr(text)
 		_dir = dir
 		_life = 1.0e9 if held else 2.4
 		_t = 0.0

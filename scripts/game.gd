@@ -207,6 +207,10 @@ var _prof_last_rot := Vector3.ZERO
 
 func _ready() -> void:
 	save.load_from_disk()
+	GameUI.apply_language(save.lang)
+	# Dev: files/dev_lang (e.g. "hi") shows the game in that language, for screenshots.
+	if OS.is_debug_build() and FileAccess.file_exists("user://dev_lang"):
+		GameUI.apply_language(FileAccess.get_file_as_string("user://dev_lang").strip_edges())
 	online = Online.new()
 	add_child(online)
 	online.firebase = Firebase.new()
@@ -452,7 +456,7 @@ func _start_run() -> void:
 	if not _shots:
 		get_tree().create_timer(0.9).timeout.connect(func():
 			if state == State.RUNNING:
-				_hint("swipe", "Swipe left and right to change lanes", false, UiKit.HintStrip.BOTH_WAYS))
+				_hint("swipe", tr("Swipe left and right to change lanes"), false, UiKit.HintStrip.BOTH_WAYS))
 
 ## The head start: the sun lifts him over the road and carries him DASH_M
 ## metres, then sets him down where the road is clear.
@@ -583,9 +587,9 @@ func _second_wind(paid_by_ad := false) -> void:
 func _night_line() -> String:
 	var at := Nights.locate(distance)
 	if at.dawn:
-		return "Night %d survived" % at.n
+		return tr("Night %d survived") % at.n
 	var h: Dictionary = Nights.HOUSES[Nights.plan(at.n, world.seed)[at.house]]
-	return "Night %d · %s" % [at.n, h.name]
+	return tr("Night %d · %s") % [at.n, tr(h.name)]
 
 func _finish_run() -> void:
 	state = State.RESULTS
@@ -605,7 +609,7 @@ func _finish_run() -> void:
 		"jumps": _jumps, "slides": _slides, "close": _close, "stumbles": _stumbles,
 	})
 	save.save_to_disk()
-	ui.show_results(death_cause, metres, coins, save.best, is_best, daily_info, new_glyphs, _night_line())
+	ui.show_results(tr(death_cause), metres, coins, save.best, is_best, daily_info, new_glyphs, _night_line())
 	_maybe_ask_review(is_best, metres)
 	online.submit_run({
 		"mode": "daily" if daily_key != "" else "free", "dailyKey": daily_key if daily_key != "" else null,
@@ -838,16 +842,16 @@ func _step_run(delta: float) -> void:
 		light = maxf(light, 0.25)
 	if light <= 0.0 and s > 0.0 and not at.dawn and save.use_boost("shield"):
 		light = 0.4
-		ui.pop("Ember shield!")
+		ui.pop(tr("Ember shield!"))
 		ui.flash_flare()
 		sfx.play(Sfx.FLARE)
 	if _step_pack(delta, at):
 		return
 	_teach()
 	if light < 0.35:
-		_hint("drops", "Sun-drops feed the stone: run through them")
+		_hint("drops", tr("Sun-drops feed the stone: run through them"))
 	elif _run_time > 12.0:
-		_hint("flare", "Tap to flare: the light reaches far ahead, but it costs light", false, UiKit.HintStrip.TAP)
+		_hint("flare", tr("Tap to flare: the light reaches far ahead, but it costs light"), false, UiKit.HintStrip.TAP)
 
 	if y > 0.02:
 		runner.pose = RunnerModel.Pose.JUMP
@@ -861,7 +865,7 @@ func _step_run(delta: float) -> void:
 	_update_camera(delta)
 	_push_codex()
 	ui.set_run_numbers(int(distance), coins)
-	ui.set_night(at.n, h.name, at.t, at.dawn)
+	ui.set_night(at.n, tr(h.name), at.t, at.dawn)
 	ui.set_light(light, 1.0 - amb / AMB_FULL, minf(_nearest_jaguar(), _pack + 1.0))
 
 ## Entering a House, or dawn: a banner, a sound, and on the first nights a hint.
@@ -874,7 +878,7 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 	if _tour:
 		_events.append("house")
 	if at.dawn:
-		ui.show_banner("Dawn", "Night %d survived" % at.n)
+		ui.show_banner(tr("Dawn"), tr("Night %d survived") % at.n)
 		sfx.play(Sfx.DAWN)
 		light = minf(light + DAWN_GIFT, 1.0)
 		for j in _jags:
@@ -885,19 +889,19 @@ func _check_houses(at: Dictionary, h: Dictionary) -> void:
 			b.flee = true
 		return
 	if at.n > 1 and at.house == 0:
-		ui.show_banner(h.name, "Night %d begins" % at.n)
+		ui.show_banner(tr(h.name), tr("Night %d begins") % at.n)
 	elif first and Themes.event().has("name"):
-		ui.show_banner(h.name, Themes.event().name)
+		ui.show_banner(tr(h.name), tr(Themes.event().name))
 	else:
-		ui.show_banner(h.name, h.sub)
+		ui.show_banner(tr(h.name), tr(h.sub))
 	if not first:
 		sfx.play(Sfx.GATE)
 	if true:
 		var id: String = Nights.plan(at.n, world.seed)[at.house]
 		if id == "jaguars":
-			_hint("jaguars", "Jaguars move only in the dark: flare and they turn to stone", true, UiKit.HintStrip.TAP)
+			_hint("jaguars", tr("Jaguars move only in the dark: flare and they turn to stone"), true, UiKit.HintStrip.TAP)
 		elif id == "bats":
-			_hint("bats", "Bats dive for your light: swipe down to slide under them", true, Vector2.DOWN)
+			_hint("bats", tr("Bats dive for your light: swipe down to slide under them"), true, Vector2.DOWN)
 
 ## Shows a hint until the player has learned it. [learned_on_show]: a fact,
 ## learned by reading it; otherwise a move, learned by making it ([_learn]).
@@ -922,6 +926,7 @@ func _learn(key: String) -> void:
 
 ## The first time each danger meets him in his lane, time slows and a hint
 ## says which swipe gets past it, until he makes it (or it's behind him).
+## English source texts: translated where shown (tr() in _teach).
 const COACH := {
 	"jump": "Swipe up to jump", "slide": "Swipe down to slide under",
 	"dodge": "Swipe left or right to go round",
@@ -954,7 +959,7 @@ func _teach() -> void:
 	var key := "jump" if near.kind in ["wall", "pit"] else ("slide" if near.kind == "lintel" else "dodge")
 	if (save.taught.has(key) and not _dev_untaught) or _hints.has(key):
 		return
-	var text: String = COACH[key]
+	var text: String = tr(COACH[key])
 	var gesture: Vector2 = {"jump": Vector2.UP, "slide": Vector2.DOWN, "dodge": UiKit.HintStrip.BOTH_WAYS}[key]
 	if key == "dodge":
 		# Name the side that's clear: a stela can fill two lanes.
@@ -966,7 +971,7 @@ func _teach() -> void:
 			return
 		if open.size() == 1:
 			var right: bool = open[0] > _lane
-			text = "Swipe %s to go round" % ("right" if right else "left")
+			text = tr("Swipe right to go round") if right else tr("Swipe left to go round")
 			gesture = Vector2.RIGHT if right else Vector2.LEFT
 	_hint(key, text, false, gesture, true)
 	_coach = key
@@ -984,6 +989,8 @@ func _end_coach() -> void:
 	_coach = ""
 	Engine.time_scale = 1.0
 
+## English: death_cause stays English (saved, sent to the server); the
+## results page gets tr(death_cause).
 const CAUSES := {
 	"stela": "Ran into a stela", "blades": "Cut on obsidian blades",
 	"wall": "Tripped over a low wall", "lintel": "Hit a stone lintel",
@@ -1046,7 +1053,7 @@ func _stumble() -> bool:
 		return true
 	_stumble_t = 0.0
 	light = maxf(0.0, light - STUMBLE_LIGHT)
-	ui.pop("Stumble!")
+	ui.pop(tr("Stumble!"))
 	return false
 
 ## A danger he got past by a move made at the last moment — a lane change
@@ -1069,7 +1076,7 @@ func _check_close() -> void:
 			var pay := mini(_combo, 5)
 			coins += pay
 			light = minf(light + 0.01, 1.0)
-			ui.pop("Close!" if _combo < 2 else "Close!  ×%d" % _combo)
+			ui.pop(tr("Close!") if _combo < 2 else tr("Close!  ×%d") % _combo)
 			sfx.play(Sfx.COIN)
 
 func _collect() -> void:
@@ -1092,7 +1099,7 @@ func _collect() -> void:
 					if _strings[tid] == int(d.get("of", 5)):
 						coins += STRING_BONUS
 						light = minf(light + DROP_LIGHT * 3.0, 1.0)
-						ui.pop("Sun-string  +%d" % STRING_BONUS)
+						ui.pop(tr("Sun-string  +%d") % STRING_BONUS)
 						sfx.play(Sfx.BLAZE)
 
 func _is_lit(p: Vector3) -> bool:
@@ -1212,7 +1219,7 @@ func _step_jaguars(delta: float, _h: Dictionary, _at: Dictionary) -> void:
 			# The ward: this one is stone for good, and out of the way.
 			_drop_jaguar(j.node)
 			_jags.erase(j)
-			ui.pop("Jaguar ward!")
+			ui.pop(tr("Jaguar ward!"))
 			ui.flash_flare()
 			sfx.play(Sfx.FLARE)
 			_shield_t = 1.0
@@ -1641,7 +1648,7 @@ func _flare() -> void:
 	_flare_cd = FLARE_CD
 	if light <= FLARE_COST + 0.03 and not _invincible:
 		sfx.play(Sfx.FIZZLE)
-		ui.pop("Too little light")
+		ui.pop(tr("Too little light"))
 		return
 	light = maxf(light - FLARE_COST, 0.02)
 	_flare_t = FLARE_TIME

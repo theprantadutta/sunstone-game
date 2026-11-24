@@ -6,6 +6,24 @@ Xcode. This is written for a coding agent (or a person) on that Mac. Read
 key files. Ask the owner before touching any external account (App Store
 Connect, Firebase, AdMob). Commit messages carry no co-author or AI lines.
 
+## To do next on the Mac (added 2026-11-24): languages
+
+The game now ships in 11 languages besides English: hi, bn, ar, pt (Brazil), id,
+es (Latin America), tr, ru, de, it, vi. The in-game text is in
+`i18n/strings.csv`, and the Play listing translations are in
+`store/listings/listings.json`.
+
+Do the same for the App Store:
+1. **App Store Connect:** add these localizations to the app and fill in name,
+   subtitle, promotional text, description and keywords for each, from
+   `store/listings/listings.json`. App Store limits: name 30, subtitle 30,
+   keywords 100. Ask the owner before changing App Store Connect.
+2. **The iOS build:** list the languages in Xcode's
+   `CFBundleLocalizations`, so iOS shows the app as supporting them. In Godot this
+   is the iOS preset's localization setting or `project.godot`
+   `internationalization/locale`. Then check one RTL language (ar) and one
+   complex script (hi or bn) on the device.
+
 ## Status (2026-11-13): submitted to App Review
 
 1.4.1 (build 11) and all 8 in-app purchases went to review together. What the
