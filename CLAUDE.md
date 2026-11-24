@@ -387,6 +387,12 @@ shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
   project.godot. Otherwise Godot mirrors every hand-placed control for an RTL
   locale and the pages fall off-screen; text in labels still runs right to left.
   1.4.2 (code 10) has been live since Nov 16.
+  Sent for review on 2026-11-24 (100% rollout, release notes in all 12 languages).
+  Play's pre-review check now flags `android.hardware.screen.portrait`, the
+  required feature Godot declares for portrait-only games ("restricting your
+  app's availability"). It was ignored for 1.4.3: the supported-device count
+  didn't change. Next release: declare it `required="false"` (export plugin
+  manifest) so the check passes.
 - **Android 1.4.2 (code 10)** was the release before: the Nina fix, the first
   run starting by itself, the jaguar lesson, the splash above, and layout fixes
   from a player report (Glyphs grid over its text on every screen; Records'
