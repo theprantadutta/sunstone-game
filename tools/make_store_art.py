@@ -30,9 +30,11 @@ DUSK_LOW = (240, 154, 94)
 # (raw file, caption, small line) — in store order (Play shows up to 8).
 SHOTS = [
     # Action first: the store feed shows only the first two or three.
-    ("02_leap.png", "Swipe. Leap. Slide.", "Three lanes through the Maya underworld."),
+    # Nov 2026: 6% of visitors installed, so the chase and the flare (the two
+    # things no other temple runner has) lead.
     ("04_pack.png", "Outrun the jaguars", "Let your light die and the pack catches you."),
-    ("03_flare.png", "Tap to flare", "Light the road. Turn jaguars to stone."),
+    ("03_flare.png", "Freeze them to stone", "Tap to flare: your light stops every jaguar."),
+    ("02_leap.png", "Swipe. Leap. Slide.", "Three lanes through the Maya temple."),
     ("05_fire.png", "Six deadly Houses", "Gloom, Knives, Cold, Jaguars, Bats and Fire."),
     ("06_dawn.png", "Make it to dawn", "Then the next night runs faster."),
     ("01_title.png", "Carry the sun", "An endless runner, one night at a time."),
@@ -107,43 +109,47 @@ def screenshot(raw, caption, line, kind="phone"):
 
 
 def feature(raw_run):
+    """Play's Explore cards show this small, so: the chase full-bleed, the name big.
+    Text stays in the left half and clear of the edges (Play crops and may lay a
+    play button over the middle when a video is set)."""
+    import math
     W, H = 1024, 500
-    img = gradient(W, H)
     shot = Image.open(raw_run).convert("RGB")
-    # A slice of a run on the right: the Sunstone's painted circle in the night.
-    # Scale so the 470 px slot is filled edge to edge, then take the runner's band.
-    scale = 470 / (shot.width * 0.62)
-    s = shot.resize((int(shot.width * scale), int(shot.height * scale)), Image.LANCZOS)
-    left = (s.width - 470) // 2
-    top = min(int(s.height * 0.36), s.height - H)
-    crop = s.crop((left, top, left + 470, top + H))
-    img.paste(crop, (W - 470, 0))
+    # The run fills the card: the band with the runner and the frozen jaguars,
+    # mirrored so they sit on the right, away from the name.
+    band_h = int(shot.width * H / W)
+    top = int(shot.height * 0.43)
+    img = shot.crop((0, top, shot.width, top + band_h)).transpose(Image.FLIP_LEFT_RIGHT)
+    img = img.resize((W, H), Image.LANCZOS)
+    # Night falls over the left, where the name goes.
+    shade = Image.new("L", (W, H))
+    sd = ImageDraw.Draw(shade)
+    for x in range(W):
+        t = max(0.0, min(1.0, (x - 300) / 360))
+        sd.line([(x, 0), (x, H)], fill=int(235 * (1 - t * t * (3 - 2 * t))))
+    night = Image.new("RGB", (W, H), (14, 12, 34))
+    img = Image.composite(night, img, shade)
     d = ImageDraw.Draw(img)
-    d.rectangle([W - 476, 0, W - 470, H], fill=INK)
-    # The title on a strip of codex paper.
-    strip = paper(520, 250)
-    sd = ImageDraw.Draw(strip)
-    rule(sd, 20, 500, 18, 5)
-    rule(sd, 20, 500, 232, 5)
-    centered(sd, "Sunstone", ImageFont.truetype(DELA, 74), 264, 44, CINNABAR)
-    centered(sd, "Sunstone", ImageFont.truetype(DELA, 74), 260, 40, INK)
-    sub = ImageFont.truetype(NUNITO, 40)
-    sub.set_variation_by_axes([900])
-    centered(sd, "Dusk Run", sub, 260, 160, CINNABAR)
-    img.paste(strip, (34, 160))
-    # The k'in sun above it.
-    cx, cy, r = 294, 92, 52
+    # The k'in sun, then the name.
+    cx, cy, r = 112, 128, 40
     for k in range(20):
-        import math
         a = 2 * math.pi * k / 20
-        d.line([(cx + math.cos(a) * (r + 8), cy + math.sin(a) * (r + 8)),
-                (cx + math.cos(a) * (r + 22), cy + math.sin(a) * (r + 22))], fill=OCHRE, width=5)
+        d.line([(cx + math.cos(a) * (r + 7), cy + math.sin(a) * (r + 7)),
+                (cx + math.cos(a) * (r + 19), cy + math.sin(a) * (r + 19))], fill=OCHRE, width=5)
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(239, 227, 200), outline=INK, width=4)
     for k in range(4):
         a = math.pi / 4 + k * math.pi / 2
         px, py = cx + math.cos(a) * r * 0.4, cy + math.sin(a) * r * 0.4
-        d.ellipse([px - 16, py - 16, px + 16, py + 16], fill=OCHRE, outline=INK, width=3)
-    d.ellipse([cx - 9, cy - 9, cx + 9, cy + 9], fill=(255, 227, 160), outline=INK, width=3)
+        d.ellipse([px - 12, py - 12, px + 12, py + 12], fill=OCHRE, outline=INK, width=3)
+    d.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], fill=(255, 227, 160), outline=INK, width=2)
+    title = fitted(DELA, "Sunstone", 104, 470)
+    d.text((66, 200), "Sunstone", font=title, fill=CINNABAR)
+    d.text((60, 194), "Sunstone", font=title, fill=(250, 240, 220))
+    sub = fitted(NUNITO, "MAYA TEMPLE RUNNER", 44, 460, 900)
+    d.text((64, 330), "MAYA TEMPLE RUNNER", font=sub, fill=OCHRE)
+    rule(d, 64, 300, 400, 6)
+    tag = fitted(NUNITO, "Outrun the jaguars till dawn", 30, 440, 800)
+    d.text((64, 418), "Outrun the jaguars till dawn", font=tag, fill=(239, 227, 200))
     return img
 
 

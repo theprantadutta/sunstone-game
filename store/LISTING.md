@@ -25,7 +25,9 @@ App icon: `assets/icon/icon.png` (512×512 export of it for the listing).
 
 ## Short description (80 max)
 
-Endless runner in a Maya temple. Swipe, leap, slide and outrun the jaguars!
+Temple runner in the Maya underworld. Swipe, leap, slide and outrun the jaguars!
+
+(Until Nov 24, 2026: "Endless runner in a Maya temple. ..."; changed to lead with the searched words "temple runner".)
 
 ## Full description (4000 max)
 
