@@ -39,6 +39,7 @@ pointing/emulate_touch_from_mouse=true
 
 [internationalization]
 
+rendering/root_node_layout_direction=1
 locale/translations=PackedStringArray("res://i18n/strings.hi.translation", "res://i18n/strings.bn.translation", "res://i18n/strings.ar.translation", "res://i18n/strings.pt.translation", "res://i18n/strings.id.translation", "res://i18n/strings.es.translation", "res://i18n/strings.tr.translation", "res://i18n/strings.ru.translation", "res://i18n/strings.de.translation", "res://i18n/strings.it.translation", "res://i18n/strings.vi.translation")
 locale/include_text_server_data=true
 

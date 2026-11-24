@@ -833,6 +833,7 @@ const LANGUAGES := [["", "Phone language"], ["en", "English"], ["hi", "हिन
 ## Sets the language: [code] from LANGUAGES, or "" for the phone's own.
 static func apply_language(code: String) -> void:
 	TranslationServer.set_locale(code if code != "" else OS.get_locale())
+	UiKit.use_script_fonts(TranslationServer.get_locale())
 
 ## [locale]'s name in its own language ("pt_BR" -> "Português"); English otherwise.
 static func language_name(locale: String) -> String:

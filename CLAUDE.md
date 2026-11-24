@@ -380,14 +380,21 @@ shelf is hidden on iOS (`GameUI.market_tabs`). iOS store art: `store/appstore/`.
 
 ## Release
 
-- **Android 1.4.2 (code 10)** is the next Play release: the Nina fix, the first
+- **Android 1.4.3 (code 11)** is the next Play release (AAB built 2026-11-24, which
+  the owner uploads). It's the 11 languages above, checked on the A24 and the tablet
+  in every language (dev_shots + dev_lang). Arabic needs
+  `internationalization/rendering/root_node_layout_direction=1` (LTR) in
+  project.godot. Otherwise Godot mirrors every hand-placed control for an RTL
+  locale and the pages fall off-screen; text in labels still runs right to left.
+  1.4.2 (code 10) has been live since Nov 16.
+- **Android 1.4.2 (code 10)** was the release before: the Nina fix, the first
   run starting by itself, the jaguar lesson, the splash above, and layout fixes
   from a player report (Glyphs grid over its text on every screen; Records'
   deepest night, the Daily dusk day name, results headline and big distances,
   ranks, HUD banner vs pops: `UiKit.fit` shrinks a one-line label to its box;
   call it before setting the label's size, since a Label never sizes below its
   text). iOS stays on 1.4.1 (build 11).
-- **Next Play release must ship the Nina fix.** Since 1.3.0 `themes.gd` asked
+- **The Nina fix (shipped on Play in 1.4.2).** Since 1.3.0 `themes.gd` asked
   the stores for `char_nina`, which exists nowhere (Play, the App Store and
   sunstone-api all use `sunstone_char_nina`), so Nina never got a price and
   couldn't be bought on Android either. Fixed in `ca634d6`, so far shipped on iOS

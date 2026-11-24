@@ -18,25 +18,34 @@ const NIGHT := Color("#0B0E24") ## the dim behind an open page
 static var _display: FontFile
 static var _text := {}
 static var _paper: Texture2D
-static var _noto: Array[Font] = [] ## Devanagari, Bengali, Arabic (loaded once)
-static var _noto_at := {} ## weight → those three as FontVariations at that weight
+static var _script := "" ## the Noto face the current language needs: "", or a file name
+static var _noto_at := {} ## weight -> that Noto face as a FontVariation at that weight
 
-## Scripts Nunito and Dela Gothic don't cover (Hindi, Bengali, Arabic): the
-## Noto variable fonts, tried in this order when a glyph is missing.
-static func _noto_fonts() -> Array[Font]:
-	if _noto.is_empty():
-		for f in ["NotoSansDevanagari", "NotoSansBengali", "NotoSansArabic"]:
-			_noto.append(load("res://assets/fonts/%s.ttf" % f))
-	return _noto
+## Scripts Nunito and Dela Gothic don't cover. Only the current language's face is
+## a fallback: any fallback makes Godot lay out every line taller (their metrics
+## count), which spread the English and Latin pages apart.
+const SCRIPT_FONTS := {"hi": "NotoSansDevanagari", "bn": "NotoSansBengali", "ar": "NotoSansArabic"}
 
-## The Noto fallbacks at a weight, so a heavy label stays heavy in any script.
-static func _noto_fonts_at(weight: int) -> Array[Font]:
+## Points the fonts' fallback at [locale]'s script (call after changing language).
+static func use_script_fonts(locale: String) -> void:
+	_script = SCRIPT_FONTS.get(locale.split("_")[0], "")
+	_noto_at.clear()
+	if _display:
+		_display.fallbacks = _fallbacks(900)
+	for w in _text:
+		var fv: FontVariation = _text[w]
+		fv.fallbacks = _fallbacks(w)
+		(fv.base_font as FontFile).fallbacks = _fallbacks(w)
+
+## The Noto fallback at a weight, so a heavy label stays heavy in any script.
+static func _fallbacks(weight: int) -> Array[Font]:
+	var out: Array[Font] = []
+	if _script == "":
+		return out
 	if not _noto_at.has(weight):
-		var out: Array[Font] = []
-		for base in _noto_fonts():
-			out.append(_weighted(base, weight))
-		_noto_at[weight] = out
-	return _noto_at[weight]
+		_noto_at[weight] = _weighted(load("res://assets/fonts/%s.ttf" % _script), weight)
+	out.append(_noto_at[weight])
+	return out
 
 static func _weighted(base: Font, weight: int) -> FontVariation:
 	var fv := FontVariation.new()
@@ -47,17 +56,15 @@ static func _weighted(base: Font, weight: int) -> FontVariation:
 static func display_font() -> FontFile:
 	if _display == null:
 		_display = load("res://assets/fonts/DelaGothicOne-Regular.ttf")
-		_display.fallbacks = _noto_fonts_at(900) # Dela Gothic is a heavy face
+		_display.fallbacks = _fallbacks(900) # Dela Gothic is a heavy face
 	return _display
 
 ## Nunito at a given weight (700, 800, 900) from the variable font.
 static func text_font(weight := 800) -> Font:
 	if not _text.has(weight):
 		var base: FontFile = load("res://assets/fonts/Nunito-Variable.ttf")
-		if base.fallbacks.is_empty():
-			base.fallbacks = _noto_fonts()
 		var fv := _weighted(base, weight)
-		fv.fallbacks = _noto_fonts_at(weight) # the weight reaches the fallbacks too
+		fv.fallbacks = _fallbacks(weight) # the weight reaches the fallback too
 		_text[weight] = fv
 	return _text[weight]
 
